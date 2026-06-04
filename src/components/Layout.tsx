@@ -1,0 +1,74 @@
+import { Menu, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useState } from 'react';
+import type { PageKey } from '../App';
+
+const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
+  { key: 'today', label: '🏠 HOY' },
+  { key: 'reservations', label: '📅 RESERVAS' },
+  { key: 'control', label: '📊 CONTROL' },
+  { key: 'feedbacks', label: '⭐ FEEDBACKS' },
+  { key: 'shows', label: '🎤 SHOWS' },
+  { key: 'settings', label: '⚙️ SETTINGS' },
+];
+
+interface LayoutProps {
+  activePage: PageKey;
+  children: ReactNode;
+  onNavigate: (page: PageKey) => void;
+}
+
+export function Layout({ activePage, children, onNavigate }: LayoutProps) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  function handleNavigate(page: PageKey) {
+    onNavigate(page);
+    setIsSidebarOpen(false);
+  }
+
+  return (
+    <>
+      <button className="menu-button" type="button" onClick={() => setIsSidebarOpen(true)} aria-label="Abrir menu">
+        <Menu size={28} />
+      </button>
+
+      <aside className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`} aria-label="Navegacion principal">
+        <div className="sidebar-header">
+          <div className="brand-lockup">
+            <div className="logo-mark" aria-hidden="true">
+              S
+            </div>
+            <div>
+              <p className="eyebrow">Safari</p>
+              <strong>Manager</strong>
+            </div>
+          </div>
+          <button className="icon-button" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu">
+            <X size={22} />
+          </button>
+        </div>
+
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              className={activePage === item.key ? 'is-active' : ''}
+              type="button"
+              onClick={() => handleNavigate(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <button className="logout-button" type="button">
+          🚪 LOGOUT
+        </button>
+      </aside>
+
+      {isSidebarOpen && <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu" />}
+
+      {children}
+    </>
+  );
+}
