@@ -813,6 +813,43 @@ button:disabled {
   padding: 0;
 }
 
+.admin-table-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-table-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.55fr) minmax(170px, 1fr) minmax(150px, 0.7fr) 150px 120px;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7f9fc;
+}
+
+.table-id {
+  align-self: center;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.danger-button {
+  background: var(--red);
+}
+
+.danger-button:disabled {
+  color: var(--muted);
+  background: #d8dde6;
+  cursor: not-allowed;
+}
+
 .section-title {
   display: flex;
   align-items: center;
@@ -922,6 +959,7 @@ button:disabled {
   .settings-grid.inner,
   .slot-capacity-grid,
   .opening-days-grid,
+  .admin-table-row,
   .feedback-grid {
     grid-template-columns: 1fr;
   }
@@ -1010,6 +1048,7 @@ button:disabled {
   .settings-grid.inner,
   .slot-capacity-grid,
   .opening-days-grid,
+  .admin-table-row,
   .feedback-grid {
     grid-template-columns: 1fr;
   }

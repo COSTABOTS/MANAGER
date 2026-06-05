@@ -14,23 +14,6 @@ import { getCurrentTime } from './utils/date';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
 
-const TABLE_OPTIONS = [
-  'Mesa 1',
-  'Mesa 2',
-  'Mesa 3',
-  'Mesa 4',
-  'Mesa 5',
-  'Mesa 6',
-  'Mesa 7',
-  'Mesa 8',
-  'Mesa 9',
-  'Mesa 10',
-  'Terraza 1',
-  'Terraza 2',
-  'Terraza 3',
-  'VIP',
-];
-
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
   const [reservations, setReservations] = useState(mockReservations);
@@ -57,6 +40,11 @@ export function App() {
   );
 
   const occupancyPercent = Math.min(100, Math.round((totalPax / settings.totalCapacity) * 100));
+
+  const activeTableOptions = useMemo(
+    () => settings.tables.filter((table) => table.active).map((table) => table.name),
+    [settings.tables],
+  );
 
   function handleBookingStatus() {
     setSettings((current) => ({
@@ -124,7 +112,7 @@ export function App() {
     }
 
     if (activePage === 'settings') {
-      return <Settings settings={settings} onSettingsChange={setSettings} />;
+      return <Settings settings={settings} reservations={reservations} onSettingsChange={setSettings} />;
     }
 
     return (
@@ -136,7 +124,7 @@ export function App() {
         }}
         lastSync={lastSync}
         reservations={todaysReservations}
-        tableOptions={TABLE_OPTIONS}
+        tableOptions={activeTableOptions}
         totalPax={totalPax}
         arrivals={arrivals}
         occupancyPercent={occupancyPercent}

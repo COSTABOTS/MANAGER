@@ -19,10 +19,6 @@ export function ReservationsTable({ reservations, tableOptions, onUpdate }: Rese
       (table) => !occupiedTables.has(table) || table === currentReservation.table,
     );
 
-    if (currentReservation.table && !availableTables.includes(currentReservation.table)) {
-      return [currentReservation.table, ...availableTables];
-    }
-
     return availableTables;
   }
 

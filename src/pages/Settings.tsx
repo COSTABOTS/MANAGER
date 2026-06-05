@@ -1,8 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { ManagerSettings, Weekday } from '../types';
+import type { ManagerSettings, Reservation, RestaurantTable, RestaurantTableType, Weekday } from '../types';
 
 interface SettingsProps {
   settings: ManagerSettings;
+  reservations: Reservation[];
   onSettingsChange: Dispatch<SetStateAction<ManagerSettings>>;
 }
 
@@ -11,6 +12,13 @@ type SlotCapacity = Record<string, number>;
 
 const userRole: 'admin' | 'manager' = 'admin';
 const DEFAULT_SLOT_CAPACITY = 40;
+const TABLE_TYPES: Array<{ value: RestaurantTableType; label: string }> = [
+  { value: 'interior', label: 'Interior' },
+  { value: 'terraza', label: 'Terraza' },
+  { value: 'vip', label: 'VIP' },
+  { value: 'barra', label: 'Barra' },
+  { value: 'otro', label: 'Otro' },
+];
 const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
   { key: 'monday', label: 'Lunes' },
   { key: 'tuesday', label: 'Martes' },
@@ -62,7 +70,7 @@ function rebuildSlotCapacity(
   }, {});
 }
 
-export function Settings({ settings, onSettingsChange }: SettingsProps) {
+export function Settings({ settings, reservations, onSettingsChange }: SettingsProps) {
   function updateSetting<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
     onSettingsChange((current) => ({ ...current, [key]: value }));
     // Future Make integration: saveSettings(settings)
@@ -122,6 +130,42 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
         [day]: value,
       },
     }));
+  }
+
+  function addTable() {
+    onSettingsChange((current) => {
+      const nextNumber = current.tables.length + 1;
+      return {
+        ...current,
+        tables: [
+          ...current.tables,
+          {
+            id: `table-${Date.now()}`,
+            name: `Mesa ${nextNumber}`,
+            type: 'interior',
+            active: true,
+          },
+        ],
+      };
+    });
+  }
+
+  function updateTable(tableId: string, patch: Partial<RestaurantTable>) {
+    onSettingsChange((current) => ({
+      ...current,
+      tables: current.tables.map((table) => (table.id === tableId ? { ...table, ...patch } : table)),
+    }));
+  }
+
+  function deleteTable(tableId: string) {
+    onSettingsChange((current) => ({
+      ...current,
+      tables: current.tables.filter((table) => table.id !== tableId),
+    }));
+  }
+
+  function hasReservationsForTable(tableName: string) {
+    return reservations.some((reservation) => reservation.table === tableName);
   }
 
   return (
@@ -264,6 +308,57 @@ export function Settings({ settings, onSettingsChange }: SettingsProps) {
               </label>
             </div>
             <SwitchRow label="Licencia activa" checked={settings.licenseActive} onChange={(value) => updateSetting('licenseActive', value)} />
+
+            <div className="settings-subsection">
+              <div className="section-title compact">
+                <div>
+                  <p className="eyebrow">Costabots Admin</p>
+                  <h2>Mesas / Zonas</h2>
+                </div>
+                <button type="button" onClick={addTable}>
+                  Añadir mesa
+                </button>
+              </div>
+
+              <div className="admin-table-list">
+                {settings.tables.map((table) => {
+                  const hasReservations = hasReservationsForTable(table.name);
+
+                  return (
+                    <div className="admin-table-row" key={table.id}>
+                      <span className="table-id">{table.id}</span>
+                      <label>
+                        Nombre
+                        <input value={table.name} onChange={(event) => updateTable(table.id, { name: event.target.value })} />
+                      </label>
+                      <label>
+                        Tipo
+                        <select value={table.type} onChange={(event) => updateTable(table.id, { type: event.target.value as RestaurantTableType })}>
+                          {TABLE_TYPES.map((type) => (
+                            <option key={type.value} value={type.value}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => updateTable(table.id, { active: !table.active })}>
+                        <span>{table.active ? 'Activa' : 'Inactiva'}</span>
+                        <strong>{table.active ? 'ON' : 'OFF'}</strong>
+                      </button>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={hasReservations}
+                        title={hasReservations ? 'No se puede eliminar: tiene reservas asociadas' : 'Eliminar mesa'}
+                        onClick={() => deleteTable(table.id)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </article>
         )}
       </section>

@@ -52,6 +52,15 @@ export interface Show {
   bookable: boolean;
 }
 
+export type RestaurantTableType = 'interior' | 'terraza' | 'vip' | 'barra' | 'otro';
+
+export interface RestaurantTable {
+  id: string;
+  name: string;
+  type: RestaurantTableType;
+  active: boolean;
+}
+
 export interface ManagerSettings {
   totalCapacity: number;
   slotCapacity: Record<string, number>;
@@ -72,4 +81,5 @@ export interface ManagerSettings {
   feedbacksWebhook: string;
   showsWebhook: string;
   licenseActive: boolean;
+  tables: RestaurantTable[];
 }

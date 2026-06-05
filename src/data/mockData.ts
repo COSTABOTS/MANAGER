@@ -43,6 +43,23 @@ export const mockSettings: ManagerSettings = {
   showsWebhook: '',
   licenseActive: true,
   slotCapacity: mockSlotCapacity,
+  tables: [
+    { id: 'mesa-1', name: 'Mesa 1', type: 'interior', active: true },
+    { id: 'mesa-2', name: 'Mesa 2', type: 'interior', active: true },
+    { id: 'mesa-3', name: 'Mesa 3', type: 'interior', active: true },
+    { id: 'mesa-4', name: 'Mesa 4', type: 'interior', active: true },
+    { id: 'mesa-5', name: 'Mesa 5', type: 'interior', active: true },
+    { id: 'mesa-6', name: 'Mesa 6', type: 'interior', active: true },
+    { id: 'mesa-7', name: 'Mesa 7', type: 'interior', active: true },
+    { id: 'mesa-8', name: 'Mesa 8', type: 'interior', active: true },
+    { id: 'mesa-9', name: 'Mesa 9', type: 'interior', active: true },
+    { id: 'mesa-10', name: 'Mesa 10', type: 'interior', active: true },
+    { id: 'terraza-1', name: 'Terraza 1', type: 'terraza', active: true },
+    { id: 'terraza-2', name: 'Terraza 2', type: 'terraza', active: true },
+    { id: 'terraza-3', name: 'Terraza 3', type: 'terraza', active: true },
+    { id: 'vip', name: 'VIP', type: 'vip', active: true },
+    { id: 'barra', name: 'Barra', type: 'barra', active: false },
+  ],
 };
 
 export const mockShows: Show[] = [
