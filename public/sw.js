@@ -1,12 +1,10 @@
-const CACHE_NAME = 'safari-manager-v5';
+const CACHE_NAME = 'safari-manager-v6';
 const APP_SHELL = [
   '/',
   '/manifest.json',
   '/LOGO_COSTABOTS_WHITE.png',
   '/favicon.png',
   '/apple-touch-icon.png',
-  '/logos/costabots-logo.png',
-  '/logos/safari-logo.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-192-maskable.png',
@@ -34,6 +32,11 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.hostname === '127.0.0.1' || requestUrl.hostname === 'localhost') {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith('/logos/')) {
     event.respondWith(fetch(event.request));
     return;
   }
