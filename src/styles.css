@@ -52,15 +52,20 @@ body {
   z-index: 80;
   inset: 0 auto 0 0;
   display: flex;
+  max-height: 100dvh;
   width: min(320px, calc(100vw - 32px));
   flex-direction: column;
   gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px;
   border-right: 1px solid var(--line);
   background: #fff;
   box-shadow: 20px 0 50px rgba(23, 32, 51, 0.2);
+  touch-action: pan-y;
   transform: translateX(-104%);
   transition: transform 180ms ease;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebar.is-open {
@@ -131,6 +136,7 @@ body {
   padding: 0;
   border-radius: 0;
   background: rgba(23, 32, 51, 0.34);
+  touch-action: none;
 }
 
 button,
@@ -802,6 +808,23 @@ input:focus,
 select:focus {
   outline: 3px solid var(--blue-soft);
   border-color: var(--blue);
+}
+
+.logo-url-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  gap: 8px;
+}
+
+.logo-url-row button {
+  width: 46px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 900;
+  background: var(--blue-deep);
 }
 
 button {

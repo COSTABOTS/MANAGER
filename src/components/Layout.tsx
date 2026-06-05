@@ -1,6 +1,6 @@
 import { Menu, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PageKey } from '../App';
 import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO } from '../config/branding';
 import { BrandLogo } from './BrandLogo';
@@ -25,6 +25,26 @@ interface LayoutProps {
 
 export function Layout({ activePage, children, costabotsLogoUrl, restaurantName, restaurantLogoUrl, onNavigate }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isSidebarOpen) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousOverscroll = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [isSidebarOpen]);
 
   function handleNavigate(page: PageKey) {
     onNavigate(page);

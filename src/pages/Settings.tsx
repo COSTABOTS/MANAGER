@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ManagerSettings, Reservation, RestaurantTable, RestaurantTableType, Weekday } from '../types';
 
@@ -71,6 +72,17 @@ function rebuildSlotCapacity(
 }
 
 export function Settings({ settings, reservations, onSettingsChange }: SettingsProps) {
+  const [costabotsLogoDraft, setCostabotsLogoDraft] = useState(settings.costabotsLogoUrl);
+  const [restaurantLogoDraft, setRestaurantLogoDraft] = useState(settings.restaurantLogoUrl);
+
+  useEffect(() => {
+    setCostabotsLogoDraft(settings.costabotsLogoUrl);
+  }, [settings.costabotsLogoUrl]);
+
+  useEffect(() => {
+    setRestaurantLogoDraft(settings.restaurantLogoUrl);
+  }, [settings.restaurantLogoUrl]);
+
   function updateSetting<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
     onSettingsChange((current) => ({ ...current, [key]: value }));
     // Future Make integration: saveSettings(settings)
@@ -280,11 +292,21 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
               </label>
               <label>
                 Logo Costabots URL
-                <input value={settings.costabotsLogoUrl} onChange={(event) => updateSetting('costabotsLogoUrl', event.target.value)} placeholder="https://..." />
+                <span className="logo-url-row">
+                  <input value={costabotsLogoDraft} onChange={(event) => setCostabotsLogoDraft(event.target.value)} placeholder="https://..." />
+                  <button type="button" onClick={() => updateSetting('costabotsLogoUrl', costabotsLogoDraft.trim())} aria-label="Guardar logo Costabots">
+                    +
+                  </button>
+                </span>
               </label>
               <label>
                 Logo restaurante URL
-                <input value={settings.restaurantLogoUrl} onChange={(event) => updateSetting('restaurantLogoUrl', event.target.value)} placeholder="https://..." />
+                <span className="logo-url-row">
+                  <input value={restaurantLogoDraft} onChange={(event) => setRestaurantLogoDraft(event.target.value)} placeholder="https://..." />
+                  <button type="button" onClick={() => updateSetting('restaurantLogoUrl', restaurantLogoDraft.trim())} aria-label="Guardar logo restaurante">
+                    +
+                  </button>
+                </span>
               </label>
               <label>
                 Color principal

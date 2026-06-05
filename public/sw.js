@@ -1,7 +1,8 @@
-const CACHE_NAME = 'safari-manager-v4';
+const CACHE_NAME = 'safari-manager-v5';
 const APP_SHELL = [
   '/',
   '/manifest.json',
+  '/LOGO_COSTABOTS_WHITE.png',
   '/favicon.png',
   '/apple-touch-icon.png',
   '/logos/costabots-logo.png',
