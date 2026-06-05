@@ -1,8 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { BookingStatusToggle } from '../components/BookingStatusToggle';
-import { HeaderSummary } from '../components/HeaderSummary';
-import { OccupancyCard } from '../components/OccupancyCard';
 import { ReservationsTable } from '../components/ReservationsTable';
 import { WalkInForm } from '../components/WalkInForm';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
@@ -91,7 +89,6 @@ export function Today({
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
   const displayTotalPax = todayData?.totalPax ?? totalPax;
-  const displayArrivals = todayData?.arrivals ?? arrivals;
   const displayCapacity = todayData?.capacity ?? totalCapacity;
   const displayOccupancyPercent = todayData
     ? Math.min(100, Math.round((displayTotalPax / displayCapacity) * 100))
@@ -107,24 +104,29 @@ export function Today({
           </div>
           <div>
             <p className="eyebrow">Safari Manager</p>
-            <h1>SAFARI HOY</h1>
+            <h1>HOY · {formatDisplayDate(displayDate)}</h1>
           </div>
         </div>
         <div className="sync-status">{syncLabel}</div>
       </section>
 
-      <HeaderSummary
-        date={formatDisplayDate(displayDate)}
-        bookingsOpen={displayBookingsOpen}
-        totalPax={displayTotalPax}
-        arrivals={displayArrivals}
-        occupancyPercent={displayOccupancyPercent}
-      />
+      <section className="today-kpi-grid" aria-label="Resumen operativo de hoy">
+        <article className="today-kpi-card">
+          <span>Pax totales</span>
+          <strong>{displayTotalPax}</strong>
+        </article>
+        <article className="today-kpi-card is-occupancy">
+          <span>Ocupacion</span>
+          <strong>{displayOccupancyPercent}%</strong>
+          <div className="occupancy-meter compact" aria-label={`Ocupacion ${displayOccupancyPercent}%`}>
+            <span style={{ width: `${displayOccupancyPercent}%` }} />
+          </div>
+        </article>
+      </section>
 
-      <section className="operations-grid">
+      <section className="today-action-grid">
         <WalkInForm onAddWalkIn={onAddWalkIn} />
         <BookingStatusToggle bookingsOpen={displayBookingsOpen} onToggle={onBookingStatus} />
-        <OccupancyCard totalPax={displayTotalPax} totalCapacity={displayCapacity} occupancyPercent={displayOccupancyPercent} />
       </section>
 
       <section className="table-section">

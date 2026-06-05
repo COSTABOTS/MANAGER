@@ -302,6 +302,47 @@ h2 {
   background: var(--blue-deep);
 }
 
+.today-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.today-kpi-card {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-height: 118px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #fff;
+  background: #a3a3a3;
+  box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
+}
+
+.today-kpi-card.is-occupancy {
+  background: var(--blue-deep);
+}
+
+.today-kpi-card span {
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.today-kpi-card strong {
+  font-size: clamp(42px, 6vw, 64px);
+  line-height: 1;
+}
+
+.today-action-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.85fr);
+  gap: 18px;
+  margin: 18px 0;
+}
+
 .operations-grid {
   display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(300px, 0.75fr) minmax(300px, 0.75fr);
@@ -407,6 +448,11 @@ h2 {
   background: #edf1f5;
 }
 
+.occupancy-meter.compact {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.24);
+}
+
 .occupancy-meter span {
   display: block;
   height: 100%;
@@ -423,6 +469,10 @@ h2 {
 
 .occupancy-card.is-danger .occupancy-meter span {
   background: #d6453d;
+}
+
+.today-kpi-card .occupancy-meter span {
+  background: #fff;
 }
 
 .occupancy-footer {
@@ -939,7 +989,9 @@ button:disabled {
   }
 
   .summary-grid,
-  .operations-grid {
+  .operations-grid,
+  .today-kpi-grid,
+  .today-action-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -979,6 +1031,8 @@ button:disabled {
 
   .summary-grid,
   .operations-grid,
+  .today-kpi-grid,
+  .today-action-grid,
   .walkin-form {
     grid-template-columns: 1fr;
   }
