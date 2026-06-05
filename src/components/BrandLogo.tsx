@@ -14,28 +14,26 @@ export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant }:
   const imageUrl = trimmedUrl && !failedUrls.includes(trimmedUrl) ? trimmedUrl : fallbackUrl;
   const shouldUseImage = Boolean(imageUrl) && !failedUrls.includes(imageUrl);
   const fallbackText = fallbackLabel.trim().slice(0, 1).toUpperCase() || '?';
+  const frameClassName = `brand-logo-frame brand-logo-frame-${variant}`;
 
   useEffect(() => {
     setFailedUrls([]);
   }, [fallbackUrl, trimmedUrl]);
 
-  if (shouldUseImage) {
-    return (
-      <img
-        className={variant === 'platform' ? 'brand-logo brand-logo-platform' : 'brand-logo brand-logo-restaurant'}
-        src={imageUrl}
-        alt={alt}
-        onError={() => setFailedUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
-      />
-    );
-  }
-
   return (
-    <span
-      className={variant === 'platform' ? 'brand-logo-fallback brand-logo-platform' : 'brand-logo-fallback brand-logo-restaurant'}
-      aria-hidden="true"
-    >
-      {fallbackText}
+    <span className={frameClassName}>
+      {shouldUseImage ? (
+        <img
+          className="brand-logo-image"
+          src={imageUrl}
+          alt={alt}
+          onError={() => setFailedUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
+        />
+      ) : (
+        <span className="brand-logo-letter" aria-hidden="true">
+          {fallbackText}
+        </span>
+      )}
     </span>
   );
 }

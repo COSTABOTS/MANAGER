@@ -167,27 +167,56 @@ select {
   min-width: 0;
 }
 
-.brand-logo,
-.brand-logo-fallback {
+.brand-logo-frame {
+  position: relative;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  object-fit: cover;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(34, 47, 73, 0.16);
 }
 
-.brand-logo-restaurant {
+.brand-logo-frame-restaurant {
   width: 60px;
+  min-width: 60px;
   height: 60px;
+  min-height: 60px;
+  border: 1px solid rgba(34, 47, 73, 0.08);
   border-radius: 10px;
 }
 
-.brand-logo-platform {
+.brand-logo-frame-platform {
   width: 30px;
+  min-width: 30px;
   height: 30px;
+  min-height: 30px;
   border-radius: 50%;
 }
 
-.brand-logo-fallback.brand-logo-restaurant,
+.brand-logo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.brand-logo-letter {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #0b9f66, #46d083);
+}
+
+.brand-logo-frame-platform .brand-logo-letter {
+  font-size: 14px;
+  background: var(--blue-deep);
+}
+
 .logo-mark {
   display: grid;
   width: 48px;
@@ -199,13 +228,6 @@ select {
   font-weight: 900;
   background: linear-gradient(135deg, #0b9f66, #46d083);
   box-shadow: 0 8px 20px rgba(27, 137, 88, 0.28);
-}
-
-.brand-logo-restaurant,
-.logo-image {
-  display: block;
-  background: #fff;
-  box-shadow: 0 8px 20px rgba(34, 47, 73, 0.16);
 }
 
 .app-brand-header {
@@ -274,7 +296,6 @@ select {
   text-transform: uppercase;
 }
 
-.brand-logo-fallback.brand-logo-platform,
 .costabots-mark {
   display: grid;
   width: 30px;
@@ -288,7 +309,6 @@ select {
   box-shadow: 0 8px 18px rgba(53, 96, 158, 0.22);
 }
 
-.brand-logo-platform,
 .costabots-logo-image {
   display: block;
   background: #fff;
