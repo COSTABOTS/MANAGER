@@ -88,6 +88,7 @@ export function Reservations({ reservations }: ReservationsProps) {
                 <th>Telefono</th>
                 <th>Pax</th>
                 <th>Peticion especial</th>
+                <th>Origen</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -101,6 +102,7 @@ export function Reservations({ reservations }: ReservationsProps) {
                   <td data-label="Telefono">{reservation.phone || '-'}</td>
                   <td data-label="Pax">{reservation.pax}</td>
                   <td data-label="Peticion especial">{reservation.specialRequest}</td>
+                  <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
                   <td data-label="Estado">
                     <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
                   </td>
@@ -112,6 +114,18 @@ export function Reservations({ reservations }: ReservationsProps) {
       </section>
     </main>
   );
+}
+
+function getReservationOrigin(source: Reservation['source']) {
+  if (source === 'WALKIN') {
+    return 'WALK-IN';
+  }
+
+  if (source === 'MANUAL') {
+    return 'MANUAL';
+  }
+
+  return 'BOT';
 }
 
 function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {

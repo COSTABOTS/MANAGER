@@ -68,16 +68,26 @@ body {
 }
 
 .sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--line);
 }
 
+.sidebar-brand-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
 .sidebar-header strong {
+  display: block;
+  overflow: hidden;
   font-size: 22px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-button {
@@ -141,14 +151,37 @@ select {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+  padding-left: 72px;
 }
 
 .brand-lockup {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
 }
 
+.brand-logo,
+.brand-logo-fallback {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  object-fit: cover;
+}
+
+.brand-logo-restaurant {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+}
+
+.brand-logo-platform {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.brand-logo-fallback.brand-logo-restaurant,
 .logo-mark {
   display: grid;
   width: 48px;
@@ -156,10 +189,148 @@ select {
   place-items: center;
   border-radius: 8px;
   color: #fff;
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 900;
   background: linear-gradient(135deg, #0b9f66, #46d083);
   box-shadow: 0 8px 20px rgba(27, 137, 88, 0.28);
+}
+
+.brand-logo-restaurant,
+.logo-image {
+  display: block;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(34, 47, 73, 0.16);
+}
+
+.app-brand-header {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.today-brand-bar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, auto) minmax(190px, 1fr);
+  align-items: center;
+  padding-left: 72px;
+}
+
+.today-header-spacer {
+  min-width: 0;
+}
+
+.today-restaurant-brand {
+  justify-items: center;
+}
+
+.today-restaurant-brand .brand-lockup {
+  justify-content: center;
+}
+
+.today-restaurant-brand h1 {
+  overflow: hidden;
+  max-width: min(560px, 44vw);
+  font-size: clamp(30px, 4.4vw, 54px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-header-aside {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.costabots-wordmark {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.today-costabots-brand {
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.costabots-lockup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.brand-logo-fallback.brand-logo-platform,
+.costabots-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  background: var(--blue-deep);
+  box-shadow: 0 8px 18px rgba(53, 96, 158, 0.22);
+}
+
+.brand-logo-platform,
+.costabots-logo-image {
+  display: block;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(53, 96, 158, 0.18);
+}
+
+.form-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(169, 35, 35, 0.22);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 800;
+  background: rgba(169, 35, 35, 0.08);
+}
+
+.toast-notification {
+  position: fixed;
+  z-index: 120;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 34px rgba(34, 47, 73, 0.18);
+}
+
+.toast-notification span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-notification button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--muted);
+  background: #f4f7fb;
 }
 
 .eyebrow {
@@ -332,7 +503,9 @@ h2 {
   margin: 18px 0;
 }
 
-.today-kpi-card {
+.today-kpi-card,
+.today-summary-card,
+.manual-reservation-card {
   display: grid;
   align-content: center;
   gap: 8px;
@@ -345,18 +518,83 @@ h2 {
   box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
 }
 
-.today-kpi-card.is-occupancy {
+.today-kpi-card.is-occupancy,
+.manual-reservation-card {
   background: var(--blue-deep);
 }
 
-.today-kpi-card span {
+.today-kpi-card span,
+.today-summary-card span {
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.today-kpi-card strong {
+.today-kpi-card strong,
+.today-summary-card strong {
   font-size: clamp(42px, 6vw, 64px);
   line-height: 1;
+}
+
+.today-summary-card {
+  color: #fff;
+  background: #a3a3a3;
+}
+
+.summary-lines {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.summary-lines div {
+  display: grid;
+  gap: 6px;
+}
+
+.summary-lines strong {
+  font-size: clamp(34px, 5vw, 54px);
+}
+
+.manual-reservation-card {
+  align-content: center;
+  justify-items: center;
+  width: 100%;
+  gap: 14px;
+  text-align: center;
+  color: #fff;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.manual-reservation-card:hover {
+  transform: translateY(-2px);
+  background: #416daa;
+  box-shadow: 0 16px 34px rgba(34, 47, 73, 0.18);
+}
+
+.manual-reservation-card:active {
+  transform: translateY(0);
+  box-shadow: 0 8px 20px rgba(34, 47, 73, 0.14);
+}
+
+.manual-reservation-card span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.manual-reservation-card strong {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: clamp(24px, 3vw, 32px);
+  text-transform: uppercase;
 }
 
 .operations-grid {
@@ -879,6 +1117,31 @@ button:disabled {
   box-shadow: 0 24px 70px rgba(23, 32, 51, 0.3);
 }
 
+.manual-modal {
+  width: min(720px, 100%);
+}
+
+.manual-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manual-form-wide {
+  grid-column: 1 / -1;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.secondary-button {
+  color: var(--header-dark);
+  background: #eef2f6;
+}
+
 .modal-switch {
   border-bottom: 0;
   padding: 0;
@@ -1009,6 +1272,14 @@ button:disabled {
     width: min(100% - 20px, 920px);
   }
 
+  .today-brand-bar {
+    grid-template-columns: minmax(96px, 0.35fr) minmax(0, auto) minmax(160px, 0.65fr);
+  }
+
+  .today-restaurant-brand h1 {
+    max-width: min(460px, 42vw);
+  }
+
   .summary-grid,
   .operations-grid,
   .today-main-grid {
@@ -1040,6 +1311,10 @@ button:disabled {
   .feedback-grid {
     grid-template-columns: 1fr;
   }
+
+  .manual-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1052,6 +1327,29 @@ button:disabled {
   .section-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .top-bar {
+    padding-left: 0;
+  }
+
+  .today-brand-bar {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 12px;
+  }
+
+  .today-header-spacer {
+    display: none;
+  }
+
+  .today-header-aside {
+    justify-items: center;
+    width: 100%;
+  }
+
+  .today-restaurant-brand h1 {
+    max-width: calc(100vw - 112px);
   }
 
   .summary-grid,

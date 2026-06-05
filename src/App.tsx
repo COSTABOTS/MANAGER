@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { Control } from './pages/Control';
 import { Feedbacks } from './pages/Feedbacks';
@@ -9,10 +9,11 @@ import { Today } from './pages/Today';
 import { mockSettings } from './data/mockData';
 import { mockReservations, todayState } from './data/mockReservations';
 import { sendWalkIn, updateReservationField } from './services/webhooks';
-import type { DayState, Reservation, WalkInPayload } from './types';
+import type { DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
+const SETTINGS_STORAGE_KEY = 'manager_settings';
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
@@ -21,8 +22,29 @@ export function App() {
     ...todayState,
     date: getLocalDateString(new Date()),
   });
-  const [settings, setSettings] = useState(mockSettings);
+  const [settings, setSettings] = useState<ManagerSettings>(() => {
+    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!stored) {
+      return mockSettings;
+    }
+
+    try {
+      const parsed = JSON.parse(stored);
+      return {
+        ...mockSettings,
+        ...parsed,
+        costabotsLogoUrl: parsed.costabotsLogoUrl ?? mockSettings.costabotsLogoUrl,
+        restaurantLogoUrl: parsed.restaurantLogoUrl ?? parsed.logoUrl ?? mockSettings.restaurantLogoUrl,
+      };
+    } catch {
+      return mockSettings;
+    }
+  });
   const [lastSync, setLastSync] = useState('Datos mock cargados');
+
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  }, [settings]);
 
   const todaysReservations = useMemo(
     () =>
@@ -88,6 +110,21 @@ export function App() {
     setLastSync('Nueva mesa enviada a Make');
   }
 
+  function addManualReservation(reservation: Omit<Reservation, 'id' | 'status' | 'source' | 'table' | 'arrived'>) {
+    const manualReservation: Reservation = {
+      ...reservation,
+      id: `manual-${Date.now()}`,
+      status: 'CONFIRMADA',
+      source: 'MANUAL',
+      table: '',
+      arrived: false,
+    };
+
+    setReservations((current) => [...current, manualReservation]);
+    setLastSync('Reserva manual añadida');
+    // Future Make integration: addManualReservation(reservation)
+  }
+
   async function handleUpdateReservation(id: string, field: 'table' | 'arrived', value: string | boolean) {
     setReservations((current) =>
       current.map((reservation) => (reservation.id === id ? { ...reservation, [field]: value } : reservation)),
@@ -126,6 +163,12 @@ export function App() {
           fullyBooked: !settings.reservasActivas,
         }}
         lastSync={lastSync}
+        costabotsLogoUrl={settings.costabotsLogoUrl}
+        restaurantName={settings.restaurantName}
+        restaurantLogoUrl={settings.restaurantLogoUrl}
+        openingTime={settings.openingTime}
+        closingTime={settings.closingTime}
+        bookingInterval={settings.bookingInterval}
         reservations={todaysReservations}
         tableOptions={activeTableOptions}
         totalPax={totalPax}
@@ -133,6 +176,7 @@ export function App() {
         occupancyPercent={occupancyPercent}
         totalCapacity={settings.totalCapacity}
         onAddWalkIn={handleAddWalkIn}
+        onAddManualReservation={addManualReservation}
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
       />
@@ -140,7 +184,13 @@ export function App() {
   }
 
   return (
-    <Layout activePage={activePage} onNavigate={setActivePage}>
+    <Layout
+      activePage={activePage}
+      costabotsLogoUrl={settings.costabotsLogoUrl}
+      restaurantName={settings.restaurantName}
+      restaurantLogoUrl={settings.restaurantLogoUrl}
+      onNavigate={setActivePage}
+    >
       {renderPage()}
     </Layout>
   );

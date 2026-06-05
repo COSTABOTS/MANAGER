@@ -2,6 +2,7 @@ import { Menu, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { PageKey } from '../App';
+import { BrandLogo } from './BrandLogo';
 
 const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
   { key: 'today', label: '🏠 HOY' },
@@ -15,10 +16,13 @@ const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
 interface LayoutProps {
   activePage: PageKey;
   children: ReactNode;
+  costabotsLogoUrl?: string;
+  restaurantName: string;
+  restaurantLogoUrl?: string;
   onNavigate: (page: PageKey) => void;
 }
 
-export function Layout({ activePage, children, onNavigate }: LayoutProps) {
+export function Layout({ activePage, children, costabotsLogoUrl, restaurantName, restaurantLogoUrl, onNavigate }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   function handleNavigate(page: PageKey) {
@@ -34,13 +38,17 @@ export function Layout({ activePage, children, onNavigate }: LayoutProps) {
 
       <aside className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`} aria-label="Navegacion principal">
         <div className="sidebar-header">
-          <div className="brand-lockup">
-            <div className="logo-mark" aria-hidden="true">
-              S
+          <div className="sidebar-brand-stack">
+            <div className="costabots-lockup">
+              <BrandLogo logoUrl={costabotsLogoUrl} fallbackLabel="C" alt="Costabots" variant="platform" />
+              <span>COSTABOTS MANAGER</span>
             </div>
-            <div>
-              <p className="eyebrow">Safari</p>
-              <strong>Manager</strong>
+            <div className="brand-lockup">
+              <BrandLogo logoUrl={restaurantLogoUrl} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+              <div>
+                <p className="eyebrow">Restaurante</p>
+                <strong>{restaurantName}</strong>
+              </div>
             </div>
           </div>
           <button className="icon-button" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu">

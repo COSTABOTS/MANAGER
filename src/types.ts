@@ -1,5 +1,5 @@
 export type BookingStatus = 'CONFIRMADA' | 'CANCELADA';
-export type BookingSource = 'LANDbot' | 'WALKIN' | 'WEB' | 'HOTEL';
+export type BookingSource = 'LANDbot' | 'BOT' | 'WALKIN' | 'WEB' | 'HOTEL' | 'MANUAL';
 
 export interface Reservation {
   id: string;
@@ -72,8 +72,9 @@ export interface ManagerSettings {
   whatsappPreCena: boolean;
   filtroResenas: boolean;
   mensajePostCena: boolean;
+  costabotsLogoUrl: string;
   restaurantName: string;
-  logoUrl: string;
+  restaurantLogoUrl: string;
   primaryColor: string;
   googleSheetId: string;
   reservationsWebhook: string;

@@ -9,6 +9,9 @@ interface ControlProps {
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
 type ControlView = 'cards' | 'list';
+const CONTROL_START_DATE_KEY = 'manager_control_start_date';
+const CONTROL_VISIBLE_DAYS_KEY = 'manager_control_visible_days';
+const CONTROL_VIEW_MODE_KEY = 'manager_control_view_mode';
 
 function addDays(date: string, days: number) {
   const baseDate = new Date(`${date}T12:00:00`);
@@ -21,9 +24,12 @@ function getDayName(date: string) {
 }
 
 export function Control({ reservations, totalCapacity }: ControlProps) {
-  const [rangeStart, setRangeStart] = useState('2026-06-04');
-  const [rangeDays, setRangeDays] = useState(7);
-  const [view, setView] = useState<ControlView>('cards');
+  const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? '2026-06-04');
+  const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
+  const [view, setView] = useState<ControlView>(() => {
+    const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);
+    return stored === 'list' ? 'list' : 'cards';
+  });
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set(['2026-06-05', '2026-12-31']));
 
   const cards = useMemo(
@@ -56,6 +62,22 @@ export function Control({ reservations, totalCapacity }: ControlProps) {
     // Future Make integration: updateDateBookingStatus(date, status)
   }
 
+  function updateRangeStart(date: string) {
+    setRangeStart(date);
+    localStorage.setItem(CONTROL_START_DATE_KEY, date);
+  }
+
+  function updateRangeDays(days: number) {
+    const nextDays = Math.max(7, days);
+    setRangeDays(nextDays);
+    localStorage.setItem(CONTROL_VISIBLE_DAYS_KEY, String(nextDays));
+  }
+
+  function updateView(nextView: ControlView) {
+    setView(nextView);
+    localStorage.setItem(CONTROL_VIEW_MODE_KEY, nextView);
+  }
+
   return (
     <main className="app-shell">
       <PageHeader eyebrow="CONTROL RESERVAS" title="CONTROL" />
@@ -63,17 +85,17 @@ export function Control({ reservations, totalCapacity }: ControlProps) {
       <section className="toolbar-card control-toolbar">
         <label>
           Fecha inicio
-          <input type="date" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} />
+          <input type="date" value={rangeStart} onChange={(event) => updateRangeStart(event.target.value)} />
         </label>
         <label>
           Dias visibles
-          <input min="7" max="31" type="number" value={rangeDays} onChange={(event) => setRangeDays(Math.max(7, Number(event.target.value)))} />
+          <input min="7" max="31" type="number" value={rangeDays} onChange={(event) => updateRangeDays(Number(event.target.value))} />
         </label>
         <div className="segmented-control" aria-label="Vista control">
-          <button className={view === 'cards' ? 'is-active' : ''} type="button" onClick={() => setView('cards')}>
+          <button className={view === 'cards' ? 'is-active' : ''} type="button" onClick={() => updateView('cards')}>
             Tarjetas
           </button>
-          <button className={view === 'list' ? 'is-active' : ''} type="button" onClick={() => setView('list')}>
+          <button className={view === 'list' ? 'is-active' : ''} type="button" onClick={() => updateView('list')}>
             Lista
           </button>
         </div>

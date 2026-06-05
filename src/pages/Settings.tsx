@@ -279,8 +279,12 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
                 <input value={settings.restaurantName} onChange={(event) => updateSetting('restaurantName', event.target.value)} />
               </label>
               <label>
-                Logo URL
-                <input value={settings.logoUrl} onChange={(event) => updateSetting('logoUrl', event.target.value)} placeholder="https://..." />
+                Logo Costabots URL
+                <input value={settings.costabotsLogoUrl} onChange={(event) => updateSetting('costabotsLogoUrl', event.target.value)} placeholder="https://..." />
+              </label>
+              <label>
+                Logo restaurante URL
+                <input value={settings.restaurantLogoUrl} onChange={(event) => updateSetting('restaurantLogoUrl', event.target.value)} placeholder="https://..." />
               </label>
               <label>
                 Color principal
