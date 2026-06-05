@@ -1,5 +1,48 @@
 import { mockReservations, mockSettings, mockShows } from '../data/mockData';
 
+export interface Reservation {
+  id: string;
+  name: string;
+  room: string;
+  phone?: string;
+  time: string;
+  pax: number;
+  specialRequest: string;
+  table: string;
+  arrived: boolean;
+  status: string;
+}
+
+export interface TodayData {
+  date: string;
+  bookingsOpen: boolean;
+  fullyBooked: boolean;
+  totalPax: number;
+  capacity: number;
+  arrivals: number;
+  reservations: Reservation[];
+}
+
+export async function getTodayData(): Promise<TodayData> {
+  const baseUrl = import.meta.env.VITE_MANAGER_API_URL;
+
+  if (!baseUrl) {
+    throw new Error('VITE_MANAGER_API_URL is not configured');
+  }
+
+  const response = await fetch(`${baseUrl}/today`);
+
+  if (!response.ok) {
+    throw new Error(`Today data request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export function hasTodayDataEndpoint() {
+  return Boolean(import.meta.env.VITE_MANAGER_API_URL);
+}
+
 export async function getReservations() {
   return mockReservations;
 }

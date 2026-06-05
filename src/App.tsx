@@ -10,14 +10,17 @@ import { mockSettings } from './data/mockData';
 import { mockReservations, todayState } from './data/mockReservations';
 import { sendWalkIn, updateReservationField } from './services/webhooks';
 import type { DayState, Reservation, WalkInPayload } from './types';
-import { getCurrentTime } from './utils/date';
+import { getCurrentTime, getLocalDateString } from './utils/date';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
   const [reservations, setReservations] = useState(mockReservations);
-  const [dayStatus, setDayStatus] = useState<DayState>(todayState);
+  const [dayStatus] = useState<DayState>({
+    ...todayState,
+    date: getLocalDateString(new Date()),
+  });
   const [settings, setSettings] = useState(mockSettings);
   const [lastSync, setLastSync] = useState('Datos mock cargados');
 
