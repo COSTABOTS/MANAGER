@@ -4,7 +4,7 @@ import { BookingStatusToggle } from '../components/BookingStatusToggle';
 import { BrandLogo } from '../components/BrandLogo';
 import { ReservationsTable } from '../components/ReservationsTable';
 import { WalkInForm } from '../components/WalkInForm';
-import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO } from '../config/branding';
+import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO, getRestaurantLogo } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
 import type { BookingStatus, DayState, Reservation } from '../types';
@@ -13,7 +13,6 @@ import { formatDisplayDate, getCurrentTime } from '../utils/date';
 interface TodayProps {
   dayStatus: DayState;
   lastSync: string;
-  costabotsLogoUrl?: string;
   restaurantName: string;
   restaurantLogoUrl?: string;
   openingTime: string;
@@ -44,7 +43,6 @@ const EMPTY_MANUAL_RESERVATION = {
 export function Today({
   dayStatus,
   lastSync,
-  costabotsLogoUrl,
   restaurantName,
   restaurantLogoUrl,
   openingTime,
@@ -191,13 +189,13 @@ export function Today({
         <div className="today-header-spacer" aria-hidden="true" />
         <div className="app-brand-header today-restaurant-brand">
           <div className="brand-lockup">
-            <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={DEFAULT_RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+            <BrandLogo logoUrl={getRestaurantLogo(restaurantLogoUrl)} fallbackUrl={DEFAULT_RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
             <h1>{restaurantName}</h1>
           </div>
         </div>
         <div className="today-header-aside">
           <div className="costabots-lockup today-costabots-brand">
-            <BrandLogo logoUrl={costabotsLogoUrl} fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" />
+            <BrandLogo fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" preferFallback />
             <span>COSTABOTS MANAGER</span>
           </div>
         </div>
