@@ -2,7 +2,7 @@ import { Menu, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { PageKey } from '../App';
-import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO, getRestaurantLogo } from '../config/branding';
+import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { BrandLogo } from './BrandLogo';
 
 const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
@@ -18,11 +18,10 @@ interface LayoutProps {
   activePage: PageKey;
   children: ReactNode;
   restaurantName: string;
-  restaurantLogoUrl?: string;
   onNavigate: (page: PageKey) => void;
 }
 
-export function Layout({ activePage, children, restaurantName, restaurantLogoUrl, onNavigate }: LayoutProps) {
+export function Layout({ activePage, children, restaurantName, onNavigate }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -64,7 +63,7 @@ export function Layout({ activePage, children, restaurantName, restaurantLogoUrl
               <span>COSTABOTS MANAGER</span>
             </div>
             <div className="brand-lockup">
-              <BrandLogo logoUrl={getRestaurantLogo(restaurantLogoUrl)} fallbackUrl={DEFAULT_RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+              <BrandLogo fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" preferFallback />
               <div>
                 <p className="eyebrow">Restaurante</p>
                 <strong>{restaurantName}</strong>

@@ -151,7 +151,6 @@ export function App() {
         }}
         lastSync={lastSync}
         restaurantName={settings.restaurantName}
-        restaurantLogoUrl={settings.restaurantLogoUrl}
         openingTime={settings.openingTime}
         closingTime={settings.closingTime}
         bookingInterval={settings.bookingInterval}
@@ -173,7 +172,6 @@ export function App() {
     <Layout
       activePage={activePage}
       restaurantName={settings.restaurantName}
-      restaurantLogoUrl={settings.restaurantLogoUrl}
       onNavigate={setActivePage}
     >
       {renderPage()}

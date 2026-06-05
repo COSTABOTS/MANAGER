@@ -300,24 +300,14 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
                 </span>
               </label>
               <label>
-                Logo restaurante URL
+                Logo restaurante URL <span className="field-note">Proximamente</span>
                 <div className="logo-url-controls">
                   <span className="logo-url-row">
-                    <input value={restaurantLogoDraft} onChange={(event) => setRestaurantLogoDraft(event.target.value)} placeholder="https://..." />
-                    <button type="button" onClick={() => updateSetting('restaurantLogoUrl', restaurantLogoDraft.trim())} aria-label="Guardar logo restaurante">
+                    <input value={restaurantLogoDraft} onChange={(event) => setRestaurantLogoDraft(event.target.value)} placeholder="https://..." disabled />
+                    <button type="button" disabled aria-label="Guardar logo restaurante">
                       +
                     </button>
                   </span>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => {
-                      setRestaurantLogoDraft('');
-                      updateSetting('restaurantLogoUrl', '');
-                    }}
-                  >
-                    Usar logo local
-                  </button>
                 </div>
               </label>
               <label>

@@ -4,7 +4,7 @@ import { BookingStatusToggle } from '../components/BookingStatusToggle';
 import { BrandLogo } from '../components/BrandLogo';
 import { ReservationsTable } from '../components/ReservationsTable';
 import { WalkInForm } from '../components/WalkInForm';
-import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO, getRestaurantLogo } from '../config/branding';
+import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
 import type { BookingStatus, DayState, Reservation } from '../types';
@@ -14,7 +14,6 @@ interface TodayProps {
   dayStatus: DayState;
   lastSync: string;
   restaurantName: string;
-  restaurantLogoUrl?: string;
   openingTime: string;
   closingTime: string;
   bookingInterval: 30 | 60;
@@ -44,7 +43,6 @@ export function Today({
   dayStatus,
   lastSync,
   restaurantName,
-  restaurantLogoUrl,
   openingTime,
   closingTime,
   bookingInterval,
@@ -189,7 +187,7 @@ export function Today({
         <div className="today-header-spacer" aria-hidden="true" />
         <div className="app-brand-header today-restaurant-brand">
           <div className="brand-lockup">
-            <BrandLogo logoUrl={getRestaurantLogo(restaurantLogoUrl)} fallbackUrl={DEFAULT_RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+            <BrandLogo fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" preferFallback />
             <h1>{restaurantName}</h1>
           </div>
         </div>
