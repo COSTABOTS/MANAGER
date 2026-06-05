@@ -1,4 +1,4 @@
-const CACHE_NAME = 'safari-manager-v1';
+const CACHE_NAME = 'safari-manager-v2';
 const APP_SHELL = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -17,6 +17,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') {
+    return;
+  }
+
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.hostname === '127.0.0.1' || requestUrl.hostname === 'localhost') {
+    event.respondWith(fetch(event.request));
     return;
   }
 
