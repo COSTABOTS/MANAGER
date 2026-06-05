@@ -1,4 +1,4 @@
-import { mockReservations, mockSettings, mockShows } from '../data/mockData';
+import { mockReservations, mockSettings, mockShows } from '../mock';
 
 export interface Reservation {
   id: string;

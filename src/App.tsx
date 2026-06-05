@@ -7,10 +7,11 @@ import { Reservations } from './pages/Reservations';
 import { Settings } from './pages/Settings';
 import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
-import { mockReservations, todayState } from './data/mockReservations';
+import { mockReservations, todayState } from './mock';
+import { loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { sendWalkIn, updateReservationField } from './services/webhooks';
-import type { DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
+import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
@@ -23,6 +24,7 @@ export function App() {
     date: getLocalDateString(new Date()),
   });
   const [settings, setSettings] = useState<ManagerSettings>(() => loadSettingsFromStorage());
+  const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => loadDateBookingStatusFromStorage());
   const [lastSync, setLastSync] = useState('Datos mock cargados');
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
@@ -58,12 +60,24 @@ export function App() {
     [settings.tables],
   );
 
+  const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
+  const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
+
+  function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
+    setDateBookingStatus((current) => {
+      const nextStatus = {
+        ...current,
+        [date]: status,
+      };
+      saveDateBookingStatusToStorage(nextStatus);
+      return nextStatus;
+    });
+    setLastSync('Estado de reservas actualizado');
+    // Future Make integration: updateDateBookingStatus(date, status)
+  }
+
   function handleBookingStatus() {
-    updateSettings((current) => ({
-      ...current,
-      reservasActivas: !current.reservasActivas,
-    }));
-    setLastSync('Estado actualizado correctamente');
+    updateDateBookingStatus(dayStatus.date, isTodayFullyBooked ? 'open' : 'fully_booked');
     // Future Make integration: updateBookingStatus({ bookingsOpen, fullyBooked })
   }
 
@@ -88,13 +102,12 @@ export function App() {
       status: 'CONFIRMADA',
       source: 'WALKIN',
       table: '',
-      arrived: false,
+      arrived: true,
     };
 
     setReservations((current) => [...current, optimisticReservation]);
-    setLastSync('Enviando nueva mesa...');
     await sendWalkIn(payload);
-    setLastSync('Nueva mesa enviada a Make');
+    setLastSync('Mesa añadida correctamente');
   }
 
   function addManualReservation(reservation: Omit<Reservation, 'id' | 'status' | 'source' | 'table' | 'arrived'>) {
@@ -108,7 +121,7 @@ export function App() {
     };
 
     setReservations((current) => [...current, manualReservation]);
-    setLastSync('Reserva manual añadida');
+    setLastSync('Reserva añadida correctamente');
     // Future Make integration: addManualReservation(reservation)
   }
 
@@ -127,7 +140,14 @@ export function App() {
     }
 
     if (activePage === 'control') {
-      return <Control reservations={reservations} totalCapacity={settings.totalCapacity} />;
+      return (
+        <Control
+          dateBookingStatus={dateBookingStatus}
+          reservations={reservations}
+          totalCapacity={settings.totalCapacity}
+          onDateBookingStatusChange={updateDateBookingStatus}
+        />
+      );
     }
 
     if (activePage === 'feedbacks') {
@@ -146,8 +166,8 @@ export function App() {
       <Today
         dayStatus={{
           ...dayStatus,
-          bookingsOpen: settings.reservasActivas,
-          fullyBooked: !settings.reservasActivas,
+          bookingsOpen: !isTodayFullyBooked,
+          fullyBooked: isTodayFullyBooked,
         }}
         lastSync={lastSync}
         restaurantName={settings.restaurantName}

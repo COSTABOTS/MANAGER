@@ -1,4 +1,4 @@
-import { mockSettings } from '../data/mockData';
+import { mockSettings } from '../mock';
 import type { ManagerSettings } from '../types';
 
 const SETTINGS_STORAGE_KEY = 'manager_settings';

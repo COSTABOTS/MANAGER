@@ -1,5 +1,7 @@
 export type BookingStatus = 'CONFIRMADA' | 'CANCELADA';
 export type BookingSource = 'LANDbot' | 'BOT' | 'WALKIN' | 'WEB' | 'HOTEL' | 'MANUAL';
+export type DateBookingStatusValue = 'open' | 'fully_booked';
+export type DateBookingStatus = Record<string, DateBookingStatusValue>;
 
 export interface Reservation {
   id: string;

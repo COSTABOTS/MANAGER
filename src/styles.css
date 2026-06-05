@@ -1157,19 +1157,26 @@ button:disabled {
   inset: 0;
   display: grid;
   place-items: center;
+  overflow: hidden;
   padding: 18px;
   background: rgba(23, 32, 51, 0.38);
+  touch-action: none;
 }
 
 .show-modal {
   display: grid;
   gap: 14px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   width: min(520px, 100%);
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 24px 70px rgba(23, 32, 51, 0.3);
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .manual-modal {

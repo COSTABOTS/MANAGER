@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { Reservation } from '../types';
+import type { DateBookingStatus, DateBookingStatusValue, Reservation } from '../types';
 import { formatDisplayDate } from '../utils/date';
 
 interface ControlProps {
+  dateBookingStatus: DateBookingStatus;
   reservations: Reservation[];
   totalCapacity: number;
+  onDateBookingStatusChange: (date: string, status: DateBookingStatusValue) => void;
 }
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
@@ -23,15 +25,13 @@ function getDayName(date: string) {
   return DAY_NAMES[new Date(`${date}T12:00:00`).getDay()];
 }
 
-export function Control({ reservations, totalCapacity }: ControlProps) {
+export function Control({ dateBookingStatus, reservations, totalCapacity, onDateBookingStatusChange }: ControlProps) {
   const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? '2026-06-04');
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
   const [view, setView] = useState<ControlView>(() => {
     const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);
     return stored === 'list' ? 'list' : 'cards';
   });
-  const [closedDates, setClosedDates] = useState<Set<string>>(new Set(['2026-06-05', '2026-12-31']));
-
   const cards = useMemo(
     () =>
       Array.from({ length: rangeDays }, (_, index) => addDays(rangeStart, index)).map((date) => {
@@ -43,22 +43,14 @@ export function Control({ reservations, totalCapacity }: ControlProps) {
           dayName: getDayName(date),
           pax,
           occupancy: Math.min(100, Math.round((pax / totalCapacity) * 100)),
-          fullyBooked: closedDates.has(date),
+          fullyBooked: dateBookingStatus[date] === 'fully_booked',
         };
       }),
-    [closedDates, totalCapacity, rangeDays, rangeStart, reservations],
+    [dateBookingStatus, totalCapacity, rangeDays, rangeStart, reservations],
   );
 
   function updateDateBookingStatus(date: string, status: boolean) {
-    setClosedDates((current) => {
-      const next = new Set(current);
-      if (status) {
-        next.add(date);
-      } else {
-        next.delete(date);
-      }
-      return next;
-    });
+    onDateBookingStatusChange(date, status ? 'fully_booked' : 'open');
     // Future Make integration: updateDateBookingStatus(date, status)
   }
 

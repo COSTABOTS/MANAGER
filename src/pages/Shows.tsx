@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
-import { mockShows } from '../data/mockData';
+import { mockShows } from '../mock';
 import { toggleShowStatus } from '../services/api';
 import type { Show, Weekday } from '../types';
 
