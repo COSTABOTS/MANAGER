@@ -2,28 +2,30 @@ import { useEffect, useState } from 'react';
 
 interface BrandLogoProps {
   logoUrl?: string;
+  fallbackUrl: string;
   fallbackLabel: string;
   alt: string;
   variant: 'platform' | 'restaurant';
 }
 
-export function BrandLogo({ logoUrl, fallbackLabel, alt, variant }: BrandLogoProps) {
-  const [failedUrl, setFailedUrl] = useState('');
+export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant }: BrandLogoProps) {
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
   const trimmedUrl = logoUrl?.trim() ?? '';
-  const shouldUseImage = Boolean(trimmedUrl) && failedUrl !== trimmedUrl;
+  const imageUrl = trimmedUrl && !failedUrls.includes(trimmedUrl) ? trimmedUrl : fallbackUrl;
+  const shouldUseImage = Boolean(imageUrl) && !failedUrls.includes(imageUrl);
   const fallbackText = fallbackLabel.trim().slice(0, 1).toUpperCase() || '?';
 
   useEffect(() => {
-    setFailedUrl('');
-  }, [trimmedUrl]);
+    setFailedUrls([]);
+  }, [fallbackUrl, trimmedUrl]);
 
   if (shouldUseImage) {
     return (
       <img
         className={variant === 'platform' ? 'brand-logo brand-logo-platform' : 'brand-logo brand-logo-restaurant'}
-        src={trimmedUrl}
+        src={imageUrl}
         alt={alt}
-        onError={() => setFailedUrl(trimmedUrl)}
+        onError={() => setFailedUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
       />
     );
   }

@@ -2,6 +2,7 @@ import { Menu, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { PageKey } from '../App';
+import { DEFAULT_COSTABOTS_LOGO, DEFAULT_RESTAURANT_LOGO } from '../config/branding';
 import { BrandLogo } from './BrandLogo';
 
 const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
@@ -40,11 +41,11 @@ export function Layout({ activePage, children, costabotsLogoUrl, restaurantName,
         <div className="sidebar-header">
           <div className="sidebar-brand-stack">
             <div className="costabots-lockup">
-              <BrandLogo logoUrl={costabotsLogoUrl} fallbackLabel="C" alt="Costabots" variant="platform" />
+              <BrandLogo logoUrl={costabotsLogoUrl} fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" />
               <span>COSTABOTS MANAGER</span>
             </div>
             <div className="brand-lockup">
-              <BrandLogo logoUrl={restaurantLogoUrl} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+              <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={DEFAULT_RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
               <div>
                 <p className="eyebrow">Restaurante</p>
                 <strong>{restaurantName}</strong>

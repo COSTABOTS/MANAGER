@@ -1,5 +1,16 @@
-const CACHE_NAME = 'safari-manager-v2';
-const APP_SHELL = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE_NAME = 'safari-manager-v4';
+const APP_SHELL = [
+  '/',
+  '/manifest.json',
+  '/favicon.png',
+  '/apple-touch-icon.png',
+  '/logos/costabots-logo.png',
+  '/logos/safari-logo.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-192-maskable.png',
+  '/icons/icon-512-maskable.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
