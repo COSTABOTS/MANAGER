@@ -816,6 +816,11 @@ select:focus {
   gap: 8px;
 }
 
+.logo-url-controls {
+  display: grid;
+  gap: 8px;
+}
+
 .logo-url-row button {
   width: 46px;
   min-height: 44px;
