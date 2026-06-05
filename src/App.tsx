@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { Control } from './pages/Control';
 import { Feedbacks } from './pages/Feedbacks';
@@ -6,14 +7,13 @@ import { Reservations } from './pages/Reservations';
 import { Settings } from './pages/Settings';
 import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
-import { mockSettings } from './data/mockData';
 import { mockReservations, todayState } from './data/mockReservations';
+import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { sendWalkIn, updateReservationField } from './services/webhooks';
 import type { DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
-const SETTINGS_STORAGE_KEY = 'manager_settings';
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
@@ -22,29 +22,16 @@ export function App() {
     ...todayState,
     date: getLocalDateString(new Date()),
   });
-  const [settings, setSettings] = useState<ManagerSettings>(() => {
-    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!stored) {
-      return mockSettings;
-    }
-
-    try {
-      const parsed = JSON.parse(stored);
-      return {
-        ...mockSettings,
-        ...parsed,
-        costabotsLogoUrl: parsed.costabotsLogoUrl ?? mockSettings.costabotsLogoUrl,
-        restaurantLogoUrl: parsed.restaurantLogoUrl ?? parsed.logoUrl ?? mockSettings.restaurantLogoUrl,
-      };
-    } catch {
-      return mockSettings;
-    }
-  });
+  const [settings, setSettings] = useState<ManagerSettings>(() => loadSettingsFromStorage());
   const [lastSync, setLastSync] = useState('Datos mock cargados');
 
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+  function updateSettings(action: SetStateAction<ManagerSettings>) {
+    setSettings((current) => {
+      const nextSettings = typeof action === 'function' ? action(current) : action;
+      saveSettingsToStorage(nextSettings);
+      return nextSettings;
+    });
+  }
 
   const todaysReservations = useMemo(
     () =>
@@ -72,7 +59,7 @@ export function App() {
   );
 
   function handleBookingStatus() {
-    setSettings((current) => ({
+    updateSettings((current) => ({
       ...current,
       reservasActivas: !current.reservasActivas,
     }));
@@ -152,7 +139,7 @@ export function App() {
     }
 
     if (activePage === 'settings') {
-      return <Settings settings={settings} reservations={reservations} onSettingsChange={setSettings} />;
+      return <Settings settings={settings} reservations={reservations} onSettingsChange={updateSettings} />;
     }
 
     return (
