@@ -302,18 +302,41 @@ h2 {
   background: var(--blue-deep);
 }
 
-.today-kpi-grid {
+.today-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 128px;
+  margin-bottom: 18px;
+  padding: 24px 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: #fff;
+  background: #636b7a;
+  box-shadow: var(--shadow);
+}
+
+.today-sheet-header strong,
+.today-sheet-header span {
+  color: #fff;
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.today-main-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  margin-bottom: 18px;
+  margin: 18px 0;
 }
 
 .today-kpi-card {
   display: grid;
   align-content: center;
   gap: 8px;
-  min-height: 118px;
+  min-height: 156px;
   padding: 22px 26px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -334,13 +357,6 @@ h2 {
 .today-kpi-card strong {
   font-size: clamp(42px, 6vw, 64px);
   line-height: 1;
-}
-
-.today-action-grid {
-  display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.85fr);
-  gap: 18px;
-  margin: 18px 0;
 }
 
 .operations-grid {
@@ -365,6 +381,7 @@ h2 {
   grid-template-columns: 1.2fr 0.55fr auto;
   align-items: end;
   gap: 12px;
+  min-height: 156px;
   padding: 16px;
 }
 
@@ -382,6 +399,10 @@ h2 {
   font-size: 21px;
   text-align: left;
   box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
+}
+
+.today-main-grid .booking-toggle {
+  min-height: 156px;
 }
 
 .booking-toggle.is-open {
@@ -990,8 +1011,7 @@ button:disabled {
 
   .summary-grid,
   .operations-grid,
-  .today-kpi-grid,
-  .today-action-grid {
+  .today-main-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -1003,6 +1023,11 @@ button:disabled {
   .booking-toggle,
   .occupancy-card {
     grid-column: 1 / -1;
+  }
+
+  .today-main-grid .walkin-form,
+  .today-main-grid .booking-toggle {
+    grid-column: auto;
   }
 
   .toolbar-card,
@@ -1031,14 +1056,25 @@ button:disabled {
 
   .summary-grid,
   .operations-grid,
-  .today-kpi-grid,
-  .today-action-grid,
+  .today-main-grid,
   .walkin-form {
     grid-template-columns: 1fr;
   }
 
+  .today-sheet-header {
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: 0;
+    padding: 22px;
+  }
+
   .booking-toggle {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .today-main-grid .walkin-form,
+  .today-main-grid .booking-toggle {
+    grid-column: 1 / -1;
   }
 
   .toggle-track {

@@ -28,7 +28,6 @@ export function Today({
   reservations,
   tableOptions,
   totalPax,
-  arrivals,
   occupancyPercent,
   totalCapacity,
   onAddWalkIn,
@@ -104,13 +103,18 @@ export function Today({
           </div>
           <div>
             <p className="eyebrow">Safari Manager</p>
-            <h1>HOY · {formatDisplayDate(displayDate)}</h1>
+            <h1>SAFARI MANAGER</h1>
           </div>
         </div>
         <div className="sync-status">{syncLabel}</div>
       </section>
 
-      <section className="today-kpi-grid" aria-label="Resumen operativo de hoy">
+      <section className="today-sheet-header" aria-label="Fecha de hoy">
+        <strong>HOY</strong>
+        <span>{formatDisplayDate(displayDate)}</span>
+      </section>
+
+      <section className="today-main-grid" aria-label="Resumen operativo de hoy">
         <article className="today-kpi-card">
           <span>Pax totales</span>
           <strong>{displayTotalPax}</strong>
@@ -122,9 +126,6 @@ export function Today({
             <span style={{ width: `${displayOccupancyPercent}%` }} />
           </div>
         </article>
-      </section>
-
-      <section className="today-action-grid">
         <WalkInForm onAddWalkIn={onAddWalkIn} />
         <BookingStatusToggle bookingsOpen={displayBookingsOpen} onToggle={onBookingStatus} />
       </section>

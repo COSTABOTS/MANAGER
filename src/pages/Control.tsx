@@ -8,6 +8,7 @@ interface ControlProps {
 }
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+type ControlView = 'cards' | 'list';
 
 function addDays(date: string, days: number) {
   const baseDate = new Date(`${date}T12:00:00`);
@@ -22,6 +23,7 @@ function getDayName(date: string) {
 export function Control({ reservations, totalCapacity }: ControlProps) {
   const [rangeStart, setRangeStart] = useState('2026-06-04');
   const [rangeDays, setRangeDays] = useState(7);
+  const [view, setView] = useState<ControlView>('cards');
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set(['2026-06-05', '2026-12-31']));
 
   const cards = useMemo(
@@ -67,42 +69,92 @@ export function Control({ reservations, totalCapacity }: ControlProps) {
           Dias visibles
           <input min="7" max="31" type="number" value={rangeDays} onChange={(event) => setRangeDays(Math.max(7, Number(event.target.value)))} />
         </label>
-        <span className="reservation-count">Fully booked por fecha</span>
+        <div className="segmented-control" aria-label="Vista control">
+          <button className={view === 'cards' ? 'is-active' : ''} type="button" onClick={() => setView('cards')}>
+            Tarjetas
+          </button>
+          <button className={view === 'list' ? 'is-active' : ''} type="button" onClick={() => setView('list')}>
+            Lista
+          </button>
+        </div>
       </section>
 
-      <section className="control-grid">
-        {cards.map((card) => (
-          <article key={card.date} className={`control-card ${card.fullyBooked ? 'is-closed' : ''}`}>
-            <div className="control-card-header">
-              <div>
-                <p className="eyebrow">{card.dayName}</p>
-                <h2>{formatDisplayDate(card.date)}</h2>
+      {view === 'cards' ? (
+        <section className="control-grid">
+          {cards.map((card) => (
+            <article key={card.date} className={`control-card ${card.fullyBooked ? 'is-closed' : ''}`}>
+              <div className="control-card-header">
+                <div>
+                  <p className="eyebrow">{card.dayName}</p>
+                  <h2>{formatDisplayDate(card.date)}</h2>
+                </div>
+                <span className={`status-pill ${card.fullyBooked ? 'is-cancelada' : ''}`}>
+                  {card.fullyBooked ? 'FULLY BOOKED' : 'ABIERTO'}
+                </span>
               </div>
-              <span className={`status-pill ${card.fullyBooked ? 'is-cancelada' : ''}`}>
-                {card.fullyBooked ? 'FULLY BOOKED' : 'ABIERTO'}
-              </span>
-            </div>
-            <dl className="control-metrics">
-              <div>
-                <dt>PAX</dt>
-                <dd>{card.pax}</dd>
-              </div>
-              <div>
-                <dt>OCUPACION</dt>
-                <dd>{card.occupancy}%</dd>
-              </div>
-            </dl>
-            <button
-              className={`compact-toggle ${card.fullyBooked ? 'is-closed' : 'is-open'}`}
-              type="button"
-              onClick={() => updateDateBookingStatus(card.date, !card.fullyBooked)}
-            >
-              <span>FULLY BOOKED</span>
-              <strong>{card.fullyBooked ? 'ON' : 'OFF'}</strong>
-            </button>
-          </article>
-        ))}
-      </section>
+              <dl className="control-metrics">
+                <div>
+                  <dt>PAX</dt>
+                  <dd>{card.pax}</dd>
+                </div>
+                <div>
+                  <dt>OCUPACION</dt>
+                  <dd>{card.occupancy}%</dd>
+                </div>
+              </dl>
+              <button
+                className={`compact-toggle ${card.fullyBooked ? 'is-closed' : 'is-open'}`}
+                type="button"
+                onClick={() => updateDateBookingStatus(card.date, !card.fullyBooked)}
+              >
+                <span>FULLY BOOKED</span>
+                <strong>{card.fullyBooked ? 'ON' : 'OFF'}</strong>
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section className="table-section">
+          <div className="table-wrap">
+            <table className="reservations-table control-list-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Dia semana</th>
+                  <th>Pax</th>
+                  <th>Ocupacion</th>
+                  <th>Estado</th>
+                  <th>Fully booked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cards.map((card) => (
+                  <tr key={card.date}>
+                    <td data-label="Fecha">{formatDisplayDate(card.date)}</td>
+                    <td data-label="Dia semana">{card.dayName}</td>
+                    <td data-label="Pax">{card.pax}</td>
+                    <td data-label="Ocupacion">{card.occupancy}%</td>
+                    <td data-label="Estado">
+                      <span className={`status-pill ${card.fullyBooked ? 'is-cancelada' : ''}`}>
+                        {card.fullyBooked ? 'FULLY BOOKED' : 'ABIERTO'}
+                      </span>
+                    </td>
+                    <td data-label="Fully booked">
+                      <button
+                        className={`compact-toggle ${card.fullyBooked ? 'is-closed' : 'is-open'}`}
+                        type="button"
+                        onClick={() => updateDateBookingStatus(card.date, !card.fullyBooked)}
+                      >
+                        <span>{card.fullyBooked ? 'ON' : 'OFF'}</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
