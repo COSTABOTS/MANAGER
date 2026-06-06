@@ -8,7 +8,8 @@ export const todayState: DayState = {
 
 export const mockReservations: Reservation[] = [
   {
-    id: '178052389068',
+    id: 'RES-178052389068',
+    idReserva: 'RES-178052389068',
     name: 'Alberto',
     room: '654',
     date: '2026-06-04',
@@ -22,7 +23,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: '178053001556',
+    id: 'RES-178053001556',
+    idReserva: 'RES-178053001556',
     name: 'William',
     room: '123',
     date: '2026-06-04',
@@ -36,7 +38,8 @@ export const mockReservations: Reservation[] = [
     arrived: true,
   },
   {
-    id: '178053238906',
+    id: 'RES-178053238906',
+    idReserva: 'RES-178053238906',
     name: 'Sss',
     room: '',
     date: '2026-06-04',
@@ -50,7 +53,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: '178052259453',
+    id: 'RES-178052259453',
+    idReserva: 'RES-178052259453',
     name: 'Huil',
     room: '123',
     date: '2026-06-04',
@@ -64,7 +68,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: '178052121807',
+    id: 'RES-178052121807',
+    idReserva: 'RES-178052121807',
     name: 'Ana',
     room: '654',
     date: '2026-06-04',
@@ -78,7 +83,8 @@ export const mockReservations: Reservation[] = [
     arrived: true,
   },
   {
-    id: '178053210332',
+    id: 'RES-178053210332',
+    idReserva: 'RES-178053210332',
     name: 'Kj',
     room: '877',
     date: '2026-06-04',
@@ -92,7 +98,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: '178058090858',
+    id: 'RES-178058090858',
+    idReserva: 'RES-178058090858',
     name: 'Nico',
     room: '',
     date: '2026-06-04',
@@ -106,7 +113,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: '178053164058',
+    id: 'RES-178053164058',
+    idReserva: 'RES-178053164058',
     name: 'Yyy',
     room: '877',
     date: '2026-06-04',
@@ -120,7 +128,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: 'future-0605-1',
+    id: 'RES-future-0605-1',
+    idReserva: 'RES-future-0605-1',
     name: 'Gual',
     room: '1111',
     date: '2026-06-05',
@@ -134,7 +143,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: 'future-0606-1',
+    id: 'RES-future-0606-1',
+    idReserva: 'RES-future-0606-1',
     name: 'Tulio',
     room: '',
     date: '2026-06-06',
@@ -148,7 +158,8 @@ export const mockReservations: Reservation[] = [
     arrived: false,
   },
   {
-    id: 'future-0608-1',
+    id: 'RES-future-0608-1',
+    idReserva: 'RES-future-0608-1',
     name: '111',
     room: '877',
     date: '2026-06-08',

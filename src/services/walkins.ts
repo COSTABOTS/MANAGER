@@ -6,14 +6,17 @@ export interface WalkIn extends WalkInPayload {
 }
 
 export async function addWalkIn(payload: WalkInPayload): Promise<Reservation> {
+  const idReserva = `RES-${Date.now()}`;
+
   return {
-    id: `walkin-${Date.now()}`,
+    id: idReserva,
+    idReserva,
     name: payload.nameOrRoom,
     room: /^\d+$/.test(payload.nameOrRoom) ? payload.nameOrRoom : '',
     date: payload.date,
     time: payload.time,
     pax: payload.pax,
-    specialRequest: 'Walk-in',
+    specialRequest: '',
     status: 'CONFIRMADA',
     source: 'WALKIN',
     table: '',

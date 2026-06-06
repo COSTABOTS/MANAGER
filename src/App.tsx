@@ -11,6 +11,7 @@ import { mockReservations, todayState } from './mock';
 import { loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { sendWebhook } from './services/webhookClient';
+import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
 
@@ -63,6 +64,23 @@ export function App() {
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
 
+  function createReservationId() {
+    return `RES-${Date.now()}`;
+  }
+
+  function getReservationSyncId(reservation: Reservation) {
+    return reservation.idReserva || reservation.id;
+  }
+
+  function canSyncReservationAction(reservation: Reservation, actionLabel: string) {
+    if (!getReservationSyncId(reservation) || !reservation.date || !reservation.time) {
+      setLastSync(`Faltan datos para sincronizar ${actionLabel}`);
+      return false;
+    }
+
+    return true;
+  }
+
   async function syncWebhook(webhookUrl: string, payload: unknown, missingMessage = 'Webhook no configurado') {
     const result = await sendWebhook(webhookUrl, payload);
     if (result.success) {
@@ -72,6 +90,31 @@ export function App() {
 
     setLastSync(result.skipped ? missingMessage : 'Cambio guardado en la app, pero no sincronizado');
     return result;
+  }
+
+  async function syncValidatedWebhook(
+    webhookUrl: string,
+    payload: Record<string, unknown>,
+    requiredFields: string[],
+    actionLabel: string,
+    missingMessage = 'Webhook no configurado',
+    requiresNameOrRoom = false,
+  ) {
+    const requiredValidation = requireWebhookFields(payload, requiredFields, actionLabel);
+    if (!requiredValidation.valid) {
+      setLastSync(requiredValidation.message);
+      return { success: false, skipped: true, error: requiredValidation.message };
+    }
+
+    if (requiresNameOrRoom) {
+      const nameValidation = requireNameOrRoom(payload, actionLabel);
+      if (!nameValidation.valid) {
+        setLastSync(nameValidation.message);
+        return { success: false, skipped: true, error: nameValidation.message };
+      }
+    }
+
+    return syncWebhook(webhookUrl, payload, missingMessage);
   }
 
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
@@ -106,11 +149,11 @@ export function App() {
       return nextStatus;
     });
     setLastSync('Estado de reservas actualizado');
-    void syncWebhook(settings.webhookFullyBooked, {
+    void syncValidatedWebhook(settings.webhookFullyBooked, {
       accion: 'actualizar_fully_booked',
       fecha: date,
       fullyBooked: status === 'fully_booked',
-    });
+    }, ['fecha'], 'fully booked');
     // Future Make integration: updateDateBookingStatus(date, status)
   }
 
@@ -120,6 +163,7 @@ export function App() {
   }
 
   async function handleAddWalkIn(nameOrRoom: string, pax: number) {
+    const idReserva = createReservationId();
     const payload: WalkInPayload = {
       nameOrRoom,
       pax,
@@ -130,13 +174,14 @@ export function App() {
     };
 
     const optimisticReservation: Reservation = {
-      id: `walkin-${Date.now()}`,
+      id: idReserva,
+      idReserva,
       name: nameOrRoom,
       room: /^\d+$/.test(nameOrRoom) ? nameOrRoom : '',
       date: payload.date,
       time: payload.time,
       pax,
-      specialRequest: 'Walk-in',
+      specialRequest: '',
       status: 'CONFIRMADA',
       source: 'WALKIN',
       table: '',
@@ -145,8 +190,9 @@ export function App() {
 
     setReservations((current) => [...current, optimisticReservation]);
     setLastSync('Mesa añadida correctamente');
-    void syncWebhook(settings.webhookWalkin, {
+    void syncValidatedWebhook(settings.webhookWalkin, {
       accion: 'crear_walkin',
+      id_reserva: optimisticReservation.idReserva,
       nombre: optimisticReservation.name,
       habitacion: optimisticReservation.room,
       fecha: optimisticReservation.date,
@@ -155,13 +201,15 @@ export function App() {
       origen: 'WALK-IN',
       estado: 'CONFIRMADA',
       llego: true,
-    });
+    }, ['id_reserva', 'fecha', 'hora', 'pax'], 'walk-in', 'Webhook no configurado', true);
   }
 
-  function addManualReservation(reservation: Omit<Reservation, 'id' | 'status' | 'source' | 'table' | 'arrived'>) {
+  function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+    const idReserva = createReservationId();
     const manualReservation: Reservation = {
       ...reservation,
-      id: `manual-${Date.now()}`,
+      id: idReserva,
+      idReserva,
       status: 'CONFIRMADA',
       source: 'MANUAL',
       table: '',
@@ -170,10 +218,11 @@ export function App() {
 
     setReservations((current) => [...current, manualReservation]);
     setLastSync('Reserva añadida correctamente');
-    void syncWebhook(
+    void syncValidatedWebhook(
       settings.webhookReservas,
       {
         accion: 'crear_reserva_manual',
+        id_reserva: manualReservation.idReserva,
         nombre: manualReservation.name,
         habitacion: manualReservation.room,
         telefono: manualReservation.phone,
@@ -184,7 +233,10 @@ export function App() {
         origen: 'MANUAL',
         estado: 'CONFIRMADA',
       },
+      ['id_reserva', 'fecha', 'hora', 'pax'],
+      'reserva manual',
       'Webhook de reservas no configurado',
+      true,
     );
     // Future Make integration: addManualReservation(reservation)
   }
@@ -205,28 +257,32 @@ export function App() {
     );
     setLastSync('Guardando cambio...');
 
+    if (!canSyncReservationAction(nextReservation, field === 'arrived' ? 'la llegada' : 'la mesa')) {
+      return;
+    }
+
     if (field === 'arrived') {
-      await syncWebhook(settings.webhookLlegada, {
+      await syncValidatedWebhook(settings.webhookLlegada, {
         accion: 'actualizar_llegada',
-        id: nextReservation.id,
+        id_reserva: getReservationSyncId(nextReservation),
         fecha: nextReservation.date,
         hora: nextReservation.time,
         nombre: nextReservation.name,
         habitacion: nextReservation.room,
         llego: nextReservation.arrived,
-      });
+      }, ['id_reserva', 'fecha', 'hora'], 'la llegada');
       return;
     }
 
-    await syncWebhook(settings.webhookMesa, {
+    await syncValidatedWebhook(settings.webhookMesa, {
       accion: 'actualizar_mesa',
-      id: nextReservation.id,
+      id_reserva: getReservationSyncId(nextReservation),
       fecha: nextReservation.date,
       hora: nextReservation.time,
       nombre: nextReservation.name,
       habitacion: nextReservation.room,
       mesa: nextReservation.table,
-    });
+    }, ['id_reserva', 'fecha', 'hora'], 'la mesa');
   }
 
   function renderPage() {

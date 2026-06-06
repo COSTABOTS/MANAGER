@@ -24,7 +24,7 @@ interface TodayProps {
   occupancyPercent: number;
   totalCapacity: number;
   onAddWalkIn: (nameOrRoom: string, pax: number) => Promise<void>;
-  onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'status' | 'source' | 'table' | 'arrived'>) => void;
+  onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
 }
@@ -132,6 +132,8 @@ export function Today({
     () =>
       (todayData?.reservations ?? []).map((reservation) => ({
         ...reservation,
+        id: reservation.idReserva || reservation.id,
+        idReserva: reservation.idReserva || reservation.id,
         date: todayData?.date ?? dayStatus.date,
         source: 'WEB',
         status: (reservation.status === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA') as BookingStatus,

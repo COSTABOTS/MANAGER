@@ -5,6 +5,7 @@ export type DateBookingStatus = Record<string, DateBookingStatusValue>;
 
 export interface Reservation {
   id: string;
+  idReserva: string;
   name: string;
   room: string;
   date: string;

@@ -5,25 +5,28 @@ export async function getReservations(): Promise<Reservation[]> {
   return mockReservations;
 }
 
-export async function addManualReservation(reservation: Omit<Reservation, 'id'>): Promise<Reservation> {
+export async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva'>): Promise<Reservation> {
+  const idReserva = `RES-${Date.now()}`;
+
   return {
     ...reservation,
-    id: `manual-${Date.now()}`,
+    id: idReserva,
+    idReserva,
   };
 }
 
-export async function updateArrival(reservationId: string, arrived: boolean) {
+export async function updateArrival(idReserva: string, arrived: boolean) {
   return {
     action: 'update_arrival',
-    reservationId,
+    idReserva,
     arrived,
   };
 }
 
-export async function updateTable(reservationId: string, table: string) {
+export async function updateTable(idReserva: string, table: string) {
   return {
     action: 'update_table',
-    reservationId,
+    idReserva,
     table,
   };
 }

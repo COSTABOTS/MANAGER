@@ -1,17 +1,7 @@
 import { mockReservations, mockSettings, mockShows } from '../mock';
-
-export interface Reservation {
-  id: string;
-  name: string;
-  room: string;
-  phone?: string;
-  time: string;
-  pax: number;
-  specialRequest: string;
-  table: string;
-  arrived: boolean;
-  status: string;
-}
+import { normalizeReservationFromSheet } from './reservationMapper';
+import type { SheetReservationRow } from './reservationMapper';
+import type { Reservation } from '../types';
 
 export interface TodayData {
   date: string;
@@ -45,6 +35,10 @@ export function hasTodayDataEndpoint() {
 
 export async function getReservations() {
   return mockReservations;
+}
+
+export function normalizeReservationsFromSheets(rows: SheetReservationRow[]): Reservation[] {
+  return rows.map(normalizeReservationFromSheet);
 }
 
 export async function getControlDates() {
