@@ -10,7 +10,7 @@ import { Today } from './pages/Today';
 import { mockReservations, todayState } from './mock';
 import { loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
-import { sendWalkIn, updateReservationField } from './services/webhooks';
+import { sendWebhook } from './services/webhookClient';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
 
@@ -63,6 +63,39 @@ export function App() {
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
 
+  async function syncWebhook(webhookUrl: string, payload: unknown, missingMessage = 'Webhook no configurado') {
+    const result = await sendWebhook(webhookUrl, payload);
+    if (result.success) {
+      setLastSync('Sincronizado correctamente');
+      return result;
+    }
+
+    setLastSync(result.skipped ? missingMessage : 'Cambio guardado en la app, pero no sincronizado');
+    return result;
+  }
+
+  async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
+    updateSettings(nextSettings);
+    setLastSync('Configuración guardada correctamente');
+
+    if (!nextSettings.webhookSettings.trim()) {
+      return 'skipped';
+    }
+
+    const result = await sendWebhook(nextSettings.webhookSettings, {
+      accion: 'actualizar_settings',
+      settings: nextSettings,
+    });
+
+    if (result.success) {
+      setLastSync('Sincronizado correctamente');
+      return 'success';
+    }
+
+    setLastSync('Configuración guardada localmente, pero no sincronizada');
+    return 'error';
+  }
+
   function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
     setDateBookingStatus((current) => {
       const nextStatus = {
@@ -73,6 +106,11 @@ export function App() {
       return nextStatus;
     });
     setLastSync('Estado de reservas actualizado');
+    void syncWebhook(settings.webhookFullyBooked, {
+      accion: 'actualizar_fully_booked',
+      fecha: date,
+      fullyBooked: status === 'fully_booked',
+    });
     // Future Make integration: updateDateBookingStatus(date, status)
   }
 
@@ -106,8 +144,18 @@ export function App() {
     };
 
     setReservations((current) => [...current, optimisticReservation]);
-    await sendWalkIn(payload);
     setLastSync('Mesa añadida correctamente');
+    void syncWebhook(settings.webhookWalkin, {
+      accion: 'crear_walkin',
+      nombre: optimisticReservation.name,
+      habitacion: optimisticReservation.room,
+      fecha: optimisticReservation.date,
+      hora: optimisticReservation.time,
+      pax: optimisticReservation.pax,
+      origen: 'WALK-IN',
+      estado: 'CONFIRMADA',
+      llego: true,
+    });
   }
 
   function addManualReservation(reservation: Omit<Reservation, 'id' | 'status' | 'source' | 'table' | 'arrived'>) {
@@ -122,16 +170,63 @@ export function App() {
 
     setReservations((current) => [...current, manualReservation]);
     setLastSync('Reserva añadida correctamente');
+    void syncWebhook(
+      settings.webhookReservas,
+      {
+        accion: 'crear_reserva_manual',
+        nombre: manualReservation.name,
+        habitacion: manualReservation.room,
+        telefono: manualReservation.phone,
+        fecha: manualReservation.date,
+        hora: manualReservation.time,
+        pax: manualReservation.pax,
+        peticiones: manualReservation.specialRequest,
+        origen: 'MANUAL',
+        estado: 'CONFIRMADA',
+      },
+      'Webhook de reservas no configurado',
+    );
     // Future Make integration: addManualReservation(reservation)
   }
 
   async function handleUpdateReservation(id: string, field: 'table' | 'arrived', value: string | boolean) {
+    const currentReservation = reservations.find((reservation) => reservation.id === id);
+    if (!currentReservation) {
+      return;
+    }
+
+    const nextReservation = {
+      ...currentReservation,
+      [field]: value,
+    };
+
     setReservations((current) =>
       current.map((reservation) => (reservation.id === id ? { ...reservation, [field]: value } : reservation)),
     );
     setLastSync('Guardando cambio...');
-    await updateReservationField(id, field, value);
-    setLastSync('Cambio enviado a Make');
+
+    if (field === 'arrived') {
+      await syncWebhook(settings.webhookLlegada, {
+        accion: 'actualizar_llegada',
+        id: nextReservation.id,
+        fecha: nextReservation.date,
+        hora: nextReservation.time,
+        nombre: nextReservation.name,
+        habitacion: nextReservation.room,
+        llego: nextReservation.arrived,
+      });
+      return;
+    }
+
+    await syncWebhook(settings.webhookMesa, {
+      accion: 'actualizar_mesa',
+      id: nextReservation.id,
+      fecha: nextReservation.date,
+      hora: nextReservation.time,
+      nombre: nextReservation.name,
+      habitacion: nextReservation.room,
+      mesa: nextReservation.table,
+    });
   }
 
   function renderPage() {
@@ -155,11 +250,11 @@ export function App() {
     }
 
     if (activePage === 'shows') {
-      return <Shows />;
+      return <Shows webhookShows={settings.webhookShows} />;
     }
 
     if (activePage === 'settings') {
-      return <Settings settings={settings} reservations={reservations} onSettingsChange={updateSettings} />;
+      return <Settings settings={settings} reservations={reservations} onSettingsSave={handleSettingsSave} />;
     }
 
     return (

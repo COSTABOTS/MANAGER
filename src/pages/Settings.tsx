@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { mockSettings } from '../mock';
 import type { ManagerSettings, Reservation, RestaurantTable, RestaurantTableType, Weekday } from '../types';
 
 interface SettingsProps {
   settings: ManagerSettings;
   reservations: Reservation[];
-  onSettingsChange: Dispatch<SetStateAction<ManagerSettings>>;
+  onSettingsSave: (settings: ManagerSettings) => Promise<'success' | 'error' | 'skipped'>;
 }
 
 type ReservationInterval = 30 | 60;
@@ -16,8 +16,9 @@ const DEFAULT_SLOT_CAPACITY = 40;
 const TABLE_TYPES: Array<{ value: RestaurantTableType; label: string }> = [
   { value: 'interior', label: 'Interior' },
   { value: 'terraza', label: 'Terraza' },
-  { value: 'vip', label: 'VIP' },
   { value: 'barra', label: 'Barra' },
+  { value: 'vip', label: 'VIP' },
+  { value: 'privado', label: 'Privado' },
   { value: 'otro', label: 'Otro' },
 ];
 const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
@@ -29,6 +30,11 @@ const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
   { key: 'saturday', label: 'Sabado' },
   { key: 'sunday', label: 'Domingo' },
 ];
+
+const EMPTY_TABLE_FORM = {
+  name: '',
+  type: 'interior' as RestaurantTableType,
+};
 
 function timeToMinutes(time: string) {
   const [hours, minutes] = time.split(':').map(Number);
@@ -71,25 +77,30 @@ function rebuildSlotCapacity(
   }, {});
 }
 
-export function Settings({ settings, reservations, onSettingsChange }: SettingsProps) {
-  const [costabotsLogoDraft, setCostabotsLogoDraft] = useState(settings.costabotsLogoUrl);
-  const [restaurantLogoDraft, setRestaurantLogoDraft] = useState(settings.restaurantLogoUrl);
+export function Settings({ settings, reservations, onSettingsSave }: SettingsProps) {
+  const [draftSettings, setDraftSettings] = useState(settings);
+  const [tableForm, setTableForm] = useState(EMPTY_TABLE_FORM);
+  const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
 
   useEffect(() => {
-    setCostabotsLogoDraft(settings.costabotsLogoUrl);
-  }, [settings.costabotsLogoUrl]);
+    setDraftSettings(settings);
+    setSaveState('idle');
+  }, [settings]);
+
+  const hasUnsavedChanges = useMemo(() => JSON.stringify(draftSettings) !== JSON.stringify(settings), [draftSettings, settings]);
 
   useEffect(() => {
-    setRestaurantLogoDraft(settings.restaurantLogoUrl);
-  }, [settings.restaurantLogoUrl]);
+    if (hasUnsavedChanges && saveState !== 'saving') {
+      setSaveState('dirty');
+    }
+  }, [hasUnsavedChanges, saveState]);
 
-  function updateSetting<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
-    onSettingsChange((current) => ({ ...current, [key]: value }));
-    // Future Make integration: saveSettings(settings)
+  function updateDraft<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
+    setDraftSettings((current) => ({ ...current, [key]: value }));
   }
 
   function updateTotalCapacity(totalCapacity: number) {
-    onSettingsChange((current) => ({
+    setDraftSettings((current) => ({
       ...current,
       totalCapacity,
       slotCapacity: rebuildSlotCapacity(
@@ -103,7 +114,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
   }
 
   function updateSchedule(next: Partial<{ openingTime: string; closingTime: string; bookingInterval: ReservationInterval }>) {
-    onSettingsChange((current) => {
+    setDraftSettings((current) => {
       const openingTime = next.openingTime ?? current.openingTime;
       const closingTime = next.closingTime ?? current.closingTime;
       const bookingInterval = next.bookingInterval ?? current.bookingInterval;
@@ -125,7 +136,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
   }
 
   function updateSlotCapacity(slot: string, value: number) {
-    onSettingsChange((current) => ({
+    setDraftSettings((current) => ({
       ...current,
       slotCapacity: {
         ...current.slotCapacity,
@@ -135,7 +146,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
   }
 
   function updateOpeningDay(day: Weekday, value: boolean) {
-    onSettingsChange((current) => ({
+    setDraftSettings((current) => ({
       ...current,
       openingDays: {
         ...current.openingDays,
@@ -145,39 +156,55 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
   }
 
   function addTable() {
-    onSettingsChange((current) => {
-      const nextNumber = current.tables.length + 1;
-      return {
-        ...current,
-        tables: [
-          ...current.tables,
-          {
-            id: `table-${Date.now()}`,
-            name: `Mesa ${nextNumber}`,
-            type: 'interior',
-            active: true,
-          },
-        ],
-      };
-    });
+    const name = tableForm.name.trim();
+    if (!name) {
+      return;
+    }
+
+    setDraftSettings((current) => ({
+      ...current,
+      tables: [
+        ...current.tables,
+        {
+          id: `table-${Date.now()}`,
+          name,
+          type: tableForm.type,
+          active: true,
+        },
+      ],
+    }));
+    setTableForm(EMPTY_TABLE_FORM);
   }
 
-  function updateTable(tableId: string, patch: Partial<RestaurantTable>) {
-    onSettingsChange((current) => ({
+  function toggleTable(tableId: string) {
+    setDraftSettings((current) => ({
       ...current,
-      tables: current.tables.map((table) => (table.id === tableId ? { ...table, ...patch } : table)),
+      tables: current.tables.map((table) => (table.id === tableId ? { ...table, active: !table.active } : table)),
     }));
   }
 
   function deleteTable(tableId: string) {
-    onSettingsChange((current) => ({
+    setDraftSettings((current) => ({
       ...current,
       tables: current.tables.filter((table) => table.id !== tableId),
     }));
   }
 
+  function restoreDefaultTables() {
+    setDraftSettings((current) => ({
+      ...current,
+      tables: mockSettings.tables,
+    }));
+  }
+
   function hasReservationsForTable(tableName: string) {
     return reservations.some((reservation) => reservation.table === tableName);
+  }
+
+  async function handleSaveSettings() {
+    setSaveState('saving');
+    const result = await onSettingsSave(draftSettings);
+    setSaveState(result === 'error' ? 'error' : 'saved');
   }
 
   return (
@@ -206,7 +233,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
           <div className="settings-grid inner">
             <label>
               Capacidad total
-              <input type="number" value={settings.totalCapacity} onChange={(event) => updateTotalCapacity(Number(event.target.value))} />
+              <input type="number" value={draftSettings.totalCapacity} onChange={(event) => updateTotalCapacity(Number(event.target.value))} />
             </label>
           </div>
 
@@ -215,16 +242,16 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
             <div className="settings-grid inner">
               <label>
                 Hora apertura
-                <input type="time" value={settings.openingTime} onChange={(event) => updateSchedule({ openingTime: event.target.value })} />
+                <input type="time" value={draftSettings.openingTime} onChange={(event) => updateSchedule({ openingTime: event.target.value })} />
               </label>
               <label>
                 Hora cierre
-                <input type="time" value={settings.closingTime} onChange={(event) => updateSchedule({ closingTime: event.target.value })} />
+                <input type="time" value={draftSettings.closingTime} onChange={(event) => updateSchedule({ closingTime: event.target.value })} />
               </label>
               <label>
                 Intervalo de reservas
                 <select
-                  value={settings.bookingInterval}
+                  value={draftSettings.bookingInterval}
                   onChange={(event) => updateSchedule({ bookingInterval: Number(event.target.value) as ReservationInterval })}
                 >
                   <option value={30}>30 minutos</option>
@@ -241,7 +268,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
                 <label key={day.key} className="day-check">
                   <input
                     type="checkbox"
-                    checked={settings.openingDays[day.key]}
+                    checked={draftSettings.openingDays[day.key]}
                     onChange={(event) => updateOpeningDay(day.key, event.target.checked)}
                   />
                   <span>{day.label}</span>
@@ -253,7 +280,7 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
           <div className="slot-capacity-section">
             <p className="eyebrow">Capacidad por tramo horario</p>
             <div className="slot-capacity-grid">
-              {Object.entries(settings.slotCapacity).map(([slot, value]) => (
+              {Object.entries(draftSettings.slotCapacity).map(([slot, value]) => (
                 <label key={slot} className="slot-input">
                   <span>{slot}</span>
                   <input min="0" type="number" value={value} onChange={(event) => updateSlotCapacity(slot, Number(event.target.value))} />
@@ -270,10 +297,10 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
               <h2>Reservas</h2>
             </div>
           </div>
-          <SwitchRow label="Reservas activas" checked={settings.reservasActivas} onChange={(value) => updateSetting('reservasActivas', value)} />
-          <SwitchRow label="WhatsApp pre-cena" checked={settings.whatsappPreCena} onChange={(value) => updateSetting('whatsappPreCena', value)} />
-          <SwitchRow label="Filtro reseñas" checked={settings.filtroResenas} onChange={(value) => updateSetting('filtroResenas', value)} />
-          <SwitchRow label="Mensaje post-cena" checked={settings.mensajePostCena} onChange={(value) => updateSetting('mensajePostCena', value)} />
+          <SwitchRow label="Reservas activas" checked={draftSettings.reservasActivas} onChange={(value) => updateDraft('reservasActivas', value)} />
+          <SwitchRow label="WhatsApp pre-cena" checked={draftSettings.whatsappPreCena} onChange={(value) => updateDraft('whatsappPreCena', value)} />
+          <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
+          <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
         </article>
 
         {userRole === 'admin' && (
@@ -288,54 +315,58 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
             <div className="settings-grid inner">
               <label>
                 Nombre restaurante
-                <input value={settings.restaurantName} onChange={(event) => updateSetting('restaurantName', event.target.value)} />
+                <input value={draftSettings.restaurantName} onChange={(event) => updateDraft('restaurantName', event.target.value)} />
               </label>
               <label>
-                Logo Costabots URL
-                <span className="logo-url-row">
-                  <input value={costabotsLogoDraft} onChange={(event) => setCostabotsLogoDraft(event.target.value)} placeholder="https://..." />
-                  <button type="button" onClick={() => updateSetting('costabotsLogoUrl', costabotsLogoDraft.trim())} aria-label="Guardar logo Costabots">
-                    +
-                  </button>
-                </span>
+                Logo Costabots URL <span className="field-note">Futuro</span>
+                <input value={draftSettings.costabotsLogoUrl} onChange={(event) => updateDraft('costabotsLogoUrl', event.target.value)} placeholder="https://..." />
               </label>
               <label>
                 Logo restaurante URL <span className="field-note">Proximamente</span>
-                <div className="logo-url-controls">
-                  <span className="logo-url-row">
-                    <input value={restaurantLogoDraft} onChange={(event) => setRestaurantLogoDraft(event.target.value)} placeholder="https://..." disabled />
-                    <button type="button" disabled aria-label="Guardar logo restaurante">
-                      +
-                    </button>
-                  </span>
-                </div>
+                <input value={draftSettings.restaurantLogoUrl} onChange={(event) => updateDraft('restaurantLogoUrl', event.target.value)} placeholder="https://..." disabled />
               </label>
               <label>
                 Color principal
-                <input value={settings.primaryColor} onChange={(event) => updateSetting('primaryColor', event.target.value)} type="color" />
+                <input value={draftSettings.primaryColor} onChange={(event) => updateDraft('primaryColor', event.target.value)} type="color" />
               </label>
               <label>
                 Google Sheet ID
-                <input value={settings.googleSheetId} onChange={(event) => updateSetting('googleSheetId', event.target.value)} />
+                <input value={draftSettings.googleSheetId} onChange={(event) => updateDraft('googleSheetId', event.target.value)} />
               </label>
               <label>
                 Webhook reservas
-                <input value={settings.reservationsWebhook} onChange={(event) => updateSetting('reservationsWebhook', event.target.value)} />
+                <input value={draftSettings.webhookReservas} onChange={(event) => updateDraft('webhookReservas', event.target.value)} />
               </label>
               <label>
                 Webhook walk-in
-                <input value={settings.walkInWebhook} onChange={(event) => updateSetting('walkInWebhook', event.target.value)} />
+                <input value={draftSettings.webhookWalkin} onChange={(event) => updateDraft('webhookWalkin', event.target.value)} />
               </label>
               <label>
-                Webhook feedbacks
-                <input value={settings.feedbacksWebhook} onChange={(event) => updateSetting('feedbacksWebhook', event.target.value)} />
+                Webhook llegada
+                <input value={draftSettings.webhookLlegada} onChange={(event) => updateDraft('webhookLlegada', event.target.value)} />
+              </label>
+              <label>
+                Webhook mesa
+                <input value={draftSettings.webhookMesa} onChange={(event) => updateDraft('webhookMesa', event.target.value)} />
+              </label>
+              <label>
+                Webhook fully booked
+                <input value={draftSettings.webhookFullyBooked} onChange={(event) => updateDraft('webhookFullyBooked', event.target.value)} />
               </label>
               <label>
                 Webhook shows
-                <input value={settings.showsWebhook} onChange={(event) => updateSetting('showsWebhook', event.target.value)} />
+                <input value={draftSettings.webhookShows} onChange={(event) => updateDraft('webhookShows', event.target.value)} />
+              </label>
+              <label>
+                Webhook feedbacks
+                <input value={draftSettings.webhookFeedbacks} onChange={(event) => updateDraft('webhookFeedbacks', event.target.value)} />
+              </label>
+              <label>
+                Webhook settings
+                <input value={draftSettings.webhookSettings} onChange={(event) => updateDraft('webhookSettings', event.target.value)} />
               </label>
             </div>
-            <SwitchRow label="Licencia activa" checked={settings.licenseActive} onChange={(value) => updateSetting('licenseActive', value)} />
+            <SwitchRow label="Licencia activa" checked={draftSettings.licenseActive} onChange={(value) => updateDraft('licenseActive', value)} />
 
             <div className="settings-subsection">
               <div className="section-title compact">
@@ -343,35 +374,41 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
                   <p className="eyebrow">Costabots Admin</p>
                   <h2>Mesas / Zonas</h2>
                 </div>
+                <button className="secondary-button" type="button" onClick={restoreDefaultTables}>
+                  Restaurar mesas por defecto
+                </button>
+              </div>
+
+              <div className="table-manager-form">
+                <label>
+                  Nombre mesa
+                  <input value={tableForm.name} onChange={(event) => setTableForm((current) => ({ ...current, name: event.target.value }))} placeholder="Mesa 11" />
+                </label>
+                <label>
+                  Tipo
+                  <select value={tableForm.type} onChange={(event) => setTableForm((current) => ({ ...current, type: event.target.value as RestaurantTableType }))}>
+                    {TABLE_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button type="button" onClick={addTable}>
                   Añadir mesa
                 </button>
               </div>
 
-              <div className="admin-table-list">
-                {settings.tables.map((table) => {
+              <div className="table-manager-list">
+                {draftSettings.tables.map((table) => {
                   const hasReservations = hasReservationsForTable(table.name);
 
                   return (
-                    <div className="admin-table-row" key={table.id}>
-                      <span className="table-id">{table.id}</span>
-                      <label>
-                        Nombre
-                        <input value={table.name} onChange={(event) => updateTable(table.id, { name: event.target.value })} />
-                      </label>
-                      <label>
-                        Tipo
-                        <select value={table.type} onChange={(event) => updateTable(table.id, { type: event.target.value as RestaurantTableType })}>
-                          {TABLE_TYPES.map((type) => (
-                            <option key={type.value} value={type.value}>
-                              {type.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => updateTable(table.id, { active: !table.active })}>
+                    <div className="table-manager-item" key={table.id}>
+                      <strong>{table.name}</strong>
+                      <span>{TABLE_TYPES.find((type) => type.value === table.type)?.label ?? table.type}</span>
+                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => toggleTable(table.id)}>
                         <span>{table.active ? 'Activa' : 'Inactiva'}</span>
-                        <strong>{table.active ? 'ON' : 'OFF'}</strong>
                       </button>
                       <button
                         className="danger-button"
@@ -389,6 +426,15 @@ export function Settings({ settings, reservations, onSettingsChange }: SettingsP
             </div>
           </article>
         )}
+      </section>
+
+      <section className="settings-save-bar">
+        <span className={`save-indicator is-${saveState}`}>
+          {saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada'}
+        </span>
+        <button type="button" disabled={saveState === 'saving'} onClick={handleSaveSettings}>
+          Guardar configuración
+        </button>
       </section>
     </main>
   );

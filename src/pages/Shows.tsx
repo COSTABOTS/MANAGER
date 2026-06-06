@@ -1,8 +1,12 @@
 import { Plus, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { mockShows } from '../mock';
-import { toggleShowStatus } from '../services/api';
+import { sendWebhook } from '../services/webhookClient';
 import type { Show, Weekday } from '../types';
+
+interface ShowsProps {
+  webhookShows: string;
+}
 
 const WEEKDAY_LABELS: Record<Weekday, string> = {
   monday: 'Lunes',
@@ -27,13 +31,15 @@ const EMPTY_SHOW: Omit<Show, 'id'> = {
   bookable: true,
 };
 
-export function Shows() {
+export function Shows({ webhookShows }: ShowsProps) {
   const [shows, setShows] = useState<Show[]>(mockShows);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draftShow, setDraftShow] = useState<Omit<Show, 'id'>>(EMPTY_SHOW);
   const [statusMessage, setStatusMessage] = useState('Shows activos visibles para Safari-IA');
 
   function toggleShow(id: string) {
+    let updatedShow: Show | undefined;
+
     setShows((current) =>
       current.map((show) => {
         if (show.id !== id) {
@@ -41,17 +47,39 @@ export function Shows() {
         }
 
         const nextActive = !show.active;
-        void toggleShowStatus(show.id, nextActive);
-
-        return {
+        updatedShow = {
           ...show,
           active: nextActive,
           visibleInChatbot: nextActive,
           bookable: nextActive,
         };
+        return updatedShow;
       }),
     );
+
     setStatusMessage('Show actualizado. Este cambio se enviará al chatbot cuando esté conectado.');
+
+    if (!updatedShow) {
+      return;
+    }
+
+    void sendWebhook(webhookShows, {
+      accion: 'actualizar_show',
+      id: updatedShow.id,
+      nombre: updatedShow.name,
+      tipo: updatedShow.type,
+      fecha: updatedShow.date,
+      diasSemana: updatedShow.weekday ? [updatedShow.weekday] : [],
+      hora: updatedShow.time,
+      activo: updatedShow.active,
+    }).then((result) => {
+      if (result.success) {
+        setStatusMessage('Sincronizado correctamente');
+        return;
+      }
+
+      setStatusMessage(result.skipped ? 'Webhook no configurado' : 'Cambio guardado en la app, pero no sincronizado');
+    });
   }
 
   function updateDraft<T extends keyof Omit<Show, 'id'>>(key: T, value: Omit<Show, 'id'>[T]) {
@@ -79,7 +107,6 @@ export function Shows() {
     setShows((current) => [...current, nextShow]);
     setDraftShow(EMPTY_SHOW);
     setIsModalOpen(false);
-    // Future Make integration: createShow(nextShow)
   }
 
   return (

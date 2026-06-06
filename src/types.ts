@@ -54,7 +54,7 @@ export interface Show {
   bookable: boolean;
 }
 
-export type RestaurantTableType = 'interior' | 'terraza' | 'vip' | 'barra' | 'otro';
+export type RestaurantTableType = 'interior' | 'terraza' | 'vip' | 'barra' | 'privado' | 'otro';
 
 export interface RestaurantTable {
   id: string;
@@ -79,6 +79,14 @@ export interface ManagerSettings {
   restaurantLogoUrl: string;
   primaryColor: string;
   googleSheetId: string;
+  webhookReservas: string;
+  webhookWalkin: string;
+  webhookLlegada: string;
+  webhookMesa: string;
+  webhookFullyBooked: string;
+  webhookShows: string;
+  webhookFeedbacks: string;
+  webhookSettings: string;
   reservationsWebhook: string;
   walkInWebhook: string;
   feedbacksWebhook: string;

@@ -945,6 +945,41 @@ button:disabled {
   gap: 18px;
 }
 
+.settings-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
+}
+
+.save-indicator {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.save-indicator.is-dirty {
+  color: #9a6a00;
+}
+
+.save-indicator.is-saving {
+  color: var(--blue-deep);
+}
+
+.save-indicator.is-saved {
+  color: var(--green);
+}
+
+.save-indicator.is-error {
+  color: var(--red);
+}
+
 .settings-grid.inner {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -965,6 +1000,39 @@ button:disabled {
 .control-card.is-closed {
   border-color: rgba(169, 35, 35, 0.36);
   background: #fff8f8;
+}
+
+.table-manager-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.5fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.table-manager-list {
+  display: grid;
+  gap: 8px;
+}
+
+.table-manager-item {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 120px minmax(120px, 0.55fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f9fc;
+}
+
+.table-manager-item strong {
+  color: var(--ink);
+}
+
+.table-manager-item > span {
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .control-card-header {
@@ -1367,11 +1435,18 @@ button:disabled {
   .control-grid,
   .settings-grid,
   .settings-grid.inner,
+  .settings-save-bar,
+  .table-manager-form,
+  .table-manager-item,
   .slot-capacity-grid,
   .opening-days-grid,
   .admin-table-row,
   .feedback-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-save-bar {
+    display: grid;
   }
 
   .manual-form-grid {
