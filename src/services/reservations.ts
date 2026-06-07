@@ -1,12 +1,13 @@
 import { mockReservations } from '../mock';
 import type { DateBookingStatusValue, Reservation } from '../types';
+import { createReservationId } from '../utils/reservationId';
 
 export async function getReservations(): Promise<Reservation[]> {
   return mockReservations;
 }
 
 export async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva'>): Promise<Reservation> {
-  const idReserva = `RES-${Date.now()}`;
+  const idReserva = createReservationId();
 
   return {
     ...reservation,

@@ -14,6 +14,7 @@ import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString } from './utils/date';
+import { createReservationId } from './utils/reservationId';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
 
@@ -63,10 +64,6 @@ export function App() {
 
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
-
-  function createReservationId() {
-    return `RES-${Date.now()}`;
-  }
 
   function getReservationSyncId(reservation: Reservation) {
     return reservation.idReserva || reservation.id;

@@ -1,4 +1,5 @@
 import type { BookingSource, BookingStatus, Reservation } from '../types';
+import { createReservationId } from '../utils/reservationId';
 
 export interface SheetReservationRow {
   ID_RESERVA?: string;
@@ -70,7 +71,7 @@ function normalizeStatus(status: string | undefined): BookingStatus {
 }
 
 export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation {
-  const idReserva = row.ID_RESERVA ?? row.id_reserva ?? row.idReserva ?? row.id ?? `RES-${Date.now()}`;
+  const idReserva = row.ID_RESERVA ?? row.id_reserva ?? row.idReserva ?? row.id ?? createReservationId();
 
   return {
     id: idReserva,

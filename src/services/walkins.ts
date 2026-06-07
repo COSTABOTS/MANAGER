@@ -1,4 +1,5 @@
 import type { Reservation, WalkInPayload } from '../types';
+import { createReservationId } from '../utils/reservationId';
 
 export interface WalkIn extends WalkInPayload {
   arrived: true;
@@ -6,7 +7,7 @@ export interface WalkIn extends WalkInPayload {
 }
 
 export async function addWalkIn(payload: WalkInPayload): Promise<Reservation> {
-  const idReserva = `RES-${Date.now()}`;
+  const idReserva = createReservationId();
 
   return {
     id: idReserva,
