@@ -78,9 +78,7 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
   }
 
   const data = (await response.json()) as ReservationsWebhookResponse | SheetReservationRow[];
-  console.log('GET_RESERVATIONS raw response', data);
   const rows = getReservationRows(data);
-  console.log('GET_RESERVATIONS raw rows', rows);
 
   if (!Array.isArray(data) && data.success === false) {
     throw new Error('Respuesta de reservas no valida');
@@ -90,9 +88,7 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
     throw new Error('Respuesta de reservas no valida');
   }
 
-  const reservations = normalizeReservationsFromSheets(rows);
-  console.log('GET_RESERVATIONS parsed reservations', reservations);
-  return reservations;
+  return normalizeReservationsFromSheets(rows);
 }
 
 export async function getControlDates() {

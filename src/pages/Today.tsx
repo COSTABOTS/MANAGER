@@ -265,10 +265,7 @@ export function Today({
               className="secondary-button"
               type="button"
               disabled={isRefreshingReservations}
-              onClick={() => {
-                console.log('Actualizar datos clicked');
-                void onRefreshReservations();
-              }}
+              onClick={() => void onRefreshReservations()}
             >
               Actualizar datos
             </button>

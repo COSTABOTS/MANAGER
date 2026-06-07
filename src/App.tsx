@@ -14,7 +14,7 @@ import { loadSettingsFromStorage, saveSettingsToStorage } from './services/setti
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
-import { getCurrentTime, getLocalDateString } from './utils/date';
+import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
@@ -42,7 +42,7 @@ export function App() {
   const todaysReservations = useMemo(
     () =>
       reservations
-        .filter((reservation) => reservation.date === dayStatus.date && reservation.status === 'CONFIRMADA')
+        .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && reservation.status === 'CONFIRMADA')
         .sort((a, b) => a.time.localeCompare(b.time)),
     [dayStatus.date, reservations],
   );
@@ -100,8 +100,6 @@ export function App() {
   }
 
   async function loadReservations() {
-    console.log('Calling GET_RESERVATIONS webhook');
-
     if (!settings.webhookLeerReservas.trim()) {
       setLastSync('Webhook leer reservas no configurado');
       return;
