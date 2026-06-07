@@ -7,7 +7,7 @@ import { WalkInForm } from '../components/WalkInForm';
 import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
-import type { BookingStatus, DayState, Reservation } from '../types';
+import type { DayState, Reservation } from '../types';
 import { formatDisplayDate, getCurrentTime } from '../utils/date';
 
 interface TodayProps {
@@ -132,27 +132,12 @@ export function Today({
     };
   }, [isManualModalOpen]);
 
-  const apiReservations = useMemo<Reservation[]>(
-    () =>
-      (todayData?.reservations ?? []).map((reservation) => ({
-        ...reservation,
-        id: reservation.idReserva || reservation.id,
-        idReserva: reservation.idReserva || reservation.id,
-        date: todayData?.date ?? dayStatus.date,
-        source: 'WEB',
-        status: (reservation.status === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA') as BookingStatus,
-      })),
-    [dayStatus.date, todayData],
-  );
-
-  const displayReservations = todayData ? apiReservations : reservations;
+  const displayReservations = reservations;
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
-  const displayTotalPax = todayData?.totalPax ?? totalPax;
-  const displayCapacity = todayData?.capacity ?? totalCapacity;
-  const displayOccupancyPercent = todayData
-    ? Math.min(100, Math.round((displayTotalPax / displayCapacity) * 100))
-    : occupancyPercent;
+  const displayTotalPax = totalPax;
+  const displayCapacity = totalCapacity;
+  const displayOccupancyPercent = occupancyPercent;
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
 
   useEffect(() => {
@@ -276,7 +261,15 @@ export function Today({
             <h2>Reservas</h2>
           </div>
           <div className="reservation-actions">
-            <button className="secondary-button" type="button" disabled={isRefreshingReservations} onClick={onRefreshReservations}>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={isRefreshingReservations}
+              onClick={() => {
+                console.log('Actualizar datos clicked');
+                void onRefreshReservations();
+              }}
+            >
               Actualizar datos
             </button>
             <span className="reservation-count">

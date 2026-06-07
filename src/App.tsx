@@ -100,6 +100,8 @@ export function App() {
   }
 
   async function loadReservations() {
+    console.log('Calling GET_RESERVATIONS webhook');
+
     if (!settings.webhookLeerReservas.trim()) {
       setLastSync('Webhook leer reservas no configurado');
       return;
@@ -111,7 +113,8 @@ export function App() {
       const nextReservations = await loadReservationsFromWebhook(settings.webhookLeerReservas, settings.googleSheetId);
       setReservations(nextReservations);
       setLastSync('Datos actualizados correctamente');
-    } catch {
+    } catch (error) {
+      console.error('GET_RESERVATIONS error', error);
       setLastSync('No se pudieron cargar las reservas');
     } finally {
       setIsLoadingReservations(false);
