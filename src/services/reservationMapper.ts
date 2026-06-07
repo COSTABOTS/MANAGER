@@ -80,24 +80,24 @@ function normalizeDate(date: string) {
 }
 
 export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation | null {
-  const idReserva = toStringValue(pick(row, ['id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)']));
+  const idReserva = toStringValue(pick(row, ['id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)', '8']));
 
   if (!idReserva) {
     console.warn('Reserva sin ID_RESERVA', row);
     return null;
   }
 
-  const origin = toStringValue(pick(row, ['origin', 'origen', 'ORIGEN', 'ORIGEN (K)']));
-  const status = toStringValue(pick(row, ['status', 'estado', 'ESTADO', 'ESTADO (H)']));
+  const origin = toStringValue(pick(row, ['origin', 'origen', 'ORIGEN', 'ORIGEN (K)', '10']));
+  const status = toStringValue(pick(row, ['status', 'estado', 'ESTADO', 'ESTADO (H)', '7']));
 
   return {
     id: idReserva,
     idReserva,
-    name: toStringValue(pick(row, ['name', 'nombre', 'NOMBRE', 'NOMBRE (A)'])),
-    room: toStringValue(pick(row, ['room', 'habitacion', 'HABITACION', 'HABITACION (B)'])),
-    date: normalizeDate(toStringValue(pick(row, ['date', 'fecha', 'FECHA', 'FECHA (C)']))),
-    time: toStringValue(pick(row, ['time', 'hora', 'HORA', 'HORA (D)'])),
-    pax: toNumberValue(pick(row, ['pax', 'PAX', 'PAX (E)'])),
+    name: toStringValue(pick(row, ['name', 'nombre', 'NOMBRE', 'NOMBRE (A)', '0'])),
+    room: toStringValue(pick(row, ['room', 'habitacion', 'HABITACION', 'HABITACION (B)', '1'])),
+    date: normalizeDate(toStringValue(pick(row, ['date', 'fecha', 'FECHA', 'FECHA (C)', '2']))),
+    time: toStringValue(pick(row, ['time', 'hora', 'HORA', 'HORA (D)', '3'])),
+    pax: toNumberValue(pick(row, ['pax', 'PAX', 'PAX (E)', '4'])),
     specialRequest: toStringValue(
       pick(row, [
         'specialRequest',
@@ -106,14 +106,15 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
         'peticiones',
         'PETICION ESPECIAL',
         'PETICION ESPECIAL (F)',
+        '5',
       ]),
     ),
-    phone: toStringValue(pick(row, ['phone', 'telefono', 'TELEFONO', 'TELEFONO (G)'])),
+    phone: toStringValue(pick(row, ['phone', 'telefono', 'TELEFONO', 'TELEFONO (G)', '6'])),
     status: normalizeStatus(status),
     source: normalizeSource(origin),
-    language: toStringValue(pick(row, ['language', 'idioma', 'IDIOMA', 'IDIOMA (J)'])),
-    table: toStringValue(pick(row, ['table', 'mesa', 'MESA', 'MESA (L)'])),
-    arrived: toBooleanValue(pick(row, ['arrived', 'llego', 'LLEGO', 'LLEGO (M)'])),
+    language: toStringValue(pick(row, ['language', 'idioma', 'IDIOMA', 'IDIOMA (J)', '9'])),
+    table: toStringValue(pick(row, ['table', 'mesa', 'MESA', 'MESA (L)', '11'])),
+    arrived: toBooleanValue(pick(row, ['arrived', 'llego', 'LLEGO', 'LLEGO (M)', '12'])),
     rowNumber: toNumberValue(pick(row, ['rowNumber', 'Row number', '__ROW_NUMBER__'])),
   };
 }
