@@ -1,47 +1,44 @@
 import type { BookingSource, BookingStatus, Reservation } from '../types';
-import { createReservationId } from '../utils/reservationId';
 
-export interface SheetReservationRow {
-  ID_RESERVA?: string;
-  id_reserva?: string;
-  idReserva?: string;
-  id?: string;
-  NOMBRE?: string;
-  nombre?: string;
-  HABITACION?: string;
-  habitacion?: string;
-  ROOM?: string;
-  FECHA?: string;
-  fecha?: string;
-  HORA?: string;
-  hora?: string;
-  PAX?: string | number;
-  pax?: string | number;
-  PETICION_ESPECIAL?: string;
-  peticionEspecial?: string;
-  peticiones?: string;
-  TELEFONO?: string;
-  telefono?: string;
-  ESTADO?: string;
-  estado?: string;
-  ORIGEN?: string;
-  origen?: string;
-  MESA?: string;
-  mesa?: string;
-  LLEGO?: string | boolean;
-  llego?: string | boolean;
-}
+export type SheetReservationRow = Record<string, unknown>;
 
-function normalizeBoolean(value: string | boolean | undefined) {
-  if (typeof value === 'boolean') {
-    return value;
+export function unwrapValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.find((item) => item !== undefined && item !== null && item !== '') ?? '';
   }
 
-  return ['true', 'verdadero', 'si', 'sí', '1', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  return value;
 }
 
-function normalizeSource(source: string | undefined): BookingSource {
-  const normalized = String(source ?? 'BOT').trim().toUpperCase();
+export function pick(row: SheetReservationRow | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = unwrapValue(row?.[key]);
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+export function toStringValue(value: unknown) {
+  const unwrappedValue = unwrapValue(value);
+  return unwrappedValue === undefined || unwrappedValue === null ? '' : String(unwrappedValue).trim();
+}
+
+export function toNumberValue(value: unknown) {
+  const unwrappedValue = unwrapValue(value);
+  const parsedNumber = Number(String(unwrappedValue ?? '').replace(',', '.'));
+  return Number.isFinite(parsedNumber) ? parsedNumber : 0;
+}
+
+export function toBooleanValue(value: unknown) {
+  const unwrappedValue = String(unwrapValue(value) ?? '').trim().toLowerCase();
+  return ['true', '1', 'sí', 'si', 'yes', 'y'].includes(unwrappedValue);
+}
+
+function normalizeSource(source: string): BookingSource {
+  const normalized = source.trim().toUpperCase();
 
   if (normalized === 'WALK-IN' || normalized === 'WALKIN') {
     return 'WALKIN';
@@ -66,12 +63,12 @@ function normalizeSource(source: string | undefined): BookingSource {
   return 'BOT';
 }
 
-function normalizeStatus(status: string | undefined): BookingStatus {
-  return String(status ?? 'CONFIRMADA').trim().toUpperCase() === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA';
+function normalizeStatus(status: string): BookingStatus {
+  return status.trim().toUpperCase() === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA';
 }
 
-function normalizeDate(date: string | undefined) {
-  const value = String(date ?? '').trim();
+function normalizeDate(date: string) {
+  const value = date.trim();
   const spanishDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 
   if (spanishDate) {
@@ -82,22 +79,41 @@ function normalizeDate(date: string | undefined) {
   return value;
 }
 
-export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation {
-  const idReserva = row.ID_RESERVA ?? row.id_reserva ?? row.idReserva ?? row.id ?? createReservationId();
+export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation | null {
+  const idReserva = toStringValue(pick(row, ['id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)']));
+
+  if (!idReserva) {
+    console.warn('Reserva sin ID_RESERVA', row);
+    return null;
+  }
+
+  const origin = toStringValue(pick(row, ['origin', 'origen', 'ORIGEN', 'ORIGEN (K)']));
+  const status = toStringValue(pick(row, ['status', 'estado', 'ESTADO', 'ESTADO (H)']));
 
   return {
     id: idReserva,
     idReserva,
-    name: row.NOMBRE ?? row.nombre ?? '',
-    room: row.HABITACION ?? row.habitacion ?? row.ROOM ?? '',
-    date: normalizeDate(row.FECHA ?? row.fecha),
-    time: row.HORA ?? row.hora ?? '',
-    pax: Number(row.PAX ?? row.pax ?? 0),
-    specialRequest: row.PETICION_ESPECIAL ?? row.peticionEspecial ?? row.peticiones ?? '',
-    phone: row.TELEFONO ?? row.telefono ?? '',
-    status: normalizeStatus(row.ESTADO ?? row.estado),
-    source: normalizeSource(row.ORIGEN ?? row.origen),
-    table: row.MESA ?? row.mesa ?? '',
-    arrived: normalizeBoolean(row.LLEGO ?? row.llego),
+    name: toStringValue(pick(row, ['name', 'nombre', 'NOMBRE', 'NOMBRE (A)'])),
+    room: toStringValue(pick(row, ['room', 'habitacion', 'HABITACION', 'HABITACION (B)'])),
+    date: normalizeDate(toStringValue(pick(row, ['date', 'fecha', 'FECHA', 'FECHA (C)']))),
+    time: toStringValue(pick(row, ['time', 'hora', 'HORA', 'HORA (D)'])),
+    pax: toNumberValue(pick(row, ['pax', 'PAX', 'PAX (E)'])),
+    specialRequest: toStringValue(
+      pick(row, [
+        'specialRequest',
+        'special_request',
+        'peticionEspecial',
+        'peticiones',
+        'PETICION ESPECIAL',
+        'PETICION ESPECIAL (F)',
+      ]),
+    ),
+    phone: toStringValue(pick(row, ['phone', 'telefono', 'TELEFONO', 'TELEFONO (G)'])),
+    status: normalizeStatus(status),
+    source: normalizeSource(origin),
+    language: toStringValue(pick(row, ['language', 'idioma', 'IDIOMA', 'IDIOMA (J)'])),
+    table: toStringValue(pick(row, ['table', 'mesa', 'MESA', 'MESA (L)'])),
+    arrived: toBooleanValue(pick(row, ['arrived', 'llego', 'LLEGO', 'LLEGO (M)'])),
+    rowNumber: toNumberValue(pick(row, ['rowNumber', 'Row number', '__ROW_NUMBER__'])),
   };
 }

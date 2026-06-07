@@ -15,8 +15,10 @@ export interface Reservation {
   phone?: string;
   status: BookingStatus;
   source: BookingSource;
+  language?: string;
   table: string;
   arrived: boolean;
+  rowNumber?: number;
 }
 
 export interface DayState {

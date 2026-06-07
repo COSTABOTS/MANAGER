@@ -7,6 +7,7 @@ interface ReservationsWebhookResponse {
   success?: boolean;
   reservas?: SheetReservationRow[];
   reservations?: SheetReservationRow[];
+  data?: SheetReservationRow[];
 }
 
 export interface TodayData {
@@ -44,7 +45,18 @@ export async function getReservations() {
 }
 
 export function normalizeReservationsFromSheets(rows: SheetReservationRow[]): Reservation[] {
-  return rows.map(normalizeReservationFromSheet);
+  return rows.flatMap((row) => {
+    const reservation = normalizeReservationFromSheet(row);
+    return reservation ? [reservation] : [];
+  });
+}
+
+function getReservationRows(data: ReservationsWebhookResponse | SheetReservationRow[]) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.reservations ?? data.reservas ?? data.data ?? [];
 }
 
 export async function loadReservations(webhookUrl: string, sheetId?: string): Promise<Reservation[]> {
@@ -65,14 +77,22 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
     throw new Error(`No se pudieron cargar las reservas (${response.status})`);
   }
 
-  const data = (await response.json()) as ReservationsWebhookResponse;
-  const rows = data.reservas ?? data.reservations ?? [];
+  const data = (await response.json()) as ReservationsWebhookResponse | SheetReservationRow[];
+  console.log('GET_RESERVATIONS raw response', data);
+  const rows = getReservationRows(data);
+  console.log('GET_RESERVATIONS raw rows', rows);
 
-  if (data.success === false || !Array.isArray(rows)) {
+  if (!Array.isArray(data) && data.success === false) {
     throw new Error('Respuesta de reservas no valida');
   }
 
-  return normalizeReservationsFromSheets(rows);
+  if (!Array.isArray(rows)) {
+    throw new Error('Respuesta de reservas no valida');
+  }
+
+  const reservations = normalizeReservationsFromSheets(rows);
+  console.log('GET_RESERVATIONS parsed reservations', reservations);
+  return reservations;
 }
 
 export async function getControlDates() {
