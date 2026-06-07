@@ -40,7 +40,7 @@ export function App() {
     });
   }
 
-  const todaysReservations = useMemo(
+  const todayReservations = useMemo(
     () =>
       reservations
         .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation))
@@ -48,14 +48,16 @@ export function App() {
     [dayStatus.date, reservations],
   );
 
+  const reservationsList = useMemo(() => reservations, [reservations]);
+
   const totalPax = useMemo(
-    () => todaysReservations.reduce((total, reservation) => total + reservation.pax, 0),
-    [todaysReservations],
+    () => todayReservations.reduce((total, reservation) => total + reservation.pax, 0),
+    [todayReservations],
   );
 
   const arrivals = useMemo(
-    () => todaysReservations.filter((reservation) => reservation.arrived).length,
-    [todaysReservations],
+    () => todayReservations.filter((reservation) => reservation.arrived).length,
+    [todayReservations],
   );
 
   const occupancyPercent = Math.min(100, Math.round((totalPax / settings.totalCapacity) * 100));
@@ -326,7 +328,7 @@ export function App() {
 
   function renderPage() {
     if (activePage === 'reservations') {
-      return <Reservations reservations={reservations} />;
+      return <Reservations reservations={reservationsList} />;
     }
 
     if (activePage === 'control') {
@@ -364,7 +366,7 @@ export function App() {
         openingTime={settings.openingTime}
         closingTime={settings.closingTime}
         bookingInterval={settings.bookingInterval}
-        reservations={todaysReservations}
+        reservations={todayReservations}
         tableOptions={activeTableOptions}
         totalPax={totalPax}
         arrivals={arrivals}
