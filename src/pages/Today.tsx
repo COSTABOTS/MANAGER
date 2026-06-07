@@ -29,6 +29,7 @@ interface TodayProps {
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
+  lastUpdatedAt: string;
 }
 
 const EMPTY_MANUAL_RESERVATION = {
@@ -59,6 +60,7 @@ export function Today({
   onUpdateReservation,
   onRefreshReservations,
   isRefreshingReservations,
+  lastUpdatedAt,
 }: TodayProps) {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [isLoadingToday, setIsLoadingToday] = useState(false);
@@ -273,6 +275,7 @@ export function Today({
               <Plus size={16} />
               {displayReservations.length} reservas
             </span>
+            <span className="last-updated">Última actualización: {lastUpdatedAt || '--:--:--'}</span>
           </div>
         </div>
         {isLoadingToday ? (

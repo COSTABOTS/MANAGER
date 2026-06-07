@@ -9,6 +9,7 @@ interface ReservationsProps {
   reservations: Reservation[];
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
+  lastUpdatedAt: string;
 }
 
 function addDays(date: string, days: number) {
@@ -17,7 +18,7 @@ function addDays(date: string, days: number) {
   return baseDate.toISOString().slice(0, 10);
 }
 
-export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations }: ReservationsProps) {
+export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations, lastUpdatedAt }: ReservationsProps) {
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
@@ -93,6 +94,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
               Actualizar datos
             </button>
             <span className="reservation-count">{visibleReservations.length} registros</span>
+            <span className="last-updated">Última actualización: {lastUpdatedAt || '--:--:--'}</span>
           </div>
         </div>
         <div className="table-wrap">

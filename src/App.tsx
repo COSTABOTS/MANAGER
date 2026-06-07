@@ -31,6 +31,7 @@ export function App() {
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => loadDateBookingStatusFromStorage());
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState('');
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
     setSettings((current) => {
@@ -113,6 +114,7 @@ export function App() {
     try {
       const nextReservations = await loadReservationsFromWebhook(settings.webhookLeerReservas, settings.googleSheetId);
       setAllReservations(nextReservations);
+      setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
       setLastSync('Datos actualizados correctamente');
     } catch (error) {
       console.error('GET_RESERVATIONS error', error);
@@ -333,6 +335,7 @@ export function App() {
           reservations={reservationsList}
           onRefreshReservations={loadReservations}
           isRefreshingReservations={isLoadingReservations}
+          lastUpdatedAt={lastUpdatedAt}
         />
       );
     }
@@ -384,6 +387,7 @@ export function App() {
         onUpdateReservation={handleUpdateReservation}
         onRefreshReservations={loadReservations}
         isRefreshingReservations={isLoadingReservations}
+        lastUpdatedAt={lastUpdatedAt}
       />
     );
   }

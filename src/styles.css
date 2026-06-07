@@ -405,6 +405,16 @@ h2 {
   flex-wrap: wrap;
 }
 
+.last-updated {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .shows-status {
   width: 100%;
   margin: 0 0 18px;
@@ -1348,6 +1358,9 @@ button:disabled {
 }
 
 .reservations-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   height: 42px;
   padding: 9px 12px;
   color: #fff;
