@@ -70,6 +70,18 @@ function normalizeStatus(status: string | undefined): BookingStatus {
   return String(status ?? 'CONFIRMADA').trim().toUpperCase() === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA';
 }
 
+function normalizeDate(date: string | undefined) {
+  const value = String(date ?? '').trim();
+  const spanishDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (spanishDate) {
+    const [, day, month, year] = spanishDate;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return value;
+}
+
 export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation {
   const idReserva = row.ID_RESERVA ?? row.id_reserva ?? row.idReserva ?? row.id ?? createReservationId();
 
@@ -78,7 +90,7 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
     idReserva,
     name: row.NOMBRE ?? row.nombre ?? '',
     room: row.HABITACION ?? row.habitacion ?? row.ROOM ?? '',
-    date: row.FECHA ?? row.fecha ?? '',
+    date: normalizeDate(row.FECHA ?? row.fecha),
     time: row.HORA ?? row.hora ?? '',
     pax: Number(row.PAX ?? row.pax ?? 0),
     specialRequest: row.PETICION_ESPECIAL ?? row.peticionEspecial ?? row.peticiones ?? '',

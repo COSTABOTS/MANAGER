@@ -397,6 +397,14 @@ h2 {
   white-space: nowrap;
 }
 
+.reservation-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .shows-status {
   width: 100%;
   margin: 0 0 18px;

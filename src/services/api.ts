@@ -3,6 +3,12 @@ import { normalizeReservationFromSheet } from './reservationMapper';
 import type { SheetReservationRow } from './reservationMapper';
 import type { Reservation } from '../types';
 
+interface ReservationsWebhookResponse {
+  success?: boolean;
+  reservas?: SheetReservationRow[];
+  reservations?: SheetReservationRow[];
+}
+
 export interface TodayData {
   date: string;
   bookingsOpen: boolean;
@@ -39,6 +45,34 @@ export async function getReservations() {
 
 export function normalizeReservationsFromSheets(rows: SheetReservationRow[]): Reservation[] {
   return rows.map(normalizeReservationFromSheet);
+}
+
+export async function loadReservations(webhookUrl: string, sheetId?: string): Promise<Reservation[]> {
+  if (!webhookUrl.trim()) {
+    throw new Error('Webhook leer reservas no configurado');
+  }
+
+  const response = await fetch(webhookUrl.trim(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accion: 'leer_reservas',
+      sheet_id: sheetId ?? '',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`No se pudieron cargar las reservas (${response.status})`);
+  }
+
+  const data = (await response.json()) as ReservationsWebhookResponse;
+  const rows = data.reservas ?? data.reservations ?? [];
+
+  if (data.success === false || !Array.isArray(rows)) {
+    throw new Error('Respuesta de reservas no valida');
+  }
+
+  return normalizeReservationsFromSheets(rows);
 }
 
 export async function getControlDates() {

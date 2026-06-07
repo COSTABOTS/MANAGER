@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { Control } from './pages/Control';
@@ -8,6 +8,7 @@ import { Settings } from './pages/Settings';
 import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
 import { mockReservations, todayState } from './mock';
+import { loadReservations as loadReservationsFromWebhook } from './services/api';
 import { loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { sendWebhook } from './services/webhookClient';
@@ -28,6 +29,7 @@ export function App() {
   const [settings, setSettings] = useState<ManagerSettings>(() => loadSettingsFromStorage());
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => loadDateBookingStatusFromStorage());
   const [lastSync, setLastSync] = useState('Datos mock cargados');
+  const [isLoadingReservations, setIsLoadingReservations] = useState(false);
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
     setSettings((current) => {
@@ -65,6 +67,14 @@ export function App() {
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
 
+  useEffect(() => {
+    if (!settings.webhookLeerReservas.trim()) {
+      return;
+    }
+
+    void loadReservations();
+  }, [settings.googleSheetId, settings.webhookLeerReservas]);
+
   function getReservationSyncId(reservation: Reservation) {
     return reservation.idReserva || reservation.id;
   }
@@ -87,6 +97,25 @@ export function App() {
 
     setLastSync(result.skipped ? missingMessage : 'Cambio guardado en la app, pero no sincronizado');
     return result;
+  }
+
+  async function loadReservations() {
+    if (!settings.webhookLeerReservas.trim()) {
+      setLastSync('Webhook leer reservas no configurado');
+      return;
+    }
+
+    setIsLoadingReservations(true);
+
+    try {
+      const nextReservations = await loadReservationsFromWebhook(settings.webhookLeerReservas, settings.googleSheetId);
+      setReservations(nextReservations);
+      setLastSync('Datos actualizados correctamente');
+    } catch {
+      setLastSync('No se pudieron cargar las reservas');
+    } finally {
+      setIsLoadingReservations(false);
+    }
   }
 
   async function syncValidatedWebhook(
@@ -343,6 +372,8 @@ export function App() {
         onAddManualReservation={addManualReservation}
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
+        onRefreshReservations={loadReservations}
+        isRefreshingReservations={isLoadingReservations}
       />
     );
   }

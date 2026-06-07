@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DateBookingStatus, DateBookingStatusValue, Reservation } from '../types';
-import { formatDisplayDate } from '../utils/date';
+import { formatDisplayDate, getLocalDateString } from '../utils/date';
 
 interface ControlProps {
   dateBookingStatus: DateBookingStatus;
@@ -26,7 +26,7 @@ function getDayName(date: string) {
 }
 
 export function Control({ dateBookingStatus, reservations, totalCapacity, onDateBookingStatusChange }: ControlProps) {
-  const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? '2026-06-04');
+  const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? getLocalDateString(new Date()));
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
   const [view, setView] = useState<ControlView>(() => {
     const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);

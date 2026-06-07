@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Reservation } from '../types';
-import { formatDisplayDate } from '../utils/date';
+import { formatDisplayDate, getLocalDateString } from '../utils/date';
 
 type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
 
@@ -8,10 +8,19 @@ interface ReservationsProps {
   reservations: Reservation[];
 }
 
+function addDays(date: string, days: number) {
+  const baseDate = new Date(`${date}T12:00:00`);
+  baseDate.setDate(baseDate.getDate() + days);
+  return baseDate.toISOString().slice(0, 10);
+}
+
 export function Reservations({ reservations }: ReservationsProps) {
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
+  const today = getLocalDateString(new Date());
+  const tomorrow = addDays(today, 1);
+  const weekEnd = addDays(today, 7);
 
   const visibleReservations = useMemo(() => {
     return reservations
@@ -21,21 +30,21 @@ export function Reservations({ reservations }: ReservationsProps) {
         const matchesDate = date ? reservation.date === date : true;
 
         if (filter === 'today') {
-          return matchesQuery && matchesDate && reservation.date === '2026-06-04';
+          return matchesQuery && matchesDate && reservation.date === today;
         }
 
         if (filter === 'tomorrow') {
-          return matchesQuery && matchesDate && reservation.date === '2026-06-05';
+          return matchesQuery && matchesDate && reservation.date === tomorrow;
         }
 
         if (filter === 'week') {
-          return matchesQuery && matchesDate && reservation.date >= '2026-06-04' && reservation.date <= '2026-06-11';
+          return matchesQuery && matchesDate && reservation.date >= today && reservation.date <= weekEnd;
         }
 
         return matchesQuery && matchesDate;
       })
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
-  }, [date, filter, query, reservations]);
+  }, [date, filter, query, reservations, today, tomorrow, weekEnd]);
 
   return (
     <main className="app-shell">

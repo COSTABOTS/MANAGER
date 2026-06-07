@@ -43,6 +43,7 @@ export const mockSettings: ManagerSettings = {
   webhookLlegada: '',
   webhookMesa: '',
   webhookFullyBooked: '',
+  webhookLeerReservas: '',
   webhookShows: '',
   webhookFeedbacks: '',
   webhookSettings: '',

@@ -27,6 +27,8 @@ interface TodayProps {
   onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
+  onRefreshReservations: () => Promise<void>;
+  isRefreshingReservations: boolean;
 }
 
 const EMPTY_MANUAL_RESERVATION = {
@@ -55,6 +57,8 @@ export function Today({
   onAddManualReservation,
   onBookingStatus,
   onUpdateReservation,
+  onRefreshReservations,
+  isRefreshingReservations,
 }: TodayProps) {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [isLoadingToday, setIsLoadingToday] = useState(false);
@@ -271,10 +275,15 @@ export function Today({
             <p className="eyebrow">Turno de hoy</p>
             <h2>Reservas</h2>
           </div>
-          <span className="reservation-count">
-            <Plus size={16} />
-            {displayReservations.length} reservas
-          </span>
+          <div className="reservation-actions">
+            <button className="secondary-button" type="button" disabled={isRefreshingReservations} onClick={onRefreshReservations}>
+              Actualizar datos
+            </button>
+            <span className="reservation-count">
+              <Plus size={16} />
+              {displayReservations.length} reservas
+            </span>
+          </div>
         </div>
         {isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>

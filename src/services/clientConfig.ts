@@ -14,6 +14,7 @@ export interface ExternalClientConfig {
       | 'webhookLlegada'
       | 'webhookMesa'
       | 'webhookFullyBooked'
+      | 'webhookLeerReservas'
       | 'webhookShows'
       | 'webhookFeedbacks'
       | 'webhookSettings'
