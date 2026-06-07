@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Reservation } from '../types';
 import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
+import { isCanceledReservation } from '../utils/reservationStatus';
 
 type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
 
@@ -104,7 +105,7 @@ export function Reservations({ reservations }: ReservationsProps) {
             </thead>
             <tbody>
               {visibleReservations.map((reservation) => (
-                <tr key={reservation.id} className={reservation.status === 'CANCELADA' ? 'reservation-row is-cancelada' : 'reservation-row'}>
+                <tr key={reservation.id} className={isCanceledReservation(reservation) ? 'reservation-row is-cancelada' : 'reservation-row'}>
                   <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
                   <td data-label="Hora">{reservation.time}</td>
                   <td data-label="Nombre">{reservation.name}</td>

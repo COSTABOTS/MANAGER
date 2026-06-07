@@ -16,6 +16,7 @@ import { requireNameOrRoom, requireWebhookFields } from './services/webhookValid
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
+import { isActiveReservation } from './utils/reservationStatus';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
 
@@ -42,7 +43,7 @@ export function App() {
   const todaysReservations = useMemo(
     () =>
       reservations
-        .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && reservation.status === 'CONFIRMADA')
+        .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation))
         .sort((a, b) => a.time.localeCompare(b.time)),
     [dayStatus.date, reservations],
   );

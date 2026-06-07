@@ -1,4 +1,5 @@
-import type { BookingSource, BookingStatus, Reservation } from '../types';
+import type { BookingSource, Reservation } from '../types';
+import { normalizeBookingStatus } from '../utils/reservationStatus';
 
 export type SheetReservationRow = Record<string, unknown>;
 
@@ -63,11 +64,6 @@ function normalizeSource(source: string): BookingSource {
   return 'BOT';
 }
 
-function normalizeStatus(status: string): BookingStatus {
-  const normalized = status.trim().toUpperCase();
-  return ['CANCELADA', 'CANCELADO', 'CANCELLED', 'CANCELED'].includes(normalized) ? 'CANCELADA' : 'CONFIRMADA';
-}
-
 function normalizeDate(date: string) {
   const value = date.trim();
   const spanishDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -111,7 +107,7 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
       ]),
     ),
     phone: toStringValue(pick(row, ['phone', 'telefono', 'TELEFONO', 'TELEFONO (G)', '6'])),
-    status: normalizeStatus(status),
+    status: normalizeBookingStatus(status),
     source: normalizeSource(origin),
     language: toStringValue(pick(row, ['language', 'idioma', 'IDIOMA', 'IDIOMA (J)', '9'])),
     table: toStringValue(pick(row, ['table', 'mesa', 'MESA', 'MESA (L)', '11'])),
