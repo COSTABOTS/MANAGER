@@ -111,6 +111,13 @@ export function App() {
       }
     }
 
+    if (payload.id_reserva) {
+      console.info('[Safari Manager] sync reservation', {
+        accion: payload.accion,
+        id_reserva: payload.id_reserva,
+      });
+    }
+
     return syncWebhook(webhookUrl, payload, missingMessage);
   }
 
@@ -190,6 +197,7 @@ export function App() {
     void syncValidatedWebhook(settings.webhookWalkin, {
       accion: 'crear_walkin',
       id_reserva: optimisticReservation.idReserva,
+      ID_RESERVA: optimisticReservation.idReserva,
       nombre: optimisticReservation.name,
       habitacion: optimisticReservation.room,
       fecha: optimisticReservation.date,
@@ -220,6 +228,7 @@ export function App() {
       {
         accion: 'crear_reserva_manual',
         id_reserva: manualReservation.idReserva,
+        ID_RESERVA: manualReservation.idReserva,
         nombre: manualReservation.name,
         habitacion: manualReservation.room,
         telefono: manualReservation.phone,
@@ -262,6 +271,7 @@ export function App() {
       await syncValidatedWebhook(settings.webhookLlegada, {
         accion: 'actualizar_llegada',
         id_reserva: getReservationSyncId(nextReservation),
+        ID_RESERVA: getReservationSyncId(nextReservation),
         fecha: nextReservation.date,
         hora: nextReservation.time,
         nombre: nextReservation.name,
@@ -274,6 +284,7 @@ export function App() {
     await syncValidatedWebhook(settings.webhookMesa, {
       accion: 'actualizar_mesa',
       id_reserva: getReservationSyncId(nextReservation),
+      ID_RESERVA: getReservationSyncId(nextReservation),
       fecha: nextReservation.date,
       hora: nextReservation.time,
       nombre: nextReservation.name,
