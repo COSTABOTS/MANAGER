@@ -22,7 +22,7 @@ export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'show
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
-  const [reservations, setReservations] = useState(mockReservations);
+  const [allReservations, setAllReservations] = useState(mockReservations);
   const [dayStatus] = useState<DayState>({
     ...todayState,
     date: getLocalDateString(new Date()),
@@ -42,13 +42,13 @@ export function App() {
 
   const todayReservations = useMemo(
     () =>
-      reservations
+      allReservations
         .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation))
         .sort((a, b) => a.time.localeCompare(b.time)),
-    [dayStatus.date, reservations],
+    [allReservations, dayStatus.date],
   );
 
-  const reservationsList = useMemo(() => reservations, [reservations]);
+  const reservationsList = useMemo(() => allReservations, [allReservations]);
 
   const totalPax = useMemo(
     () => todayReservations.reduce((total, reservation) => total + reservation.pax, 0),
@@ -112,7 +112,7 @@ export function App() {
 
     try {
       const nextReservations = await loadReservationsFromWebhook(settings.webhookLeerReservas, settings.googleSheetId);
-      setReservations(nextReservations);
+      setAllReservations(nextReservations);
       setLastSync('Datos actualizados correctamente');
     } catch (error) {
       console.error('GET_RESERVATIONS error', error);
@@ -225,7 +225,7 @@ export function App() {
       arrived: true,
     };
 
-    setReservations((current) => [...current, optimisticReservation]);
+    setAllReservations((current) => [...current, optimisticReservation]);
     setLastSync('Mesa añadida correctamente');
     void syncValidatedWebhook(settings.webhookWalkin, {
       accion: 'crear_walkin',
@@ -254,7 +254,7 @@ export function App() {
       arrived: false,
     };
 
-    setReservations((current) => [...current, manualReservation]);
+    setAllReservations((current) => [...current, manualReservation]);
     setLastSync('Reserva añadida correctamente');
     void syncValidatedWebhook(
       settings.webhookReservas,
@@ -281,7 +281,7 @@ export function App() {
   }
 
   async function handleUpdateReservation(id: string, field: 'table' | 'arrived', value: string | boolean) {
-    const currentReservation = reservations.find((reservation) => reservation.id === id);
+    const currentReservation = allReservations.find((reservation) => reservation.id === id);
     if (!currentReservation) {
       return;
     }
@@ -291,7 +291,7 @@ export function App() {
       [field]: value,
     };
 
-    setReservations((current) =>
+    setAllReservations((current) =>
       current.map((reservation) => (reservation.id === id ? { ...reservation, [field]: value } : reservation)),
     );
     setLastSync('Guardando cambio...');
@@ -328,14 +328,20 @@ export function App() {
 
   function renderPage() {
     if (activePage === 'reservations') {
-      return <Reservations reservations={reservationsList} />;
+      return (
+        <Reservations
+          reservations={reservationsList}
+          onRefreshReservations={loadReservations}
+          isRefreshingReservations={isLoadingReservations}
+        />
+      );
     }
 
     if (activePage === 'control') {
       return (
         <Control
           dateBookingStatus={dateBookingStatus}
-          reservations={reservations}
+          reservations={allReservations}
           totalCapacity={settings.totalCapacity}
           onDateBookingStatusChange={updateDateBookingStatus}
         />
@@ -351,7 +357,7 @@ export function App() {
     }
 
     if (activePage === 'settings') {
-      return <Settings settings={settings} reservations={reservations} onSettingsSave={handleSettingsSave} />;
+      return <Settings settings={settings} reservations={allReservations} onSettingsSave={handleSettingsSave} />;
     }
 
     return (

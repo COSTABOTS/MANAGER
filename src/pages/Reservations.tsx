@@ -7,6 +7,8 @@ type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
 
 interface ReservationsProps {
   reservations: Reservation[];
+  onRefreshReservations: () => Promise<void>;
+  isRefreshingReservations: boolean;
 }
 
 function addDays(date: string, days: number) {
@@ -15,7 +17,7 @@ function addDays(date: string, days: number) {
   return baseDate.toISOString().slice(0, 10);
 }
 
-export function Reservations({ reservations }: ReservationsProps) {
+export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations }: ReservationsProps) {
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
@@ -86,7 +88,12 @@ export function Reservations({ reservations }: ReservationsProps) {
             <p className="eyebrow">Preparado para edicion futura</p>
             <h2>Libro de reservas</h2>
           </div>
-          <span className="reservation-count">{visibleReservations.length} registros</span>
+          <div className="reservation-actions">
+            <button className="secondary-button" type="button" disabled={isRefreshingReservations} onClick={() => void onRefreshReservations()}>
+              Actualizar datos
+            </button>
+            <span className="reservation-count">{visibleReservations.length} registros</span>
+          </div>
         </div>
         <div className="table-wrap">
           <table className="reservations-table">

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'safari-manager-v17';
+const CACHE_NAME = 'safari-manager-v18';
 const APP_SHELL = [
   '/',
   '/manifest.json',

@@ -70,6 +70,10 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
     body: JSON.stringify({
       accion: 'leer_reservas',
       sheet_id: sheetId ?? '',
+      hoja: 'RESERVAS',
+      sheet_name: 'RESERVAS',
+      source_sheet: 'RESERVAS',
+      include_cancelled: true,
     }),
   });
 
