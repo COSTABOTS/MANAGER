@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Reservation } from '../types';
-import { formatDisplayDate, getLocalDateString } from '../utils/date';
+import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
 
 type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
 
@@ -27,23 +27,24 @@ export function Reservations({ reservations }: ReservationsProps) {
       .filter((reservation) => {
         const search = `${reservation.name} ${reservation.room} ${reservation.phone ?? ''} ${reservation.specialRequest} ${reservation.status}`.toLowerCase();
         const matchesQuery = search.includes(query.toLowerCase());
-        const matchesDate = date ? reservation.date === date : true;
+        const reservationDate = normalizeDateForCompare(reservation.date);
+        const matchesDate = date ? reservationDate === date : true;
 
         if (filter === 'today') {
-          return matchesQuery && matchesDate && reservation.date === today;
+          return matchesQuery && matchesDate && reservationDate === today;
         }
 
         if (filter === 'tomorrow') {
-          return matchesQuery && matchesDate && reservation.date === tomorrow;
+          return matchesQuery && matchesDate && reservationDate === tomorrow;
         }
 
         if (filter === 'week') {
-          return matchesQuery && matchesDate && reservation.date >= today && reservation.date <= weekEnd;
+          return matchesQuery && matchesDate && reservationDate >= today && reservationDate <= weekEnd;
         }
 
         return matchesQuery && matchesDate;
       })
-      .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+      .sort((a, b) => `${normalizeDateForCompare(a.date)} ${a.time}`.localeCompare(`${normalizeDateForCompare(b.date)} ${b.time}`));
   }, [date, filter, query, reservations, today, tomorrow, weekEnd]);
 
   return (
@@ -103,7 +104,7 @@ export function Reservations({ reservations }: ReservationsProps) {
             </thead>
             <tbody>
               {visibleReservations.map((reservation) => (
-                <tr key={reservation.id}>
+                <tr key={reservation.id} className={reservation.status === 'CANCELADA' ? 'reservation-row is-cancelada' : 'reservation-row'}>
                   <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
                   <td data-label="Hora">{reservation.time}</td>
                   <td data-label="Nombre">{reservation.name}</td>

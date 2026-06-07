@@ -64,7 +64,8 @@ function normalizeSource(source: string): BookingSource {
 }
 
 function normalizeStatus(status: string): BookingStatus {
-  return status.trim().toUpperCase() === 'CANCELADA' ? 'CANCELADA' : 'CONFIRMADA';
+  const normalized = status.trim().toUpperCase();
+  return ['CANCELADA', 'CANCELADO', 'CANCELLED', 'CANCELED'].includes(normalized) ? 'CANCELADA' : 'CONFIRMADA';
 }
 
 function normalizeDate(date: string) {

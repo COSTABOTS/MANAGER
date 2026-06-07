@@ -1380,6 +1380,20 @@ button:disabled {
   background: #e0f1e7;
 }
 
+.reservations-table tr.is-cancelada td {
+  color: #687182;
+  background: #eef1f5;
+}
+
+.reservations-table tr.is-cancelada:nth-child(even) td {
+  background: #e6eaf0;
+}
+
+.reservations-table tr.is-cancelada td:not(:last-child) {
+  text-decoration: line-through;
+  opacity: 0.78;
+}
+
 .table-input {
   min-width: 160px;
   min-height: 38px;

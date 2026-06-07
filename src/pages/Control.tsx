@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { DateBookingStatus, DateBookingStatusValue, Reservation } from '../types';
-import { formatDisplayDate, getLocalDateString } from '../utils/date';
+import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
 
 interface ControlProps {
   dateBookingStatus: DateBookingStatus;
@@ -36,7 +36,7 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
     () =>
       Array.from({ length: rangeDays }, (_, index) => addDays(rangeStart, index)).map((date) => {
         const pax = reservations
-          .filter((reservation) => reservation.date === date && reservation.status === 'CONFIRMADA')
+          .filter((reservation) => normalizeDateForCompare(reservation.date) === date && reservation.status === 'CONFIRMADA')
           .reduce((total, reservation) => total + reservation.pax, 0);
         return {
           date,
