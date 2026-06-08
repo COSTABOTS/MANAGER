@@ -1332,6 +1332,41 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.compact-action {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.muted-cell {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cancel-modal {
+  max-width: 440px;
+}
+
+.cancel-summary {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  color: var(--ink);
+}
+
+.cancel-summary span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .section-title {
   display: flex;
   align-items: center;

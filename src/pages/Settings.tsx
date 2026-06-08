@@ -338,8 +338,8 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
                 <input value={draftSettings.webhookLeerReservas} onChange={(event) => updateDraft('webhookLeerReservas', event.target.value)} />
               </label>
               <label>
-                Webhook comprobar disponibilidad / aforo
-                <input value={draftSettings.webhookAvailability} onChange={(event) => updateDraft('webhookAvailability', event.target.value)} />
+                Webhook cancelar reserva
+                <input value={draftSettings.webhookCancelReservationUrl} onChange={(event) => updateDraft('webhookCancelReservationUrl', event.target.value)} />
               </label>
               <label>
                 Webhook settings / capacidad

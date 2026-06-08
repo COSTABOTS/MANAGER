@@ -1,12 +1,14 @@
 import type { Reservation } from '../types';
+import { isActiveReservation } from '../utils/reservationStatus';
 
 interface ReservationsTableProps {
   reservations: Reservation[];
   tableOptions: string[];
   onUpdate: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
+  onCancel: (reservation: Reservation) => void;
 }
 
-export function ReservationsTable({ reservations, tableOptions, onUpdate }: ReservationsTableProps) {
+export function ReservationsTable({ reservations, tableOptions, onUpdate, onCancel }: ReservationsTableProps) {
   function getAvailableTables(currentReservation: Reservation) {
     const occupiedTables = new Set(
       reservations
@@ -34,6 +36,7 @@ export function ReservationsTable({ reservations, tableOptions, onUpdate }: Rese
             <th>Peticion especial</th>
             <th>Mesa</th>
             <th>Llego</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -67,6 +70,15 @@ export function ReservationsTable({ reservations, tableOptions, onUpdate }: Rese
                   />
                   <span>{reservation.arrived ? 'Ha llegado' : 'No ha llegado'}</span>
                 </label>
+              </td>
+              <td data-label="Acciones">
+                {isActiveReservation(reservation) ? (
+                  <button className="danger-button compact-action" type="button" onClick={() => onCancel(reservation)}>
+                    Cancelar
+                  </button>
+                ) : (
+                  <span className="muted-cell">Cancelada</span>
+                )}
               </td>
             </tr>
           ))}

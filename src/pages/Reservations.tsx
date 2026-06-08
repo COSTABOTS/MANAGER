@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Reservation } from '../types';
 import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
-import { isCanceledReservation } from '../utils/reservationStatus';
+import { isActiveReservation, isCanceledReservation } from '../utils/reservationStatus';
 
 type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
 
@@ -10,6 +10,7 @@ interface ReservationsProps {
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
   lastUpdatedAt: string;
+  onCancelReservation: (reservation: Reservation) => void;
 }
 
 function addDays(date: string, days: number) {
@@ -18,7 +19,7 @@ function addDays(date: string, days: number) {
   return baseDate.toISOString().slice(0, 10);
 }
 
-export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations, lastUpdatedAt }: ReservationsProps) {
+export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations, lastUpdatedAt, onCancelReservation }: ReservationsProps) {
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
@@ -110,6 +111,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                 <th>Peticion especial</th>
                 <th>Origen</th>
                 <th>Estado</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -125,6 +127,15 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                   <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
                   <td data-label="Estado">
                     <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
+                  </td>
+                  <td data-label="Acciones">
+                    {isActiveReservation(reservation) ? (
+                      <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservation)}>
+                        Cancelar
+                      </button>
+                    ) : (
+                      <span className="muted-cell">Cancelada</span>
+                    )}
                   </td>
                 </tr>
               ))}

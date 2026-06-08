@@ -33,6 +33,7 @@ export function App() {
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
+  const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
     setSettings((current) => {
@@ -362,6 +363,35 @@ export function App() {
     }, ['id_reserva', 'fecha', 'hora'], 'la mesa');
   }
 
+  async function confirmCancelReservation() {
+    if (!reservationToCancel) {
+      return;
+    }
+
+    if (!settings.webhookCancelReservationUrl.trim()) {
+      setLastSync('Webhook cancelar reserva no configurado');
+      return;
+    }
+
+    const result = await sendWebhook<{ ok?: boolean; estado?: string }>(settings.webhookCancelReservationUrl, {
+      action: 'CANCEL_BY_ID',
+      id_reserva: reservationToCancel.idReserva,
+    });
+
+    if (result.success && result.data?.ok === true) {
+      setAllReservations((current) =>
+        current.map((reservation) =>
+          reservation.idReserva === reservationToCancel.idReserva ? { ...reservation, status: 'CANCELADA' } : reservation,
+        ),
+      );
+      setReservationToCancel(null);
+      setLastSync('Reserva cancelada');
+      return;
+    }
+
+    setLastSync('No se pudo cancelar la reserva');
+  }
+
   function renderPage() {
     if (activePage === 'reservations') {
       return (
@@ -370,6 +400,7 @@ export function App() {
           onRefreshReservations={loadReservations}
           isRefreshingReservations={isLoadingReservations}
           lastUpdatedAt={lastUpdatedAt}
+          onCancelReservation={setReservationToCancel}
         />
       );
     }
@@ -419,6 +450,7 @@ export function App() {
         onAddManualReservation={addManualReservation}
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
+        onCancelReservation={setReservationToCancel}
         onRefreshReservations={loadReservations}
         isRefreshingReservations={isLoadingReservations}
         lastUpdatedAt={lastUpdatedAt}
@@ -433,6 +465,30 @@ export function App() {
       onNavigate={setActivePage}
     >
       {renderPage()}
+      {reservationToCancel && (
+        <div className="modal-backdrop" role="presentation" onPointerDown={() => setReservationToCancel(null)}>
+          <div className="show-modal cancel-modal" role="dialog" aria-modal="true" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="section-title compact">
+              <div>
+                <p className="eyebrow">Cancelar reserva</p>
+                <h2>¿Cancelar esta reserva?</h2>
+              </div>
+            </div>
+            <div className="cancel-summary">
+              <strong>{reservationToCancel.name || reservationToCancel.room || 'Reserva sin nombre'}</strong>
+              <span>{reservationToCancel.date} · {reservationToCancel.time} · {reservationToCancel.pax} pax</span>
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setReservationToCancel(null)}>
+                No, mantener
+              </button>
+              <button className="danger-button" type="button" onClick={() => void confirmCancelReservation()}>
+                Sí, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

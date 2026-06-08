@@ -28,6 +28,7 @@ interface TodayProps {
   onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
+  onCancelReservation: (reservation: Reservation) => void;
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
   lastUpdatedAt: string;
@@ -59,6 +60,7 @@ export function Today({
   onAddManualReservation,
   onBookingStatus,
   onUpdateReservation,
+  onCancelReservation,
   onRefreshReservations,
   isRefreshingReservations,
   lastUpdatedAt,
@@ -286,7 +288,7 @@ export function Today({
         ) : displayReservations.length === 0 ? (
           <div className="sync-status">No hay reservas para hoy</div>
         ) : (
-          <ReservationsTable reservations={displayReservations} tableOptions={tableOptions} onUpdate={onUpdateReservation} />
+          <ReservationsTable reservations={displayReservations} tableOptions={tableOptions} onUpdate={onUpdateReservation} onCancel={onCancelReservation} />
         )}
       </section>
 
