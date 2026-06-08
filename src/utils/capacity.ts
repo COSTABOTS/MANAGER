@@ -38,14 +38,21 @@ export function generateTimeSlots(openTime: string, closeTime: string, intervalM
   return slots;
 }
 
-export function buildCapacityPayload(restaurant: string, slotCapacity: Record<string, number>): CapacityPayload {
+export function buildCapacityPayload(
+  restaurant: string,
+  slotCapacity: Record<string, number>,
+  orderedSlots = Object.keys(slotCapacity),
+): CapacityPayload {
   return {
     action: 'UPDATE_CAPACITY',
     restaurant,
-    slots: Object.entries(slotCapacity).map(([hora, limite]) => ({
+    slots: orderedSlots.map((hora) => {
+      const limite = slotCapacity[hora] ?? 0;
+      return {
       hora,
       limite,
       activo: limite > 0,
-    })),
+      };
+    }),
   };
 }

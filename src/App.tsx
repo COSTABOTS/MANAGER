@@ -14,7 +14,7 @@ import { loadSettingsFromStorage, saveSettingsToStorage } from './services/setti
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
-import { buildCapacityPayload } from './utils/capacity';
+import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
@@ -159,9 +159,27 @@ export function App() {
 
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
     updateSettings(nextSettings);
+    const capacitySlots = generateTimeSlots(nextSettings.openingTime, nextSettings.closingTime, nextSettings.bookingInterval);
+    const capacityPayload = buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity, capacitySlots);
     setLastSync('Configuración guardada correctamente');
 
+    if (!nextSettings.webhookSettings.trim() && nextSettings.webhookSettingsCapacityUrl.trim()) {
+      const capacityResult = await sendWebhook(
+        nextSettings.webhookSettingsCapacityUrl,
+        capacityPayload,
+      );
+
+      if (capacityResult.success) {
+        setLastSync('Sincronizado correctamente');
+        return 'success';
+      }
+
+      setLastSync('ConfiguraciÃ³n guardada localmente, pero no sincronizada');
+      return 'error';
+    }
+
     if (!nextSettings.webhookSettings.trim()) {
+      setLastSync('Webhook de capacidad no configurado');
       return 'skipped';
     }
 
@@ -175,9 +193,14 @@ export function App() {
       return 'error';
     }
 
+    if (!nextSettings.webhookSettingsCapacityUrl.trim()) {
+      setLastSync('Webhook de capacidad no configurado');
+      return 'skipped';
+    }
+
     const capacityResult = await sendWebhook(
-      nextSettings.webhookSettings,
-      buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity),
+      nextSettings.webhookSettingsCapacityUrl,
+      capacityPayload,
     );
 
     if (capacityResult.success) {

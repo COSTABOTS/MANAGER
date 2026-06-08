@@ -18,6 +18,7 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookFullyBooked: storedSettings.webhookFullyBooked ?? mockSettings.webhookFullyBooked,
     webhookLeerReservas: storedSettings.webhookLeerReservas ?? mockSettings.webhookLeerReservas,
     webhookAvailability: storedSettings.webhookAvailability ?? mockSettings.webhookAvailability,
+    webhookSettingsCapacityUrl: storedSettings.webhookSettingsCapacityUrl ?? mockSettings.webhookSettingsCapacityUrl,
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
     openingDays: {
       ...mockSettings.openingDays,

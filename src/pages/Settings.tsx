@@ -342,6 +342,10 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
                 <input value={draftSettings.webhookAvailability} onChange={(event) => updateDraft('webhookAvailability', event.target.value)} />
               </label>
               <label>
+                Webhook settings / capacidad
+                <input value={draftSettings.webhookSettingsCapacityUrl} onChange={(event) => updateDraft('webhookSettingsCapacityUrl', event.target.value)} />
+              </label>
+              <label>
                 Webhook shows
                 <input value={draftSettings.webhookShows} onChange={(event) => updateDraft('webhookShows', event.target.value)} />
               </label>

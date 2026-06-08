@@ -16,6 +16,7 @@ export interface ExternalClientConfig {
       | 'webhookFullyBooked'
       | 'webhookLeerReservas'
       | 'webhookAvailability'
+      | 'webhookSettingsCapacityUrl'
       | 'webhookShows'
       | 'webhookFeedbacks'
       | 'webhookSettings'
