@@ -8,6 +8,7 @@ import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
 import type { DayState, Reservation } from '../types';
+import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime } from '../utils/date';
 
 interface TodayProps {
@@ -352,32 +353,4 @@ export function Today({
       )}
     </main>
   );
-}
-
-function timeToMinutes(time: string) {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-function minutesToTime(minutes: number) {
-  const hours = Math.floor(minutes / 60)
-    .toString()
-    .padStart(2, '0');
-  const mins = (minutes % 60).toString().padStart(2, '0');
-  return `${hours}:${mins}`;
-}
-
-function generateTimeSlots(openingTime: string, closingTime: string, interval: 30 | 60) {
-  const opening = timeToMinutes(openingTime);
-  const closing = timeToMinutes(closingTime);
-
-  if (closing < opening) {
-    return [openingTime];
-  }
-
-  const slots: string[] = [];
-  for (let current = opening; current <= closing; current += interval) {
-    slots.push(minutesToTime(current));
-  }
-  return slots;
 }

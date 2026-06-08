@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { mockSettings } from '../mock';
 import type { ManagerSettings, Reservation, RestaurantTable, RestaurantTableType, Weekday } from '../types';
+import { generateTimeSlots } from '../utils/capacity';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -13,6 +14,7 @@ type SlotCapacity = Record<string, number>;
 
 const userRole: 'admin' | 'manager' = 'admin';
 const DEFAULT_SLOT_CAPACITY = 40;
+const CAPACITY_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 const TABLE_TYPES: Array<{ value: RestaurantTableType; label: string }> = [
   { value: 'interior', label: 'Interior' },
   { value: 'terraza', label: 'Terraza' },
@@ -36,34 +38,6 @@ const EMPTY_TABLE_FORM = {
   type: 'interior' as RestaurantTableType,
 };
 
-function timeToMinutes(time: string) {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-function minutesToTime(minutes: number) {
-  const hours = Math.floor(minutes / 60)
-    .toString()
-    .padStart(2, '0');
-  const mins = (minutes % 60).toString().padStart(2, '0');
-  return `${hours}:${mins}`;
-}
-
-function generateSlots(openingTime: string, closingTime: string, interval: ReservationInterval) {
-  const opening = timeToMinutes(openingTime);
-  const closing = timeToMinutes(closingTime);
-
-  if (closing < opening) {
-    return [openingTime];
-  }
-
-  const slots: string[] = [];
-  for (let current = opening; current <= closing; current += interval) {
-    slots.push(minutesToTime(current));
-  }
-  return slots;
-}
-
 function rebuildSlotCapacity(
   openingTime: string,
   closingTime: string,
@@ -71,7 +45,7 @@ function rebuildSlotCapacity(
   currentCapacity: SlotCapacity,
   fallbackCapacity: number,
 ) {
-  return generateSlots(openingTime, closingTime, interval).reduce<SlotCapacity>((slots, slot) => {
+  return generateTimeSlots(openingTime, closingTime, interval).reduce<SlotCapacity>((slots, slot) => {
     slots[slot] = currentCapacity[slot] ?? (fallbackCapacity || DEFAULT_SLOT_CAPACITY);
     return slots;
   }, {});
@@ -283,7 +257,13 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
               {Object.entries(draftSettings.slotCapacity).map(([slot, value]) => (
                 <label key={slot} className="slot-input">
                   <span>{slot}</span>
-                  <input min="0" type="number" value={value} onChange={(event) => updateSlotCapacity(slot, Number(event.target.value))} />
+                  <select value={value} onChange={(event) => updateSlotCapacity(slot, Number(event.target.value))}>
+                    {CAPACITY_OPTIONS.map((capacity) => (
+                      <option key={capacity} value={capacity}>
+                        {capacity === 0 ? '0 - cerrado' : capacity}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               ))}
             </div>
@@ -356,6 +336,10 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
               <label>
                 Webhook leer reservas
                 <input value={draftSettings.webhookLeerReservas} onChange={(event) => updateDraft('webhookLeerReservas', event.target.value)} />
+              </label>
+              <label>
+                Webhook comprobar disponibilidad / aforo
+                <input value={draftSettings.webhookAvailability} onChange={(event) => updateDraft('webhookAvailability', event.target.value)} />
               </label>
               <label>
                 Webhook shows

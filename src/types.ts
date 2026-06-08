@@ -88,6 +88,7 @@ export interface ManagerSettings {
   webhookMesa: string;
   webhookFullyBooked: string;
   webhookLeerReservas: string;
+  webhookAvailability: string;
   webhookShows: string;
   webhookFeedbacks: string;
   webhookSettings: string;

@@ -14,6 +14,7 @@ import { loadSettingsFromStorage, saveSettingsToStorage } from './services/setti
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
+import { buildCapacityPayload } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
@@ -164,12 +165,22 @@ export function App() {
       return 'skipped';
     }
 
-    const result = await sendWebhook(nextSettings.webhookSettings, {
+    const settingsResult = await sendWebhook(nextSettings.webhookSettings, {
       accion: 'actualizar_settings',
       settings: nextSettings,
     });
 
-    if (result.success) {
+    if (!settingsResult.success) {
+      setLastSync('ConfiguraciÃ³n guardada localmente, pero no sincronizada');
+      return 'error';
+    }
+
+    const capacityResult = await sendWebhook(
+      nextSettings.webhookSettings,
+      buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity),
+    );
+
+    if (capacityResult.success) {
       setLastSync('Sincronizado correctamente');
       return 'success';
     }
