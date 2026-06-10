@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SetStateAction } from 'react';
 import { Layout } from './components/Layout';
+import { LoginScreen } from './components/LoginScreen';
 import { Control } from './pages/Control';
 import { Feedbacks } from './pages/Feedbacks';
 import { Reservations } from './pages/Reservations';
@@ -9,6 +10,15 @@ import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
 import { mockReservations, todayState } from './mock';
 import { loadReservations as loadReservationsFromWebhook } from './services/api';
+import {
+  CLIENT_CONFIG_KEY,
+  LOGIN_FLAG_KEY,
+  getClientConfig,
+  getClientSheetId,
+  getClientWebhook,
+  populateAdminFromClientConfig,
+} from './services/clientConfig';
+import type { ExternalClientConfig } from './services/clientConfig';
 import { loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { sendWebhook } from './services/webhookClient';
@@ -21,14 +31,40 @@ import { isActiveReservation } from './utils/reservationStatus';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
 
+const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnjdpook';
+
+function loadClientConfigFromSession() {
+  try {
+    const isLoggedIn = sessionStorage.getItem(LOGIN_FLAG_KEY) === 'true';
+    const config = getClientConfig();
+
+    if (!isLoggedIn || !config) {
+      return null;
+    }
+
+    return config;
+  } catch {
+    sessionStorage.removeItem(LOGIN_FLAG_KEY);
+    sessionStorage.removeItem(CLIENT_CONFIG_KEY);
+    return null;
+  }
+}
+
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>('today');
+  const [clientConfig, setClientConfig] = useState<ExternalClientConfig | null>(() => loadClientConfigFromSession());
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [allReservations, setAllReservations] = useState(mockReservations);
   const [dayStatus] = useState<DayState>({
     ...todayState,
     date: getLocalDateString(new Date()),
   });
-  const [settings, setSettings] = useState<ManagerSettings>(() => loadSettingsFromStorage());
+  const [settings, setSettings] = useState<ManagerSettings>(() => {
+    const storedSettings = loadSettingsFromStorage();
+    const sessionConfig = loadClientConfigFromSession();
+    return sessionConfig ? populateAdminFromClientConfig(storedSettings, sessionConfig) : storedSettings;
+  });
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => loadDateBookingStatusFromStorage());
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
@@ -74,12 +110,69 @@ export function App() {
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
 
   useEffect(() => {
-    if (!settings.webhookLeerReservas.trim()) {
+    if (!clientConfig) {
+      return;
+    }
+
+    const reservationsWebhook = getClientWebhook('webhook_get_reservas', settings.webhookLeerReservas);
+    if (!reservationsWebhook.trim()) {
       return;
     }
 
     void loadReservations();
-  }, [settings.googleSheetId, settings.webhookLeerReservas]);
+  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas]);
+
+  useEffect(() => {
+    if (clientConfig) {
+      console.log('Cliente activo:', clientConfig.rest_nombre);
+      setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
+      console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
+    }
+  }, [clientConfig]);
+
+  async function handleLogin(usuario: string, password: string) {
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    try {
+      const response = await fetch(LOGIN_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ usuario, password }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Login request failed with status ${response.status}`);
+      }
+
+      const config = (await response.json()) as ExternalClientConfig;
+
+      if (config.success !== true) {
+        setLoginError('Usuario o contraseña incorrectos');
+        return;
+      }
+
+      sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(config));
+      sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
+      setClientConfig(config);
+      setSettings((current) => populateAdminFromClientConfig(current, config));
+      console.log('Cliente cargado:', config.rest_nombre);
+      console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
+    } catch {
+      setLoginError('Usuario o contraseña incorrectos');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(LOGIN_FLAG_KEY);
+    sessionStorage.removeItem(CLIENT_CONFIG_KEY);
+    setClientConfig(null);
+    setActivePage('today');
+  }
 
   function getReservationSyncId(reservation: Reservation) {
     return reservation.idReserva || reservation.id;
@@ -106,7 +199,10 @@ export function App() {
   }
 
   async function loadReservations() {
-    if (!settings.webhookLeerReservas.trim()) {
+    const reservationsWebhook = getClientWebhook('webhook_get_reservas', settings.webhookLeerReservas);
+    const sheetId = getClientSheetId(settings.googleSheetId);
+
+    if (!reservationsWebhook.trim()) {
       setLastSync('Webhook leer reservas no configurado');
       return;
     }
@@ -114,7 +210,7 @@ export function App() {
     setIsLoadingReservations(true);
 
     try {
-      const nextReservations = await loadReservationsFromWebhook(settings.webhookLeerReservas, settings.googleSheetId);
+      const nextReservations = await loadReservationsFromWebhook(reservationsWebhook, sheetId);
       setAllReservations(nextReservations);
       setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
       setLastSync('Datos actualizados correctamente');
@@ -162,11 +258,13 @@ export function App() {
     updateSettings(nextSettings);
     const capacitySlots = generateTimeSlots(nextSettings.openingTime, nextSettings.closingTime, nextSettings.bookingInterval);
     const capacityPayload = buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity, capacitySlots);
+    const settingsWebhook = getClientWebhook('webhook_settings', nextSettings.webhookSettings);
+    const capacityWebhook = getClientWebhook('webhook_capacidad', nextSettings.webhookSettingsCapacityUrl);
     setLastSync('Configuración guardada correctamente');
 
-    if (!nextSettings.webhookSettings.trim() && nextSettings.webhookSettingsCapacityUrl.trim()) {
+    if (!settingsWebhook.trim() && capacityWebhook.trim()) {
       const capacityResult = await sendWebhook(
-        nextSettings.webhookSettingsCapacityUrl,
+        capacityWebhook,
         capacityPayload,
       );
 
@@ -179,12 +277,12 @@ export function App() {
       return 'error';
     }
 
-    if (!nextSettings.webhookSettings.trim()) {
+    if (!settingsWebhook.trim()) {
       setLastSync('Webhook de capacidad no configurado');
       return 'skipped';
     }
 
-    const settingsResult = await sendWebhook(nextSettings.webhookSettings, {
+    const settingsResult = await sendWebhook(settingsWebhook, {
       accion: 'actualizar_settings',
       settings: nextSettings,
     });
@@ -194,13 +292,13 @@ export function App() {
       return 'error';
     }
 
-    if (!nextSettings.webhookSettingsCapacityUrl.trim()) {
+    if (!capacityWebhook.trim()) {
       setLastSync('Webhook de capacidad no configurado');
       return 'skipped';
     }
 
     const capacityResult = await sendWebhook(
-      nextSettings.webhookSettingsCapacityUrl,
+      capacityWebhook,
       capacityPayload,
     );
 
@@ -223,7 +321,7 @@ export function App() {
       return nextStatus;
     });
     setLastSync('Estado de reservas actualizado');
-    void syncValidatedWebhook(settings.webhookFullyBooked, {
+    void syncValidatedWebhook(getClientWebhook('webhook_fully_booked', settings.webhookFullyBooked), {
       accion: 'actualizar_fully_booked',
       fecha: date,
       fullyBooked: status === 'fully_booked',
@@ -264,7 +362,7 @@ export function App() {
 
     setAllReservations((current) => [...current, optimisticReservation]);
     setLastSync('Mesa añadida correctamente');
-    void syncValidatedWebhook(settings.webhookWalkin, {
+    void syncValidatedWebhook(getClientWebhook('webhook_walkin', settings.webhookWalkin), {
       accion: 'crear_walkin',
       id_reserva: optimisticReservation.idReserva,
       ID_RESERVA: optimisticReservation.idReserva,
@@ -294,7 +392,7 @@ export function App() {
     setAllReservations((current) => [...current, manualReservation]);
     setLastSync('Reserva añadida correctamente');
     void syncValidatedWebhook(
-      settings.webhookReservas,
+      getClientWebhook('webhook_manual', settings.webhookReservas),
       {
         accion: 'crear_reserva_manual',
         id_reserva: manualReservation.idReserva,
@@ -338,7 +436,7 @@ export function App() {
     }
 
     if (field === 'arrived') {
-      await syncValidatedWebhook(settings.webhookLlegada, {
+      await syncValidatedWebhook(getClientWebhook('webhook_arrived', settings.webhookLlegada), {
         accion: 'actualizar_llegada',
         id_reserva: getReservationSyncId(nextReservation),
         ID_RESERVA: getReservationSyncId(nextReservation),
@@ -351,7 +449,7 @@ export function App() {
       return;
     }
 
-    await syncValidatedWebhook(settings.webhookMesa, {
+    await syncValidatedWebhook(getClientWebhook('webhook_mesa', settings.webhookMesa), {
       accion: 'actualizar_mesa',
       id_reserva: getReservationSyncId(nextReservation),
       ID_RESERVA: getReservationSyncId(nextReservation),
@@ -368,12 +466,14 @@ export function App() {
       return;
     }
 
-    if (!settings.webhookCancelReservationUrl.trim()) {
+    const cancelWebhook = getClientWebhook('webhook_cancel', settings.webhookCancelReservationUrl);
+
+    if (!cancelWebhook.trim()) {
       setLastSync('Webhook cancelar reserva no configurado');
       return;
     }
 
-    const result = await sendWebhook<{ ok?: boolean; estado?: string }>(settings.webhookCancelReservationUrl, {
+    const result = await sendWebhook<{ ok?: boolean; estado?: string }>(cancelWebhook, {
       action: 'CANCEL_BY_ID',
       id_reserva: reservationToCancel.idReserva,
     });
@@ -421,7 +521,7 @@ export function App() {
     }
 
     if (activePage === 'shows') {
-      return <Shows webhookShows={settings.webhookShows} />;
+      return <Shows webhookShows={getClientWebhook('webhook_shows', settings.webhookShows)} />;
     }
 
     if (activePage === 'settings') {
@@ -458,11 +558,16 @@ export function App() {
     );
   }
 
+  if (!clientConfig) {
+    return <LoginScreen error={loginError} isLoading={isLoggingIn} onLogin={handleLogin} />;
+  }
+
   return (
     <Layout
       activePage={activePage}
       restaurantName={settings.restaurantName}
       onNavigate={setActivePage}
+      onLogout={handleLogout}
     >
       {renderPage()}
       {reservationToCancel && (

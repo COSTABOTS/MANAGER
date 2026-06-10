@@ -19,9 +19,10 @@ interface LayoutProps {
   children: ReactNode;
   restaurantName: string;
   onNavigate: (page: PageKey) => void;
+  onLogout: () => void;
 }
 
-export function Layout({ activePage, children, restaurantName, onNavigate }: LayoutProps) {
+export function Layout({ activePage, children, restaurantName, onNavigate, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -47,6 +48,11 @@ export function Layout({ activePage, children, restaurantName, onNavigate }: Lay
   function handleNavigate(page: PageKey) {
     onNavigate(page);
     setIsSidebarOpen(false);
+  }
+
+  function handleLogout() {
+    setIsSidebarOpen(false);
+    onLogout();
   }
 
   return (
@@ -88,7 +94,7 @@ export function Layout({ activePage, children, restaurantName, onNavigate }: Lay
           ))}
         </nav>
 
-        <button className="logout-button" type="button">
+        <button className="logout-button" type="button" onClick={handleLogout}>
           🚪 LOGOUT
         </button>
       </aside>
