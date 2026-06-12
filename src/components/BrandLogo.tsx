@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface BrandLogoProps {
   logoUrl?: string;
@@ -10,29 +10,36 @@ interface BrandLogoProps {
 }
 
 export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant, preferFallback = false }: BrandLogoProps) {
+  const [imageState, setImageState] = useState<'primary' | 'fallback' | 'letter'>('primary');
   const trimmedUrl = logoUrl?.trim() ?? '';
-  const finalSrc = !preferFallback && trimmedUrl !== '' ? trimmedUrl : fallbackUrl;
-  const shouldUseImage = Boolean(finalSrc);
+  const primarySrc = !preferFallback && trimmedUrl !== '' ? trimmedUrl : fallbackUrl;
+  const currentSrc = imageState === 'letter' ? '' : imageState === 'fallback' ? fallbackUrl : primarySrc;
+  const shouldUseImage = Boolean(currentSrc);
   const fallbackText = fallbackLabel.trim().slice(0, 1).toUpperCase() || '?';
   const frameClassName = `brand-logo-frame brand-logo-frame-${variant}`;
 
   useEffect(() => {
-    console.log('BrandLogo logoUrl:', logoUrl);
-    console.log('BrandLogo fallbackUrl:', fallbackUrl);
-    console.log('BrandLogo finalSrc:', finalSrc);
-  }, [fallbackUrl, finalSrc, logoUrl]);
+    setImageState('primary');
+  }, [fallbackUrl, preferFallback, trimmedUrl]);
 
   return (
     <span className={frameClassName}>
       {shouldUseImage ? (
           <img
+            key={currentSrc}
             className="brand-logo-image"
-            src={finalSrc}
+            src={currentSrc}
             alt={alt}
             onError={() => {
-              if (variant === 'restaurant' && finalSrc === trimmedUrl) {
-                console.warn('No se pudo cargar el logo restaurante:', finalSrc);
+              if (imageState === 'primary' && currentSrc !== fallbackUrl && fallbackUrl) {
+                if (variant === 'restaurant') {
+                  console.warn('No se pudo cargar el logo restaurante:', currentSrc);
+                }
+                setImageState('fallback');
+                return;
               }
+
+              setImageState('letter');
             }}
           />
       ) : (
