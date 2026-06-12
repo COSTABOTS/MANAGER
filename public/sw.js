@@ -1,4 +1,4 @@
-const CACHE_NAME = 'safari-manager-v25';
+const CACHE_NAME = 'safari-manager-v26';
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -31,6 +31,11 @@ self.addEventListener('fetch', (event) => {
   }
 
   const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   if (requestUrl.hostname === '127.0.0.1' || requestUrl.hostname === 'localhost') {
     event.respondWith(fetch(event.request));
     return;
