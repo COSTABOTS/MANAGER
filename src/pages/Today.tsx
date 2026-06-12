@@ -148,6 +148,10 @@ export function Today({
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
 
   useEffect(() => {
+    console.log('Logo visual recibido:', restaurantLogoUrl);
+  }, [restaurantLogoUrl]);
+
+  useEffect(() => {
     if (!syncLabel) {
       setIsToastVisible(false);
       return;

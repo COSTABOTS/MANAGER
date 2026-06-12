@@ -27,6 +27,10 @@ export function Layout({ activePage, children, restaurantName, restaurantLogoUrl
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
+    console.log('Logo visual recibido:', restaurantLogoUrl);
+  }, [restaurantLogoUrl]);
+
+  useEffect(() => {
     if (!isSidebarOpen) {
       return;
     }

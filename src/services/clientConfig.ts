@@ -1,3 +1,4 @@
+import { mockSettings } from '../mock';
 import type { ManagerSettings } from '../types';
 
 export const LOGIN_FLAG_KEY = 'costabots_logged_in';
@@ -63,20 +64,6 @@ function toStringValue(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function applyTextValue<T extends keyof ManagerSettings>(
-  target: ManagerSettings,
-  key: T,
-  value: unknown,
-) {
-  const nextValue = toStringValue(value);
-
-  if (!nextValue) {
-    return;
-  }
-
-  target[key] = nextValue as ManagerSettings[T];
-}
-
 export function getClientConfig(): ExternalClientConfig | null {
   try {
     const rawConfig = sessionStorage.getItem(CLIENT_CONFIG_KEY);
@@ -100,7 +87,7 @@ export function isValidClientConfig(config: ExternalClientConfig | null): config
   );
 }
 
-export function getClientWebhook(key: ClientWebhookKey, fallbackUrl = '') {
+export function getClientWebhook(key: ClientWebhookKey) {
   const config = getClientConfig();
   const dynamicUrl = toStringValue(config?.[key]);
 
@@ -110,12 +97,12 @@ export function getClientWebhook(key: ClientWebhookKey, fallbackUrl = '') {
   }
 
   console.warn(`Webhook dinámico no configurado: ${key}. Usando fallback.`);
-  return fallbackUrl;
+  return '';
 }
 
-export function getClientSheetId(fallbackSheetId = '') {
+export function getClientSheetId() {
   const config = getClientConfig();
-  return toStringValue(config?.sheet_id) || toStringValue(config?.googleSheetId) || fallbackSheetId;
+  return toStringValue(config?.sheet_id);
 }
 
 export function populateAdminFromClientConfig(
@@ -126,28 +113,28 @@ export function populateAdminFromClientConfig(
     return settings;
   }
 
-  const nextSettings = { ...settings };
-
-  applyTextValue(nextSettings, 'restaurantName', config.rest_nombre ?? config.restaurantName);
-  applyTextValue(nextSettings, 'costabotsLogoUrl', config.logo_costabots);
-  applyTextValue(nextSettings, 'restaurantLogoUrl', config.logo_restaurante ?? config.restaurantLogoUrl);
-  applyTextValue(nextSettings, 'primaryColor', config.color ?? config.primaryColor);
-  applyTextValue(nextSettings, 'googleSheetId', config.sheet_id ?? config.googleSheetId);
-  applyTextValue(nextSettings, 'webhookLeerReservas', config.webhook_get_reservas);
-  applyTextValue(nextSettings, 'webhookWalkin', config.webhook_walkin);
-  applyTextValue(nextSettings, 'webhookReservas', config.webhook_manual);
-  applyTextValue(nextSettings, 'webhookLlegada', config.webhook_arrived);
-  applyTextValue(nextSettings, 'webhookMesa', config.webhook_mesa);
-  applyTextValue(nextSettings, 'webhookFullyBooked', config.webhook_fully_booked);
-  applyTextValue(nextSettings, 'webhookCancelReservationUrl', config.webhook_cancel);
-  applyTextValue(nextSettings, 'webhookSettings', config.webhook_settings);
-  applyTextValue(nextSettings, 'webhookSettingsCapacityUrl', config.webhook_capacidad);
-  applyTextValue(nextSettings, 'webhookShows', config.webhook_shows);
-  applyTextValue(nextSettings, 'webhookFeedbacks', config.webhook_feedbacks);
-
   return {
-    ...nextSettings,
-    ...config.webhooks,
+    ...mockSettings,
+    restaurantName: toStringValue(config.rest_nombre),
+    costabotsLogoUrl: toStringValue(config.logo_costabots),
+    restaurantLogoUrl: toStringValue(config.logo_restaurante),
+    primaryColor: toStringValue(config.color) || mockSettings.primaryColor,
+    googleSheetId: toStringValue(config.sheet_id),
+    webhookLeerReservas: toStringValue(config.webhook_get_reservas),
+    webhookWalkin: toStringValue(config.webhook_walkin),
+    webhookReservas: toStringValue(config.webhook_manual),
+    webhookLlegada: toStringValue(config.webhook_arrived),
+    webhookMesa: toStringValue(config.webhook_mesa),
+    webhookFullyBooked: toStringValue(config.webhook_fully_booked),
+    webhookCancelReservationUrl: toStringValue(config.webhook_cancel),
+    webhookSettings: toStringValue(config.webhook_settings),
+    webhookSettingsCapacityUrl: toStringValue(config.webhook_capacidad),
+    webhookShows: toStringValue(config.webhook_shows),
+    webhookFeedbacks: toStringValue(config.webhook_feedbacks),
+    reservationsWebhook: '',
+    walkInWebhook: '',
+    feedbacksWebhook: '',
+    showsWebhook: '',
   };
 }
 

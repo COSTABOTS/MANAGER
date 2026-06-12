@@ -52,3 +52,11 @@ export function saveSettingsToStorage(settings: ManagerSettings) {
     // Local storage can be unavailable in private browsing or restricted contexts.
   }
 }
+
+export function clearSettingsStorage() {
+  try {
+    window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  } catch {
+    // Local storage can be unavailable in private browsing or restricted contexts.
+  }
+}

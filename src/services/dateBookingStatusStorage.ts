@@ -29,3 +29,11 @@ export function saveDateBookingStatusToStorage(statuses: DateBookingStatus) {
     // Local storage can be unavailable in private browsing or restricted contexts.
   }
 }
+
+export function clearDateBookingStatusStorage() {
+  try {
+    window.localStorage.removeItem(DATE_BOOKING_STATUS_STORAGE_KEY);
+  } catch {
+    // Local storage can be unavailable in private browsing or restricted contexts.
+  }
+}
