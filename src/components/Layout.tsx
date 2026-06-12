@@ -17,18 +17,23 @@ const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
 interface LayoutProps {
   activePage: PageKey;
   children: ReactNode;
+  costabotsLogoUrl: string;
   restaurantName: string;
   restaurantLogoUrl: string;
   onNavigate: (page: PageKey) => void;
   onLogout: () => void;
 }
 
-export function Layout({ activePage, children, restaurantName, restaurantLogoUrl, onNavigate, onLogout }: LayoutProps) {
+export function Layout({ activePage, children, costabotsLogoUrl, restaurantName, restaurantLogoUrl, onNavigate, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     console.log('Logo restaurante:', restaurantLogoUrl);
   }, [restaurantLogoUrl]);
+
+  useEffect(() => {
+    console.log('Logo Costabots:', costabotsLogoUrl);
+  }, [costabotsLogoUrl]);
 
   useEffect(() => {
     if (!isSidebarOpen) {
@@ -70,7 +75,7 @@ export function Layout({ activePage, children, restaurantName, restaurantLogoUrl
         <div className="sidebar-header">
           <div className="sidebar-brand-stack">
             <div className="costabots-lockup">
-              <BrandLogo fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" preferFallback />
+              <BrandLogo logoUrl={costabotsLogoUrl} fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" />
               <span>COSTABOTS MANAGER</span>
             </div>
             <div className="brand-lockup">

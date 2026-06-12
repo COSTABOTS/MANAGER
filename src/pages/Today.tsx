@@ -14,6 +14,7 @@ import { formatDisplayDate, getCurrentTime } from '../utils/date';
 interface TodayProps {
   dayStatus: DayState;
   lastSync: string;
+  costabotsLogoUrl: string;
   restaurantName: string;
   restaurantLogoUrl: string;
   openingTime: string;
@@ -48,6 +49,7 @@ const EMPTY_MANUAL_RESERVATION = {
 export function Today({
   dayStatus,
   lastSync,
+  costabotsLogoUrl,
   restaurantName,
   restaurantLogoUrl,
   openingTime,
@@ -152,6 +154,10 @@ export function Today({
   }, [restaurantLogoUrl]);
 
   useEffect(() => {
+    console.log('Logo Costabots:', costabotsLogoUrl);
+  }, [costabotsLogoUrl]);
+
+  useEffect(() => {
     if (!syncLabel) {
       setIsToastVisible(false);
       return;
@@ -215,7 +221,7 @@ export function Today({
         </div>
         <div className="today-header-aside">
           <div className="costabots-lockup today-costabots-brand">
-            <BrandLogo fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" preferFallback />
+            <BrandLogo logoUrl={costabotsLogoUrl} fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" />
             <span>COSTABOTS MANAGER</span>
           </div>
         </div>

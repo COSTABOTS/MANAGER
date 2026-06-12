@@ -536,6 +536,7 @@ export function App() {
           fullyBooked: isTodayFullyBooked,
         }}
         lastSync={lastSync}
+        costabotsLogoUrl={settings.costabotsLogoUrl}
         restaurantName={settings.restaurantName}
         restaurantLogoUrl={settings.restaurantLogoUrl}
         openingTime={settings.openingTime}
@@ -566,6 +567,7 @@ export function App() {
   return (
     <Layout
       activePage={activePage}
+      costabotsLogoUrl={settings.costabotsLogoUrl}
       restaurantName={settings.restaurantName}
       restaurantLogoUrl={settings.restaurantLogoUrl}
       onNavigate={setActivePage}
