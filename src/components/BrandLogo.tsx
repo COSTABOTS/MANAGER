@@ -28,7 +28,13 @@ export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant, p
           className="brand-logo-image"
           src={imageUrl}
           alt={alt}
-          onError={() => setFailedUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]))}
+          onError={() => {
+            if (variant === 'restaurant' && imageUrl === trimmedUrl) {
+              console.warn('No se pudo cargar el logo restaurante:', imageUrl);
+            }
+
+            setFailedUrls((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]));
+          }}
         />
       ) : (
         <span className="brand-logo-letter" aria-hidden="true">
