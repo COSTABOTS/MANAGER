@@ -18,12 +18,17 @@ interface LayoutProps {
   activePage: PageKey;
   children: ReactNode;
   restaurantName: string;
+  restaurantLogoUrl: string;
   onNavigate: (page: PageKey) => void;
   onLogout: () => void;
 }
 
-export function Layout({ activePage, children, restaurantName, onNavigate, onLogout }: LayoutProps) {
+export function Layout({ activePage, children, restaurantName, restaurantLogoUrl, onNavigate, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    console.log('Logo restaurante:', restaurantLogoUrl);
+  }, [restaurantLogoUrl]);
 
   useEffect(() => {
     if (!isSidebarOpen) {
@@ -69,7 +74,7 @@ export function Layout({ activePage, children, restaurantName, onNavigate, onLog
               <span>COSTABOTS MANAGER</span>
             </div>
             <div className="brand-lockup">
-              <BrandLogo fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" preferFallback />
+              <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
               <div>
                 <p className="eyebrow">Restaurante</p>
                 <strong>{restaurantName}</strong>

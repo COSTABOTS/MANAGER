@@ -15,6 +15,7 @@ interface TodayProps {
   dayStatus: DayState;
   lastSync: string;
   restaurantName: string;
+  restaurantLogoUrl: string;
   openingTime: string;
   closingTime: string;
   bookingInterval: 30 | 60;
@@ -48,6 +49,7 @@ export function Today({
   dayStatus,
   lastSync,
   restaurantName,
+  restaurantLogoUrl,
   openingTime,
   closingTime,
   bookingInterval,
@@ -146,6 +148,10 @@ export function Today({
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
 
   useEffect(() => {
+    console.log('Logo restaurante:', restaurantLogoUrl);
+  }, [restaurantLogoUrl]);
+
+  useEffect(() => {
     if (!syncLabel) {
       setIsToastVisible(false);
       return;
@@ -203,7 +209,7 @@ export function Today({
         <div className="today-header-spacer" aria-hidden="true" />
         <div className="app-brand-header today-restaurant-brand">
           <div className="brand-lockup">
-            <BrandLogo fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" preferFallback />
+            <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
             <h1>{restaurantName}</h1>
           </div>
         </div>
