@@ -16,6 +16,7 @@ import {
   getClientConfig,
   getClientSheetId,
   getClientWebhook,
+  isValidClientConfig,
   populateAdminFromClientConfig,
 } from './services/clientConfig';
 import type { ExternalClientConfig } from './services/clientConfig';
@@ -33,19 +34,24 @@ export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'show
 
 const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnjdpook';
 
+function clearLoginSession() {
+  sessionStorage.removeItem(LOGIN_FLAG_KEY);
+  sessionStorage.removeItem(CLIENT_CONFIG_KEY);
+}
+
 function loadClientConfigFromSession() {
   try {
     const isLoggedIn = sessionStorage.getItem(LOGIN_FLAG_KEY) === 'true';
     const config = getClientConfig();
 
-    if (!isLoggedIn || !config) {
+    if (!isLoggedIn || !isValidClientConfig(config)) {
+      clearLoginSession();
       return null;
     }
 
     return config;
   } catch {
-    sessionStorage.removeItem(LOGIN_FLAG_KEY);
-    sessionStorage.removeItem(CLIENT_CONFIG_KEY);
+    clearLoginSession();
     return null;
   }
 }
@@ -133,6 +139,7 @@ export function App() {
   async function handleLogin(usuario: string, password: string) {
     setIsLoggingIn(true);
     setLoginError('');
+    clearLoginSession();
 
     try {
       const response = await fetch(LOGIN_WEBHOOK_URL, {
@@ -149,7 +156,9 @@ export function App() {
 
       const config = (await response.json()) as ExternalClientConfig;
 
-      if (config.success !== true) {
+      if (!isValidClientConfig(config)) {
+        clearLoginSession();
+        setClientConfig(null);
         setLoginError('Usuario o contraseña incorrectos');
         return;
       }
@@ -161,6 +170,8 @@ export function App() {
       console.log('Cliente cargado:', config.rest_nombre);
       console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
     } catch {
+      clearLoginSession();
+      setClientConfig(null);
       setLoginError('Usuario o contraseña incorrectos');
     } finally {
       setIsLoggingIn(false);
@@ -168,8 +179,7 @@ export function App() {
   }
 
   function handleLogout() {
-    sessionStorage.removeItem(LOGIN_FLAG_KEY);
-    sessionStorage.removeItem(CLIENT_CONFIG_KEY);
+    clearLoginSession();
     setClientConfig(null);
     setActivePage('today');
   }

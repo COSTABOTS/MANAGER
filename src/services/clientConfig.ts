@@ -91,6 +91,15 @@ export function getClientConfig(): ExternalClientConfig | null {
   }
 }
 
+export function isValidClientConfig(config: ExternalClientConfig | null): config is ExternalClientConfig {
+  return Boolean(
+      config &&
+      config.success === true &&
+      toStringValue(config.client_id) &&
+      toStringValue(config.rest_nombre),
+  );
+}
+
 export function getClientWebhook(key: ClientWebhookKey, fallbackUrl = '') {
   const config = getClientConfig();
   const dynamicUrl = toStringValue(config?.[key]);
