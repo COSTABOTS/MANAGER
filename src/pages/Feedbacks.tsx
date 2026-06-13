@@ -22,7 +22,12 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
   }, [validFeedbacks]);
 
   const positiveCount = validFeedbacks.filter((feedback) => feedback.rating >= 4).length;
+  const neutralCount = validFeedbacks.filter((feedback) => feedback.rating === 3).length;
   const negativeCount = validFeedbacks.filter((feedback) => feedback.rating <= 2).length;
+  const alertFeedbacks = feedbacks
+    .filter((feedback) => feedback.rating > 0 && feedback.rating <= 2)
+    .slice()
+    .sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
 
   const visibleFeedbacks = feedbacks.filter((feedback) => {
     const matchesScore = scoreFilter === 'all' || feedback.rating === Number(scoreFilter);
@@ -43,12 +48,6 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
           <span>{average > 0 ? '⭐'.repeat(Math.round(average)) : '-'}</span>
         </article>
 
-        <article className="rating-card">
-          <p className="eyebrow">Total feedbacks</p>
-          <strong>{feedbacks.length}</strong>
-          <span>{positiveCount} positivos · {negativeCount} negativos</span>
-        </article>
-
         <article className="distribution-card">
           <p className="eyebrow">Distribucion</p>
           {[5, 4, 3, 2, 1].map((score) => {
@@ -65,6 +64,46 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
             );
           })}
         </article>
+      </section>
+
+      <section className="feedback-kpi-grid">
+        <article className="feedback-kpi is-positive">
+          <p className="eyebrow">Positive</p>
+          <strong>Positivos: {positiveCount}</strong>
+        </article>
+        <article className="feedback-kpi is-neutral">
+          <p className="eyebrow">Neutral</p>
+          <strong>Neutros: {neutralCount}</strong>
+        </article>
+        <article className="feedback-kpi is-negative">
+          <p className="eyebrow">Negative</p>
+          <strong>Negativos: {negativeCount}</strong>
+        </article>
+      </section>
+
+      <section className="feedback-alerts-card">
+        <div className="section-title compact">
+          <div>
+            <p className="eyebrow">Alertas</p>
+            <h2>Comentarios que requieren atencion</h2>
+          </div>
+        </div>
+        {alertFeedbacks.length === 0 ? (
+          <p className="empty-state">Sin incidencias recientes</p>
+        ) : (
+          <div className="feedback-alert-list">
+            {alertFeedbacks.map((feedback) => (
+              <article className="feedback-alert-item" key={feedback.id}>
+                <span className="alert-dot" aria-hidden="true" />
+                <div>
+                  <strong>{feedback.date || '-'}</strong>
+                  <span>{feedback.client || 'Cliente'}</span>
+                  <p>{feedback.comment || '-'}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="toolbar-card">
@@ -153,3 +192,4 @@ function PageHeader({
     </section>
   );
 }
+

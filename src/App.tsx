@@ -679,7 +679,7 @@ export function App() {
     }
 
     if (activePage === 'reports') {
-      return <Reports reservations={allReservations} />;
+      return <Reports reservations={allReservations} feedbacks={feedbacks} restaurantLogoUrl={settings.restaurantLogoUrl} restaurantName={settings.restaurantName} />;
     }
 
     if (activePage === 'shows') {
