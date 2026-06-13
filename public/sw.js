@@ -1,4 +1,5 @@
-const CACHE_NAME = 'safari-manager-v26';
+const CACHE_NAME = 'safari-manager-v27';
+const IS_LOCAL_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 const APP_SHELL = [
   '/',
   '/manifest.json',
@@ -12,11 +13,28 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
+  if (IS_LOCAL_DEV) {
+    self.skipWaiting();
+    return;
+  }
+
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  if (IS_LOCAL_DEV) {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .then(() => self.registration.unregister())
+        .then(() => self.clients.matchAll())
+        .then((clients) => clients.forEach((client) => client.navigate(client.url))),
+    );
+    return;
+  }
+
   event.waitUntil(
     caches
       .keys()
@@ -26,6 +44,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (IS_LOCAL_DEV) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   if (event.request.method !== 'GET') {
     return;
   }

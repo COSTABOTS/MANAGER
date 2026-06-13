@@ -8,6 +8,7 @@ interface ReservationsWebhookResponse {
   reservas?: SheetReservationRow[];
   reservations?: SheetReservationRow[];
   data?: SheetReservationRow[];
+  rows?: SheetReservationRow[];
 }
 
 export interface TodayData {
@@ -56,7 +57,7 @@ function getReservationRows(data: ReservationsWebhookResponse | SheetReservation
     return data;
   }
 
-  return data.reservations ?? data.reservas ?? data.data ?? [];
+  return data.reservations ?? data.reservas ?? data.data ?? data.rows ?? [];
 }
 
 export async function loadReservations(webhookUrl: string, sheetId?: string): Promise<Reservation[]> {
@@ -69,11 +70,19 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       accion: 'leer_reservas',
+      action: 'GET_RESERVATIONS',
       sheet_id: sheetId ?? '',
+      sheet: 'RESERVAS',
       hoja: 'RESERVAS',
       sheet_name: 'RESERVAS',
       source_sheet: 'RESERVAS',
+      target_sheet: 'RESERVAS',
+      view: 'all',
       include_cancelled: true,
+      include_canceled: true,
+      include_history: true,
+      include_statuses: ['CONFIRMADA', 'CANCELADA'],
+      exclude_today_sheet: true,
     }),
   });
 

@@ -3,6 +3,16 @@ import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import './styles.css';
 
+const shouldResetLocalSession = new URLSearchParams(window.location.search).has('reset');
+
+if (shouldResetLocalSession) {
+  sessionStorage.removeItem('costabots_logged_in');
+  sessionStorage.removeItem('costabots_client_config');
+  localStorage.removeItem('manager_settings');
+  localStorage.removeItem('manager_date_booking_status');
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

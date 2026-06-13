@@ -1518,6 +1518,20 @@ button:disabled {
   opacity: 0.78;
 }
 
+.reservations-table tr.is-past td {
+  color: #778194;
+  background: #f0f2f5;
+  opacity: 0.82;
+}
+
+.reservations-table tr.is-past:nth-child(even) td {
+  background: #e9edf2;
+}
+
+.reservations-table tr.is-past:not(.is-cancelada) td:not(:last-child) {
+  opacity: 0.74;
+}
+
 .table-input {
   min-width: 160px;
   min-height: 38px;

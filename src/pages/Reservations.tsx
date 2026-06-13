@@ -23,11 +23,12 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
+  const [showPastReservations, setShowPastReservations] = useState(false);
   const today = getLocalDateString(new Date());
   const tomorrow = addDays(today, 1);
   const weekEnd = addDays(today, 7);
 
-  const visibleReservations = useMemo(() => {
+  const filteredReservations = useMemo(() => {
     return reservations
       .filter((reservation) => {
         const search = `${reservation.name} ${reservation.room} ${reservation.phone ?? ''} ${reservation.specialRequest} ${reservation.status}`.toLowerCase();
@@ -51,6 +52,21 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
       })
       .sort((a, b) => `${normalizeDateForCompare(a.date)} ${a.time}`.localeCompare(`${normalizeDateForCompare(b.date)} ${b.time}`));
   }, [date, filter, query, reservations, today, tomorrow, weekEnd]);
+
+  const upcomingReservations = useMemo(
+    () => filteredReservations.filter((reservation) => !isPastReservation(reservation, today)),
+    [filteredReservations, today],
+  );
+
+  const pastReservations = useMemo(
+    () =>
+      filteredReservations
+        .filter((reservation) => isPastReservation(reservation, today))
+        .sort((a, b) => `${normalizeDateForCompare(b.date)} ${b.time}`.localeCompare(`${normalizeDateForCompare(a.date)} ${a.time}`)),
+    [filteredReservations, today],
+  );
+
+  const visibleReservations = showPastReservations ? [...upcomingReservations, ...pastReservations] : upcomingReservations;
 
   return (
     <main className="app-shell">
@@ -94,6 +110,9 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
             <button className="secondary-button" type="button" disabled={isRefreshingReservations} onClick={() => void onRefreshReservations()}>
               Actualizar datos
             </button>
+            <button className="secondary-button" type="button" onClick={() => setShowPastReservations((current) => !current)}>
+              {showPastReservations ? 'Ocultar anteriores' : `Ver anteriores (${pastReservations.length})`}
+            </button>
             <span className="reservation-count">{visibleReservations.length} registros</span>
             <span className="last-updated">Última actualización: {lastUpdatedAt || '--:--:--'}</span>
           </div>
@@ -115,36 +134,54 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
               </tr>
             </thead>
             <tbody>
-              {visibleReservations.map((reservation) => (
-                <tr key={reservation.id} className={isCanceledReservation(reservation) ? 'reservation-row is-cancelada' : 'reservation-row'}>
-                  <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
-                  <td data-label="Hora">{reservation.time}</td>
-                  <td data-label="Nombre">{reservation.name}</td>
-                  <td data-label="Habitacion">{reservation.room || '-'}</td>
-                  <td data-label="Telefono">{reservation.phone || '-'}</td>
-                  <td data-label="Pax">{reservation.pax}</td>
-                  <td data-label="Peticion especial">{reservation.specialRequest}</td>
-                  <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
-                  <td data-label="Estado">
-                    <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
-                  </td>
-                  <td data-label="Acciones">
-                    {isActiveReservation(reservation) ? (
-                      <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservation)}>
-                        Cancelar
-                      </button>
-                    ) : (
-                      <span className="muted-cell">Cancelada</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {visibleReservations.map((reservation) => {
+                const pastReservation = isPastReservation(reservation, today);
+                const canceledReservation = isCanceledReservation(reservation);
+                const canCancel = isActiveReservation(reservation) && !pastReservation && Boolean(reservation.idReserva);
+
+                return (
+                  <tr key={reservation.idReserva} className={getReservationRowClassName(canceledReservation, pastReservation)}>
+                    <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
+                    <td data-label="Hora">{reservation.time}</td>
+                    <td data-label="Nombre">{reservation.name}</td>
+                    <td data-label="Habitacion">{reservation.room || '-'}</td>
+                    <td data-label="Telefono">{reservation.phone || '-'}</td>
+                    <td data-label="Pax">{reservation.pax}</td>
+                    <td data-label="Peticion especial">{reservation.specialRequest}</td>
+                    <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
+                    <td data-label="Estado">
+                      <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
+                    </td>
+                    <td data-label="Acciones">
+                      {canCancel ? (
+                        <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservation)}>
+                          Cancelar
+                        </button>
+                      ) : canceledReservation ? (
+                        <span className="muted-cell">Cancelada</span>
+                      ) : pastReservation ? (
+                        <span className="muted-cell">Historico</span>
+                      ) : (
+                        <span className="muted-cell">Sin acciones</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </section>
     </main>
   );
+}
+
+function isPastReservation(reservation: Reservation, today: string) {
+  return normalizeDateForCompare(reservation.date) < today;
+}
+
+function getReservationRowClassName(isCanceled: boolean, isPast: boolean) {
+  return ['reservation-row', isCanceled ? 'is-cancelada' : '', isPast ? 'is-past' : ''].filter(Boolean).join(' ');
 }
 
 function getReservationOrigin(source: Reservation['source']) {
