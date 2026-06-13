@@ -11,6 +11,7 @@ interface FeedbacksProps {
 export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: FeedbacksProps) {
   const [scoreFilter, setScoreFilter] = useState('all');
   const [query, setQuery] = useState('');
+  const [showAlerts, setShowAlerts] = useState(false);
 
   const validFeedbacks = useMemo(() => feedbacks.filter((feedback) => feedback.rating > 0), [feedbacks]);
   const average = useMemo(() => {
@@ -21,13 +22,11 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
     return validFeedbacks.reduce((total, feedback) => total + feedback.rating, 0) / validFeedbacks.length;
   }, [validFeedbacks]);
 
-  const positiveCount = validFeedbacks.filter((feedback) => feedback.rating >= 4).length;
-  const neutralCount = validFeedbacks.filter((feedback) => feedback.rating === 3).length;
-  const negativeCount = validFeedbacks.filter((feedback) => feedback.rating <= 2).length;
   const alertFeedbacks = feedbacks
     .filter((feedback) => feedback.rating > 0 && feedback.rating <= 2)
     .slice()
     .sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
+  const latestAlert = alertFeedbacks[0];
 
   const visibleFeedbacks = feedbacks.filter((feedback) => {
     const matchesScore = scoreFilter === 'all' || feedback.rating === Number(scoreFilter);
@@ -66,43 +65,35 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
         </article>
       </section>
 
-      <section className="feedback-kpi-grid">
-        <article className="feedback-kpi is-positive">
-          <p className="eyebrow">Positive</p>
-          <strong>Positivos: {positiveCount}</strong>
-        </article>
-        <article className="feedback-kpi is-neutral">
-          <p className="eyebrow">Neutral</p>
-          <strong>Neutros: {neutralCount}</strong>
-        </article>
-        <article className="feedback-kpi is-negative">
-          <p className="eyebrow">Negative</p>
-          <strong>Negativos: {negativeCount}</strong>
-        </article>
-      </section>
-
       <section className="feedback-alerts-card">
-        <div className="section-title compact">
-          <div>
-            <p className="eyebrow">Alertas</p>
-            <h2>Comentarios que requieren atencion</h2>
-          </div>
-        </div>
         {alertFeedbacks.length === 0 ? (
           <p className="empty-state">Sin incidencias recientes</p>
         ) : (
-          <div className="feedback-alert-list">
-            {alertFeedbacks.map((feedback) => (
-              <article className="feedback-alert-item" key={feedback.id}>
-                <span className="alert-dot" aria-hidden="true" />
-                <div>
-                  <strong>{feedback.date || '-'}</strong>
-                  <span>{feedback.client || 'Cliente'}</span>
-                  <p>{feedback.comment || '-'}</p>
-                </div>
-              </article>
-            ))}
-          </div>
+          <>
+            <div className="feedback-last-alert">
+              <strong>⚠ Ultima alerta:</strong>
+              <span>
+                {latestAlert.date || '-'} · {latestAlert.client || 'Cliente'} · {latestAlert.comment || '-'}
+              </span>
+              <button className="secondary-button compact-action" type="button" onClick={() => setShowAlerts((current) => !current)}>
+                {showAlerts ? 'Ocultar alertas' : 'Ver alertas'}
+              </button>
+            </div>
+            {showAlerts && (
+              <div className="feedback-alert-list">
+                {alertFeedbacks.map((feedback) => (
+                  <article className="feedback-alert-item" key={feedback.id}>
+                    <span className="alert-dot" aria-hidden="true" />
+                    <div>
+                      <strong>{feedback.date || '-'}</strong>
+                      <span>{feedback.client || 'Cliente'}</span>
+                      <p>{feedback.comment || '-'}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </section>
 
