@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
 import { Control } from './pages/Control';
 import { Feedbacks } from './pages/Feedbacks';
+import { Reports } from './pages/Reports';
 import { Reservations } from './pages/Reservations';
 import { Settings } from './pages/Settings';
 import { Shows } from './pages/Shows';
@@ -28,61 +29,11 @@ import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettin
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
-import { isActiveReservation, isCanceledReservation } from './utils/reservationStatus';
+import { isActiveReservation } from './utils/reservationStatus';
 
-export type PageKey = 'today' | 'reservations' | 'control' | 'feedbacks' | 'shows' | 'settings';
+export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
 const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnjdpook';
-const RESERVATIONS_CACHE_PREFIX = 'manager_reservations_cache';
-
-function getReservationsCacheKey(config: ExternalClientConfig | null) {
-  return config?.client_id ? `${RESERVATIONS_CACHE_PREFIX}_${config.client_id}` : '';
-}
-
-function loadReservationsFromSessionCache(config: ExternalClientConfig | null) {
-  const cacheKey = getReservationsCacheKey(config);
-
-  if (!cacheKey) {
-    return [];
-  }
-
-  try {
-    const cachedReservations = sessionStorage.getItem(cacheKey);
-    return cachedReservations ? (JSON.parse(cachedReservations) as Reservation[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveReservationsToSessionCache(config: ExternalClientConfig | null, reservations: Reservation[]) {
-  const cacheKey = getReservationsCacheKey(config);
-
-  if (!cacheKey) {
-    return;
-  }
-
-  try {
-    sessionStorage.setItem(cacheKey, JSON.stringify(reservations));
-  } catch {
-    // Session storage can be unavailable in restricted contexts.
-  }
-}
-
-function mergeReservationsWithHistory(currentReservations: Reservation[], nextReservations: Reservation[]) {
-  const mergedReservations = new Map(nextReservations.map((reservation) => [reservation.idReserva, reservation]));
-  const today = getLocalDateString(new Date());
-
-  currentReservations.forEach((reservation) => {
-    const existsInNextReservations = mergedReservations.has(reservation.idReserva);
-    const isHistoricalReservation = normalizeDateForCompare(reservation.date) < today;
-
-    if (!existsInNextReservations && (isCanceledReservation(reservation) || isHistoricalReservation)) {
-      mergedReservations.set(reservation.idReserva, reservation);
-    }
-  });
-
-  return Array.from(mergedReservations.values());
-}
 
 function clearLoginSession() {
   sessionStorage.removeItem(LOGIN_FLAG_KEY);
@@ -113,9 +64,7 @@ export function App() {
   const [clientConfig, setClientConfig] = useState<ExternalClientConfig | null>(() => loadClientConfigFromSession());
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [allReservations, setAllReservations] = useState<Reservation[]>(() =>
-    clientConfig ? loadReservationsFromSessionCache(clientConfig) : mockReservations,
-  );
+  const [allReservations, setAllReservations] = useState<Reservation[]>(() => (clientConfig ? [] : mockReservations));
   const [dayStatus] = useState<DayState>({
     ...todayState,
     date: getLocalDateString(new Date()),
@@ -190,20 +139,12 @@ export function App() {
         manual: clientConfig.webhook_manual,
         walkin: clientConfig.webhook_walkin,
       });
-      setAllReservations(loadReservationsFromSessionCache(clientConfig));
+      setAllReservations([]);
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
     }
   }, [clientConfig]);
-
-  useEffect(() => {
-    if (!clientConfig) {
-      return;
-    }
-
-    saveReservationsToSessionCache(clientConfig, allReservations);
-  }, [allReservations, clientConfig]);
 
   async function handleLogin(usuario: string, password: string) {
     setIsLoggingIn(true);
@@ -234,7 +175,7 @@ export function App() {
 
       sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(config));
       sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
-      setAllReservations(loadReservationsFromSessionCache(config));
+      setAllReservations([]);
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
@@ -291,7 +232,7 @@ export function App() {
 
     try {
       const nextReservations = await loadReservationsFromWebhook(reservationsWebhook, sheetId);
-      setAllReservations((currentReservations) => mergeReservationsWithHistory(currentReservations, nextReservations));
+      setAllReservations(nextReservations);
       setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
       setLastSync('Datos actualizados correctamente');
     } catch (error) {
@@ -598,6 +539,10 @@ export function App() {
 
     if (activePage === 'feedbacks') {
       return <Feedbacks />;
+    }
+
+    if (activePage === 'reports') {
+      return <Reports reservations={allReservations} />;
     }
 
     if (activePage === 'shows') {

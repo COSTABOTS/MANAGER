@@ -97,6 +97,13 @@ export function Layout({ activePage, children, restaurantName, restaurantLogoUrl
               {item.label}
             </button>
           ))}
+          <button
+            className={activePage === 'reports' ? 'is-active' : ''}
+            type="button"
+            onClick={() => handleNavigate('reports')}
+          >
+            INFORMES
+          </button>
         </nav>
 
         <button className="logout-button" type="button" onClick={handleLogout}>
