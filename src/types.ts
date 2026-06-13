@@ -80,9 +80,14 @@ export interface ManagerSettings {
   bookingInterval: 30 | 60;
   openingDays: Record<Weekday, boolean>;
   reservasActivas: boolean;
+  maxPaxPerBooking: number;
+  whatsappConfirmation: boolean;
+  dailyBriefingEnabled: boolean;
+  dailyBriefingTime: string;
   whatsappPreCena: boolean;
   filtroResenas: boolean;
   mensajePostCena: boolean;
+  feedbackAlertPhone: string;
   costabotsLogoUrl: string;
   restaurantName: string;
   restaurantLogoUrl: string;

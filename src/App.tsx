@@ -25,6 +25,7 @@ import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
+import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -38,6 +39,7 @@ import { isActiveReservation } from './utils/reservationStatus';
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
 const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnjdpook';
+const SETTINGS_WEBHOOK_FALLBACK = '';
 
 function clearLoginSession() {
   sessionStorage.removeItem(LOGIN_FLAG_KEY);
@@ -88,6 +90,9 @@ export function App() {
   const [isLoadingFeedbacks, setIsLoadingFeedbacks] = useState(false);
   const [feedbacksMessage, setFeedbacksMessage] = useState('');
   const [feedbacksLoaded, setFeedbacksLoaded] = useState(false);
+  const [isLoadingOperationalSettings, setIsLoadingOperationalSettings] = useState(false);
+  const [operationalSettingsLoaded, setOperationalSettingsLoaded] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
 
@@ -144,6 +149,12 @@ export function App() {
   }, [activePage, feedbacksLoaded, isLoadingFeedbacks]);
 
   useEffect(() => {
+    if (activePage === 'settings' && !operationalSettingsLoaded && !isLoadingOperationalSettings) {
+      void loadSettingsFromMake();
+    }
+  }, [activePage, operationalSettingsLoaded, isLoadingOperationalSettings]);
+
+  useEffect(() => {
     if (clientConfig) {
       console.log('CLIENTE ACTIVO:', clientConfig.client_id, clientConfig.rest_nombre);
       console.log('WEBHOOKS ACTIVOS:', {
@@ -155,6 +166,8 @@ export function App() {
       setRestaurantTables([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
+      setOperationalSettingsLoaded(false);
+      setSettingsMessage('');
       setTablesSyncMessage('');
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
@@ -196,6 +209,8 @@ export function App() {
       setRestaurantTables([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
+      setOperationalSettingsLoaded(false);
+      setSettingsMessage('');
       setTablesSyncMessage('');
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
@@ -216,6 +231,8 @@ export function App() {
     setRestaurantTables([]);
     setFeedbacks([]);
     setFeedbacksLoaded(false);
+    setOperationalSettingsLoaded(false);
+    setSettingsMessage('');
     setActivePage('today');
   }
 
@@ -320,6 +337,50 @@ export function App() {
     }
   }
 
+  function getOperationalSettingsWebhook() {
+    return getClientWebhook('webhook_settings') || settings.webhookSettings || SETTINGS_WEBHOOK_FALLBACK;
+  }
+
+  async function loadSettingsFromMake() {
+    const settingsWebhook = getOperationalSettingsWebhook();
+
+    if (!settingsWebhook.trim()) {
+      setSettings((current) => {
+        const nextSettings = applyOperationalDefaults(current);
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      setOperationalSettingsLoaded(true);
+      setSettingsMessage('Webhook SETTINGS no configurado. Usando defaults operativos.');
+      return;
+    }
+
+    setIsLoadingOperationalSettings(true);
+    setSettingsMessage('Cargando SETTINGS...');
+
+    try {
+      const rawSettings = await loadOperationalSettings(settingsWebhook);
+      setSettings((current) => {
+        const nextSettings = applyOperationalSettings(current, rawSettings);
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      setOperationalSettingsLoaded(true);
+      setSettingsMessage('SETTINGS cargados correctamente');
+    } catch (error) {
+      console.error('error al cargar SETTINGS', error);
+      setSettings((current) => {
+        const nextSettings = applyOperationalDefaults(current);
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      setOperationalSettingsLoaded(true);
+      setSettingsMessage('No se pudieron cargar SETTINGS. Usando defaults operativos.');
+    } finally {
+      setIsLoadingOperationalSettings(false);
+    }
+  }
+
   async function refreshManagerData() {
     await Promise.all([loadReservations(), loadTables(), loadFeedbacks()]);
   }
@@ -409,43 +470,28 @@ export function App() {
     updateSettings(nextSettings);
     const capacitySlots = generateTimeSlots(nextSettings.openingTime, nextSettings.closingTime, nextSettings.bookingInterval);
     const capacityPayload = buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity, capacitySlots);
-    const settingsWebhook = getClientWebhook('webhook_settings');
+    const settingsWebhook = getOperationalSettingsWebhook();
     const capacityWebhook = getClientWebhook('webhook_capacidad');
-    setLastSync('Configuración guardada correctamente');
-
-    if (!settingsWebhook.trim() && capacityWebhook.trim()) {
-      const capacityResult = await sendWebhook(
-        capacityWebhook,
-        capacityPayload,
-      );
-
-      if (capacityResult.success) {
-        setLastSync('Sincronizado correctamente');
-        return 'success';
-      }
-
-      setLastSync('ConfiguraciÃ³n guardada localmente, pero no sincronizada');
-      return 'error';
-    }
+    setLastSync('Configuracion guardada correctamente');
 
     if (!settingsWebhook.trim()) {
-      setLastSync('Webhook de capacidad no configurado');
+      setSettingsMessage('Webhook SETTINGS no configurado');
       return 'skipped';
     }
 
-    const settingsResult = await sendWebhook(settingsWebhook, {
-      accion: 'actualizar_settings',
-      settings: nextSettings,
-    });
-
-    if (!settingsResult.success) {
-      setLastSync('ConfiguraciÃ³n guardada localmente, pero no sincronizada');
+    try {
+      await saveOperationalSettings(settingsWebhook, nextSettings);
+      setSettingsMessage('SETTINGS guardados correctamente');
+    } catch (error) {
+      console.error('error al guardar SETTINGS', error);
+      setSettingsMessage('No se pudieron guardar SETTINGS');
+      setLastSync('Configuracion guardada localmente, pero no sincronizada');
       return 'error';
     }
 
     if (!capacityWebhook.trim()) {
       setLastSync('Webhook de capacidad no configurado');
-      return 'skipped';
+      return 'success';
     }
 
     const capacityResult = await sendWebhook(
@@ -458,10 +504,9 @@ export function App() {
       return 'success';
     }
 
-    setLastSync('Configuración guardada localmente, pero no sincronizada');
+    setLastSync('Configuracion guardada localmente, pero no sincronizada');
     return 'error';
   }
-
   function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
     setDateBookingStatus((current) => {
       const nextStatus = {
@@ -693,6 +738,8 @@ export function App() {
           restaurantTables={restaurantTables}
           tableSyncMessage={tablesSyncMessage}
           isLoadingTables={isLoadingTables}
+          isLoadingSettings={isLoadingOperationalSettings}
+          settingsMessage={settingsMessage}
           onRefreshTables={loadTables}
           onCreateTable={handleCreateTable}
           onUpdateTable={handleUpdateTable}

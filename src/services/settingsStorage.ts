@@ -22,6 +22,11 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookSaveMesa: storedSettings.webhookSaveMesa ?? mockSettings.webhookSaveMesa,
     webhookSettingsCapacityUrl: storedSettings.webhookSettingsCapacityUrl ?? mockSettings.webhookSettingsCapacityUrl,
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
+    maxPaxPerBooking: storedSettings.maxPaxPerBooking ?? mockSettings.maxPaxPerBooking,
+    whatsappConfirmation: storedSettings.whatsappConfirmation ?? mockSettings.whatsappConfirmation,
+    dailyBriefingEnabled: storedSettings.dailyBriefingEnabled ?? mockSettings.dailyBriefingEnabled,
+    dailyBriefingTime: storedSettings.dailyBriefingTime ?? mockSettings.dailyBriefingTime,
+    feedbackAlertPhone: storedSettings.feedbackAlertPhone ?? mockSettings.feedbackAlertPhone,
     openingDays: {
       ...mockSettings.openingDays,
       ...(storedSettings.openingDays ?? {}),

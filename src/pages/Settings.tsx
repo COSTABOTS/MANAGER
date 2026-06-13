@@ -7,6 +7,8 @@ interface SettingsProps {
   restaurantTables: RestaurantTable[];
   tableSyncMessage: string;
   isLoadingTables: boolean;
+  isLoadingSettings: boolean;
+  settingsMessage: string;
   onRefreshTables: () => Promise<void>;
   onCreateTable: (table: Omit<RestaurantTable, 'id' | 'active'>) => Promise<void>;
   onUpdateTable: (table: RestaurantTable) => Promise<void>;
@@ -64,6 +66,8 @@ export function Settings({
   restaurantTables,
   tableSyncMessage,
   isLoadingTables,
+  isLoadingSettings,
+  settingsMessage,
   onRefreshTables,
   onCreateTable,
   onUpdateTable,
@@ -237,6 +241,10 @@ export function Settings({
         </div>
       </section>
 
+      {(isLoadingSettings || settingsMessage) && (
+        <p className="sync-message">{isLoadingSettings ? 'Cargando SETTINGS...' : settingsMessage}</p>
+      )}
+
       <section className="settings-stack">
         <article className="settings-card">
           <div className="section-title compact">
@@ -250,6 +258,10 @@ export function Settings({
             <label>
               Capacidad total
               <input type="number" value={draftSettings.totalCapacity} onChange={(event) => updateTotalCapacity(Number(event.target.value))} />
+            </label>
+            <label>
+              Max pax por reserva
+              <input type="number" value={draftSettings.maxPaxPerBooking} onChange={(event) => updateDraft('maxPaxPerBooking', Number(event.target.value))} />
             </label>
           </div>
 
@@ -320,6 +332,18 @@ export function Settings({
             </div>
           </div>
           <SwitchRow label="Reservas activas" checked={draftSettings.reservasActivas} onChange={(value) => updateDraft('reservasActivas', value)} />
+          <SwitchRow label="WhatsApp confirmacion" checked={draftSettings.whatsappConfirmation} onChange={(value) => updateDraft('whatsappConfirmation', value)} />
+          <SwitchRow label="Briefing diario" checked={draftSettings.dailyBriefingEnabled} onChange={(value) => updateDraft('dailyBriefingEnabled', value)} />
+          <div className="settings-grid inner">
+            <label>
+              Hora briefing diario
+              <input type="time" value={draftSettings.dailyBriefingTime} onChange={(event) => updateDraft('dailyBriefingTime', event.target.value)} />
+            </label>
+            <label>
+              Telefono alertas feedback
+              <input value={draftSettings.feedbackAlertPhone} onChange={(event) => updateDraft('feedbackAlertPhone', event.target.value)} />
+            </label>
+          </div>
           <SwitchRow label="WhatsApp pre-cena" checked={draftSettings.whatsappPreCena} onChange={(value) => updateDraft('whatsappPreCena', value)} />
           <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
           <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
