@@ -1,48 +1,64 @@
 import { useMemo, useState } from 'react';
+import type { Feedback } from '../services/feedbacks';
 
-const FEEDBACKS = [
-  { id: 'f1', date: '2026-06-01', client: 'Ana', room: '654', comment: 'Cena excelente y servicio muy atento.', score: 5 },
-  { id: 'f2', date: '2026-06-02', client: 'William', room: '123', comment: 'Muy buena experiencia, volveremos.', score: 5 },
-  { id: 'f3', date: '2026-06-03', client: 'Nico', room: '', comment: 'El show empezo un poco tarde.', score: 4 },
-  { id: 'f4', date: '2026-06-04', client: 'Huil', room: '123', comment: 'Buena comida, terraza agradable.', score: 4 },
-  { id: 'f5', date: '2026-06-04', client: 'Kj', room: '877', comment: 'Esperamos demasiado por la mesa.', score: 3 },
-];
+interface FeedbacksProps {
+  feedbacks: Feedback[];
+  message: string;
+  isLoading: boolean;
+  onRefresh: () => Promise<void>;
+}
 
-export function Feedbacks() {
+export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: FeedbacksProps) {
   const [scoreFilter, setScoreFilter] = useState('all');
   const [query, setQuery] = useState('');
 
-  const average = useMemo(
-    () => FEEDBACKS.reduce((total, feedback) => total + feedback.score, 0) / FEEDBACKS.length,
-    [],
-  );
+  const validFeedbacks = useMemo(() => feedbacks.filter((feedback) => feedback.rating > 0), [feedbacks]);
+  const average = useMemo(() => {
+    if (validFeedbacks.length === 0) {
+      return 0;
+    }
 
-  const visibleFeedbacks = FEEDBACKS.filter((feedback) => {
-    const matchesScore = scoreFilter === 'all' || feedback.score === Number(scoreFilter);
+    return validFeedbacks.reduce((total, feedback) => total + feedback.rating, 0) / validFeedbacks.length;
+  }, [validFeedbacks]);
+
+  const positiveCount = validFeedbacks.filter((feedback) => feedback.rating >= 4).length;
+  const negativeCount = validFeedbacks.filter((feedback) => feedback.rating <= 2).length;
+
+  const visibleFeedbacks = feedbacks.filter((feedback) => {
+    const matchesScore = scoreFilter === 'all' || feedback.rating === Number(scoreFilter);
     const matchesQuery = `${feedback.client} ${feedback.room} ${feedback.comment}`.toLowerCase().includes(query.toLowerCase());
     return matchesScore && matchesQuery;
   });
 
   return (
     <main className="app-shell">
-      <PageHeader eyebrow="Dashboard visual" title="FEEDBACKS" />
+      <PageHeader eyebrow="Dashboard visual" title="FEEDBACKS" isLoading={isLoading} onRefresh={onRefresh} />
+
+      {message && <p className="sync-message">{message}</p>}
 
       <section className="feedback-grid">
         <article className="rating-card">
           <p className="eyebrow">Valoracion media</p>
           <strong>{average.toFixed(1)}</strong>
-          <span>★★★★★</span>
+          <span>{average > 0 ? '⭐'.repeat(Math.round(average)) : '-'}</span>
+        </article>
+
+        <article className="rating-card">
+          <p className="eyebrow">Total feedbacks</p>
+          <strong>{feedbacks.length}</strong>
+          <span>{positiveCount} positivos · {negativeCount} negativos</span>
         </article>
 
         <article className="distribution-card">
           <p className="eyebrow">Distribucion</p>
           {[5, 4, 3, 2, 1].map((score) => {
-            const count = FEEDBACKS.filter((feedback) => feedback.score === score).length;
+            const count = validFeedbacks.filter((feedback) => feedback.rating === score).length;
+            const width = validFeedbacks.length > 0 ? (count / validFeedbacks.length) * 100 : 0;
             return (
               <div className="rating-row" key={score}>
                 <span>{'⭐'.repeat(score)}</span>
                 <div className="rating-bar">
-                  <span style={{ width: `${(count / FEEDBACKS.length) * 100}%` }} />
+                  <span style={{ width: `${width}%` }} />
                 </div>
                 <strong>{count}</strong>
               </div>
@@ -76,36 +92,50 @@ export function Feedbacks() {
             <h2>Listado</h2>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="reservations-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Habitacion</th>
-                <th>Comentario</th>
-                <th>Puntuacion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleFeedbacks.map((feedback) => (
-                <tr key={feedback.id}>
-                  <td data-label="Fecha">{feedback.date}</td>
-                  <td data-label="Cliente">{feedback.client}</td>
-                  <td data-label="Habitacion">{feedback.room || '-'}</td>
-                  <td data-label="Comentario">{feedback.comment}</td>
-                  <td data-label="Puntuacion">{'⭐'.repeat(feedback.score)}</td>
+        {visibleFeedbacks.length === 0 ? (
+          <p className="empty-state">No hay feedbacks todavía.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="reservations-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Habitacion</th>
+                  <th>Comentario</th>
+                  <th>Puntuacion</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visibleFeedbacks.map((feedback) => (
+                  <tr key={feedback.id}>
+                    <td data-label="Fecha">{feedback.date || '-'}</td>
+                    <td data-label="Cliente">{feedback.client || '-'}</td>
+                    <td data-label="Habitacion">{feedback.room || '-'}</td>
+                    <td data-label="Comentario">{feedback.comment || '-'}</td>
+                    <td data-label="Puntuacion">{feedback.rating > 0 ? '⭐'.repeat(feedback.rating) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </main>
   );
 }
 
-function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
+function PageHeader({
+  eyebrow,
+  title,
+  isLoading,
+  onRefresh,
+}: {
+  eyebrow: string;
+  title: string;
+  isLoading: boolean;
+  onRefresh: () => Promise<void>;
+}) {
   return (
     <section className="top-bar">
       <div className="brand-lockup">
@@ -117,6 +147,9 @@ function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
           <h1>{title}</h1>
         </div>
       </div>
+      <button className="secondary-button" type="button" disabled={isLoading} onClick={() => void onRefresh()}>
+        {isLoading ? 'Actualizando...' : 'Actualizar datos'}
+      </button>
     </section>
   );
 }

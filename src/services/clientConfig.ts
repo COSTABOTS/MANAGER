@@ -35,6 +35,8 @@ export interface ClientWebhooks {
   webhookSettings?: string;
   getMesas?: string;
   saveMesa?: string;
+  getFeedbacks?: string;
+  feedbacks?: string;
   [key: string]: unknown;
 }
 
@@ -66,6 +68,7 @@ export interface ExternalClientConfig {
   webhook_guardar_mesas?: string;
   webhook_shows?: string;
   webhook_feedbacks?: string;
+  webhook_leer_feedbacks?: string;
   webhooks?: ClientWebhooks;
   [key: string]: unknown;
 }
@@ -94,7 +97,7 @@ function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebho
     webhook_get_mesas: ['webhook_leer_mesas', 'WEBHOOK_LEER_MESAS', 'webhookLeerMesas', 'webhookGetMesas', 'getMesas', 'tablesGet'],
     webhook_save_mesa: ['webhook_guardar_mesas', 'WEBHOOK_GUARDAR_MESAS', 'webhookGuardarMesas', 'webhookSaveMesa', 'saveMesa', 'tablesSave'],
     webhook_shows: ['webhookShows', 'shows'],
-    webhook_feedbacks: ['webhookFeedbacks', 'feedbacks'],
+    webhook_feedbacks: ['webhook_leer_feedbacks', 'WEBHOOK_LEER_FEEDBACKS', 'webhookLeerFeedbacks', 'webhookFeedbacks', 'getFeedbacks', 'feedbacks'],
   };
 
   for (const alias of aliases[key]) {
@@ -110,15 +113,19 @@ function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebho
 export function normalizeClientConfig(config: ExternalClientConfig): ExternalClientConfig {
   const getMesas = pickClientWebhook(config, 'webhook_get_mesas');
   const saveMesa = pickClientWebhook(config, 'webhook_save_mesa');
+  const getFeedbacks = pickClientWebhook(config, 'webhook_feedbacks');
 
   return {
     ...config,
     webhook_get_mesas: getMesas,
     webhook_save_mesa: saveMesa,
+    webhook_feedbacks: getFeedbacks,
     webhooks: {
       ...(config.webhooks ?? {}),
       getMesas,
       saveMesa,
+      getFeedbacks,
+      feedbacks: getFeedbacks,
     },
   };
 }
@@ -191,7 +198,7 @@ export function populateAdminFromClientConfig(
     webhookSettings: toStringValue(config.webhook_settings),
     webhookSettingsCapacityUrl: toStringValue(config.webhook_capacidad),
     webhookShows: toStringValue(config.webhook_shows),
-    webhookFeedbacks: toStringValue(config.webhook_feedbacks),
+    webhookFeedbacks: pickClientWebhook(config, 'webhook_feedbacks'),
     reservationsWebhook: '',
     walkInWebhook: '',
     feedbacksWebhook: '',

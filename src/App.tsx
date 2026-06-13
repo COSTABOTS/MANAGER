@@ -23,6 +23,8 @@ import {
 } from './services/clientConfig';
 import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
+import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
+import type { Feedback } from './services/feedbacks';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -82,6 +84,10 @@ export function App() {
   const [restaurantTables, setRestaurantTables] = useState<RestaurantTable[]>([]);
   const [isLoadingTables, setIsLoadingTables] = useState(false);
   const [tablesSyncMessage, setTablesSyncMessage] = useState('');
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [isLoadingFeedbacks, setIsLoadingFeedbacks] = useState(false);
+  const [feedbacksMessage, setFeedbacksMessage] = useState('');
+  const [feedbacksLoaded, setFeedbacksLoaded] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
 
@@ -129,7 +135,13 @@ export function App() {
     }
 
     void refreshManagerData();
-  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas, settings.webhookGetMesas]);
+  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas, settings.webhookGetMesas, settings.webhookFeedbacks]);
+
+  useEffect(() => {
+    if (activePage === 'feedbacks' && !feedbacksLoaded && !isLoadingFeedbacks) {
+      void loadFeedbacks();
+    }
+  }, [activePage, feedbacksLoaded, isLoadingFeedbacks]);
 
   useEffect(() => {
     if (clientConfig) {
@@ -141,6 +153,8 @@ export function App() {
       });
       setAllReservations([]);
       setRestaurantTables([]);
+      setFeedbacks([]);
+      setFeedbacksLoaded(false);
       setTablesSyncMessage('');
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
@@ -180,6 +194,8 @@ export function App() {
       sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
       setAllReservations([]);
       setRestaurantTables([]);
+      setFeedbacks([]);
+      setFeedbacksLoaded(false);
       setTablesSyncMessage('');
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
@@ -198,6 +214,8 @@ export function App() {
     clearLoginSession();
     setClientConfig(null);
     setRestaurantTables([]);
+    setFeedbacks([]);
+    setFeedbacksLoaded(false);
     setActivePage('today');
   }
 
@@ -274,8 +292,36 @@ export function App() {
     }
   }
 
+  async function loadFeedbacks() {
+    const feedbacksWebhook = getClientWebhook('webhook_feedbacks') || settings.webhookFeedbacks;
+    const sheetId = getClientSheetId();
+
+    if (!feedbacksWebhook.trim()) {
+      setFeedbacks([]);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage('Webhook de feedbacks no configurado.');
+      return;
+    }
+
+    setIsLoadingFeedbacks(true);
+
+    try {
+      const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
+      setFeedbacks(nextFeedbacks);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavía.');
+    } catch (error) {
+      console.error('GET_FEEDBACKS error', error);
+      setFeedbacks([]);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage('No se pudieron cargar los feedbacks');
+    } finally {
+      setIsLoadingFeedbacks(false);
+    }
+  }
+
   async function refreshManagerData() {
-    await Promise.all([loadReservations(), loadTables()]);
+    await Promise.all([loadReservations(), loadTables(), loadFeedbacks()]);
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
@@ -622,7 +668,14 @@ export function App() {
     }
 
     if (activePage === 'feedbacks') {
-      return <Feedbacks />;
+      return (
+        <Feedbacks
+          feedbacks={feedbacks}
+          message={feedbacksMessage}
+          isLoading={isLoadingFeedbacks}
+          onRefresh={loadFeedbacks}
+        />
+      );
     }
 
     if (activePage === 'reports') {
