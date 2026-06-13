@@ -57,13 +57,19 @@ export interface Show {
   bookable: boolean;
 }
 
-export type RestaurantTableType = 'interior' | 'terraza' | 'vip' | 'barra' | 'privado' | 'otro';
+export type RestaurantTableType = 'general' | 'interior' | 'terraza' | 'vip' | 'barra' | 'privado' | 'otro';
 
 export interface RestaurantTable {
   id: string;
   name: string;
   type: RestaurantTableType;
   active: boolean;
+  capacity?: number;
+  order?: number;
+  mesaId?: string;
+  mesa?: string;
+  zona?: RestaurantTableType;
+  activa?: boolean;
 }
 
 export interface ManagerSettings {
@@ -89,6 +95,8 @@ export interface ManagerSettings {
   webhookFullyBooked: string;
   webhookLeerReservas: string;
   webhookCancelReservationUrl: string;
+  webhookGetMesas: string;
+  webhookSaveMesa: string;
   webhookSettingsCapacityUrl: string;
   webhookShows: string;
   webhookFeedbacks: string;

@@ -48,18 +48,22 @@ export function ReservationsTable({ reservations, tableOptions, onUpdate, onCanc
               <td data-label="Pax">{reservation.pax}</td>
               <td data-label="Peticion especial">{reservation.specialRequest || '-'}</td>
               <td data-label="Mesa">
-                <select
-                  className="table-input"
-                  value={reservation.table}
-                  onChange={(event) => onUpdate(reservation.id, 'table', event.target.value)}
-                >
-                  <option value="">Sin asignar</option>
-                  {getAvailableTables(reservation).map((table) => (
-                    <option key={table} value={table}>
-                      {table}
-                    </option>
-                  ))}
-                </select>
+                {tableOptions.length === 0 ? (
+                  <span className="muted-cell">No hay mesas configuradas para este restaurante.</span>
+                ) : (
+                  <select
+                    className="table-input"
+                    value={reservation.table}
+                    onChange={(event) => onUpdate(reservation.id, 'table', event.target.value)}
+                  >
+                    <option value="">Sin asignar</option>
+                    {getAvailableTables(reservation).map((table) => (
+                      <option key={table} value={table}>
+                        {table}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </td>
               <td data-label="Llego">
                 <label className="arrival-check">

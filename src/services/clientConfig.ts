@@ -14,8 +14,29 @@ export type ClientWebhookKey =
   | 'webhook_cancel'
   | 'webhook_settings'
   | 'webhook_capacidad'
+  | 'webhook_get_mesas'
+  | 'webhook_save_mesa'
   | 'webhook_shows'
   | 'webhook_feedbacks';
+
+export interface ClientWebhooks {
+  webhookReservas?: string;
+  webhookWalkin?: string;
+  webhookLlegada?: string;
+  webhookMesa?: string;
+  webhookFullyBooked?: string;
+  webhookLeerReservas?: string;
+  webhookCancelReservationUrl?: string;
+  webhookGetMesas?: string;
+  webhookSaveMesa?: string;
+  webhookSettingsCapacityUrl?: string;
+  webhookShows?: string;
+  webhookFeedbacks?: string;
+  webhookSettings?: string;
+  getMesas?: string;
+  saveMesa?: string;
+  [key: string]: unknown;
+}
 
 export interface ExternalClientConfig {
   success?: boolean;
@@ -39,29 +60,67 @@ export interface ExternalClientConfig {
   webhook_cancel?: string;
   webhook_settings?: string;
   webhook_capacidad?: string;
+  webhook_get_mesas?: string;
+  webhook_save_mesa?: string;
+  webhook_leer_mesas?: string;
+  webhook_guardar_mesas?: string;
   webhook_shows?: string;
   webhook_feedbacks?: string;
-  webhooks?: Partial<
-    Pick<
-      ManagerSettings,
-      | 'webhookReservas'
-      | 'webhookWalkin'
-      | 'webhookLlegada'
-      | 'webhookMesa'
-      | 'webhookFullyBooked'
-      | 'webhookLeerReservas'
-      | 'webhookCancelReservationUrl'
-      | 'webhookSettingsCapacityUrl'
-      | 'webhookShows'
-      | 'webhookFeedbacks'
-      | 'webhookSettings'
-    >
-  >;
+  webhooks?: ClientWebhooks;
   [key: string]: unknown;
 }
 
 function toStringValue(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebhookKey) {
+  const directValue = toStringValue(config?.[key]);
+  if (directValue) {
+    return directValue;
+  }
+
+  const webhooks = (config?.webhooks ?? {}) as Record<string, unknown>;
+  const aliases: Record<ClientWebhookKey, string[]> = {
+    webhook_get_reservas: ['webhookLeerReservas', 'getReservas', 'getReservations'],
+    webhook_walkin: ['webhookWalkin', 'walkin'],
+    webhook_manual: ['webhookReservas', 'manual', 'reservas'],
+    webhook_arrived: ['webhookLlegada', 'arrived', 'llegada'],
+    webhook_mesa: ['webhookMesa', 'mesa'],
+    webhook_fully_booked: ['webhookFullyBooked', 'fullyBooked'],
+    webhook_cancel: ['webhookCancelReservationUrl', 'cancel', 'cancelReservation'],
+    webhook_settings: ['webhookSettings', 'settings'],
+    webhook_capacidad: ['webhookSettingsCapacityUrl', 'capacidad', 'capacity'],
+    webhook_get_mesas: ['webhook_leer_mesas', 'WEBHOOK_LEER_MESAS', 'webhookLeerMesas', 'webhookGetMesas', 'getMesas', 'tablesGet'],
+    webhook_save_mesa: ['webhook_guardar_mesas', 'WEBHOOK_GUARDAR_MESAS', 'webhookGuardarMesas', 'webhookSaveMesa', 'saveMesa', 'tablesSave'],
+    webhook_shows: ['webhookShows', 'shows'],
+    webhook_feedbacks: ['webhookFeedbacks', 'feedbacks'],
+  };
+
+  for (const alias of aliases[key]) {
+    const value = toStringValue(webhooks[alias] ?? config?.[alias]);
+    if (value) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+export function normalizeClientConfig(config: ExternalClientConfig): ExternalClientConfig {
+  const getMesas = pickClientWebhook(config, 'webhook_get_mesas');
+  const saveMesa = pickClientWebhook(config, 'webhook_save_mesa');
+
+  return {
+    ...config,
+    webhook_get_mesas: getMesas,
+    webhook_save_mesa: saveMesa,
+    webhooks: {
+      ...(config.webhooks ?? {}),
+      getMesas,
+      saveMesa,
+    },
+  };
 }
 
 export function getClientConfig(): ExternalClientConfig | null {
@@ -72,7 +131,7 @@ export function getClientConfig(): ExternalClientConfig | null {
       return null;
     }
 
-    return JSON.parse(rawConfig) as ExternalClientConfig;
+    return normalizeClientConfig(JSON.parse(rawConfig) as ExternalClientConfig);
   } catch {
     return null;
   }
@@ -89,7 +148,7 @@ export function isValidClientConfig(config: ExternalClientConfig | null): config
 
 export function getClientWebhook(key: ClientWebhookKey) {
   const config = getClientConfig();
-  const dynamicUrl = toStringValue(config?.[key]);
+  const dynamicUrl = pickClientWebhook(config, key);
 
   if (dynamicUrl) {
     console.log('Usando webhook dinámico:', key);
@@ -127,6 +186,8 @@ export function populateAdminFromClientConfig(
     webhookMesa: toStringValue(config.webhook_mesa),
     webhookFullyBooked: toStringValue(config.webhook_fully_booked),
     webhookCancelReservationUrl: toStringValue(config.webhook_cancel),
+    webhookGetMesas: pickClientWebhook(config, 'webhook_get_mesas'),
+    webhookSaveMesa: pickClientWebhook(config, 'webhook_save_mesa'),
     webhookSettings: toStringValue(config.webhook_settings),
     webhookSettingsCapacityUrl: toStringValue(config.webhook_capacidad),
     webhookShows: toStringValue(config.webhook_shows),

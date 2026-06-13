@@ -18,14 +18,16 @@ import {
   getClientSheetId,
   getClientWebhook,
   isValidClientConfig,
+  normalizeClientConfig,
   populateAdminFromClientConfig,
 } from './services/clientConfig';
 import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
+import { loadRestaurantTables, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, WalkInPayload } from './types';
+import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
@@ -77,6 +79,9 @@ export function App() {
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => (clientConfig ? {} : loadDateBookingStatusFromStorage()));
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
+  const [restaurantTables, setRestaurantTables] = useState<RestaurantTable[]>([]);
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [tablesSyncMessage, setTablesSyncMessage] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
 
@@ -111,8 +116,8 @@ export function App() {
   const occupancyPercent = Math.min(100, Math.round((totalPax / settings.totalCapacity) * 100));
 
   const activeTableOptions = useMemo(
-    () => settings.tables.filter((table) => table.active).map((table) => table.name),
-    [settings.tables],
+    () => restaurantTables.filter((table) => table.active).map((table) => table.name),
+    [restaurantTables],
   );
 
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
@@ -123,13 +128,8 @@ export function App() {
       return;
     }
 
-    const reservationsWebhook = getClientWebhook('webhook_get_reservas');
-    if (!reservationsWebhook.trim()) {
-      return;
-    }
-
-    void loadReservations();
-  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas]);
+    void refreshManagerData();
+  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas, settings.webhookGetMesas]);
 
   useEffect(() => {
     if (clientConfig) {
@@ -140,6 +140,8 @@ export function App() {
         walkin: clientConfig.webhook_walkin,
       });
       setAllReservations([]);
+      setRestaurantTables([]);
+      setTablesSyncMessage('');
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
@@ -164,18 +166,21 @@ export function App() {
         throw new Error(`Login request failed with status ${response.status}`);
       }
 
-      const config = (await response.json()) as ExternalClientConfig;
+      const loginResponse = (await response.json()) as ExternalClientConfig;
 
-      if (!isValidClientConfig(config)) {
+      if (!isValidClientConfig(loginResponse)) {
         clearLoginSession();
         setClientConfig(null);
         setLoginError('Usuario o contraseña incorrectos');
         return;
       }
 
+      const config = normalizeClientConfig(loginResponse);
       sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(config));
       sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
       setAllReservations([]);
+      setRestaurantTables([]);
+      setTablesSyncMessage('');
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
@@ -192,6 +197,7 @@ export function App() {
   function handleLogout() {
     clearLoginSession();
     setClientConfig(null);
+    setRestaurantTables([]);
     setActivePage('today');
   }
 
@@ -241,6 +247,84 @@ export function App() {
     } finally {
       setIsLoadingReservations(false);
     }
+  }
+
+  async function loadTables() {
+    const tablesWebhook = getClientWebhook('webhook_get_mesas') || settings.webhookGetMesas;
+    const sheetId = getClientSheetId();
+
+    if (!tablesWebhook.trim()) {
+      setRestaurantTables([]);
+      setTablesSyncMessage('Webhook de mesas no configurado');
+      return;
+    }
+
+    setIsLoadingTables(true);
+
+    try {
+      const nextTables = await loadRestaurantTables(tablesWebhook, sheetId, clientConfig?.client_id);
+      setRestaurantTables(nextTables);
+      setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
+    } catch (error) {
+      console.error('GET_MESAS error', error);
+      setRestaurantTables([]);
+      setTablesSyncMessage('No se pudieron cargar mesas');
+    } finally {
+      setIsLoadingTables(false);
+    }
+  }
+
+  async function refreshManagerData() {
+    await Promise.all([loadReservations(), loadTables()]);
+  }
+
+  async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
+    const tableWebhook = getClientWebhook('webhook_save_mesa') || settings.webhookSaveMesa;
+
+    if (!tableWebhook.trim()) {
+      setTablesSyncMessage('Webhook de mesas no configurado');
+      return;
+    }
+
+    if (action === 'delete' && !table.mesaId) {
+      setTablesSyncMessage('No se puede borrar una mesa sin ID_MESA');
+      return;
+    }
+
+    try {
+      await saveRestaurantTable(tableWebhook, {
+        action,
+        table,
+        clientId: clientConfig?.client_id,
+      });
+      setTablesSyncMessage('Mesa sincronizada correctamente');
+      await loadTables();
+    } catch (error) {
+      console.error('SAVE_MESA error', error);
+      setTablesSyncMessage('No se pudo guardar la mesa');
+    }
+  }
+
+  async function handleCreateTable(table: Omit<RestaurantTable, 'id' | 'active'>) {
+    const nextTable: RestaurantTable = {
+      ...table,
+      id: `MESA-${Date.now()}`,
+      active: true,
+    };
+
+    await syncTable('create', nextTable);
+  }
+
+  async function handleUpdateTable(table: RestaurantTable) {
+    await syncTable('update', table);
+  }
+
+  async function handleDeactivateTable(table: RestaurantTable) {
+    await syncTable('deactivate', { ...table, active: false });
+  }
+
+  async function handleDeleteTable(table: RestaurantTable) {
+    await syncTable('delete', table);
   }
 
   async function syncValidatedWebhook(
@@ -518,7 +602,7 @@ export function App() {
       return (
         <Reservations
           reservations={reservationsList}
-          onRefreshReservations={loadReservations}
+          onRefreshReservations={refreshManagerData}
           isRefreshingReservations={isLoadingReservations}
           lastUpdatedAt={lastUpdatedAt}
           onCancelReservation={setReservationToCancel}
@@ -550,7 +634,20 @@ export function App() {
     }
 
     if (activePage === 'settings') {
-      return <Settings settings={settings} reservations={allReservations} onSettingsSave={handleSettingsSave} />;
+      return (
+        <Settings
+          settings={settings}
+          restaurantTables={restaurantTables}
+          tableSyncMessage={tablesSyncMessage}
+          isLoadingTables={isLoadingTables}
+          onRefreshTables={loadTables}
+          onCreateTable={handleCreateTable}
+          onUpdateTable={handleUpdateTable}
+          onDeactivateTable={handleDeactivateTable}
+          onDeleteTable={handleDeleteTable}
+          onSettingsSave={handleSettingsSave}
+        />
+      );
     }
 
     return (
@@ -577,7 +674,7 @@ export function App() {
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
         onCancelReservation={setReservationToCancel}
-        onRefreshReservations={loadReservations}
+        onRefreshReservations={refreshManagerData}
         isRefreshingReservations={isLoadingReservations}
         lastUpdatedAt={lastUpdatedAt}
       />

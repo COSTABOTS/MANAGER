@@ -1,6 +1,6 @@
 {
-  "name": "Costabots Manager",
-  "short_name": "Costabots",
+  "name": "Safari Manager",
+  "short_name": "Manager",
   "description": "Panel operativo para la gestion diaria de reservas Safari.",
   "start_url": "/",
   "scope": "/",

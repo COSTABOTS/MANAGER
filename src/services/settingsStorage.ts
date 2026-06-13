@@ -18,6 +18,8 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookFullyBooked: storedSettings.webhookFullyBooked ?? mockSettings.webhookFullyBooked,
     webhookLeerReservas: storedSettings.webhookLeerReservas ?? mockSettings.webhookLeerReservas,
     webhookCancelReservationUrl: storedSettings.webhookCancelReservationUrl ?? mockSettings.webhookCancelReservationUrl,
+    webhookGetMesas: storedSettings.webhookGetMesas ?? mockSettings.webhookGetMesas,
+    webhookSaveMesa: storedSettings.webhookSaveMesa ?? mockSettings.webhookSaveMesa,
     webhookSettingsCapacityUrl: storedSettings.webhookSettingsCapacityUrl ?? mockSettings.webhookSettingsCapacityUrl,
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
     openingDays: {
@@ -28,7 +30,7 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
       ...mockSettings.slotCapacity,
       ...(storedSettings.slotCapacity ?? {}),
     },
-    tables: Array.isArray(storedSettings.tables) ? storedSettings.tables : mockSettings.tables,
+    tables: mockSettings.tables,
   };
 }
 
@@ -47,7 +49,8 @@ export function loadSettingsFromStorage(): ManagerSettings {
 
 export function saveSettingsToStorage(settings: ManagerSettings) {
   try {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    const { tables: _tables, ...settingsWithoutTables } = settings;
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settingsWithoutTables));
   } catch {
     // Local storage can be unavailable in private browsing or restricted contexts.
   }

@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { mockSettings } from '../mock';
-import type { ManagerSettings, Reservation, RestaurantTable, RestaurantTableType, Weekday } from '../types';
+import type { ManagerSettings, RestaurantTable, RestaurantTableType, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 
 interface SettingsProps {
   settings: ManagerSettings;
-  reservations: Reservation[];
+  restaurantTables: RestaurantTable[];
+  tableSyncMessage: string;
+  isLoadingTables: boolean;
+  onRefreshTables: () => Promise<void>;
+  onCreateTable: (table: Omit<RestaurantTable, 'id' | 'active'>) => Promise<void>;
+  onUpdateTable: (table: RestaurantTable) => Promise<void>;
+  onDeactivateTable: (table: RestaurantTable) => Promise<void>;
+  onDeleteTable: (table: RestaurantTable) => Promise<void>;
   onSettingsSave: (settings: ManagerSettings) => Promise<'success' | 'error' | 'skipped'>;
 }
 
@@ -16,6 +22,7 @@ const userRole: 'admin' | 'manager' = 'admin';
 const DEFAULT_SLOT_CAPACITY = 40;
 const CAPACITY_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 const TABLE_TYPES: Array<{ value: RestaurantTableType; label: string }> = [
+  { value: 'general', label: 'General' },
   { value: 'interior', label: 'Interior' },
   { value: 'terraza', label: 'Terraza' },
   { value: 'barra', label: 'Barra' },
@@ -36,6 +43,7 @@ const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
 const EMPTY_TABLE_FORM = {
   name: '',
   type: 'interior' as RestaurantTableType,
+  capacity: 2,
 };
 
 function rebuildSlotCapacity(
@@ -51,15 +59,44 @@ function rebuildSlotCapacity(
   }, {});
 }
 
-export function Settings({ settings, reservations, onSettingsSave }: SettingsProps) {
+export function Settings({
+  settings,
+  restaurantTables,
+  tableSyncMessage,
+  isLoadingTables,
+  onRefreshTables,
+  onCreateTable,
+  onUpdateTable,
+  onDeactivateTable,
+  onDeleteTable,
+  onSettingsSave,
+}: SettingsProps) {
   const [draftSettings, setDraftSettings] = useState(settings);
   const [tableForm, setTableForm] = useState(EMPTY_TABLE_FORM);
+  const [tableDrafts, setTableDrafts] = useState<Record<string, { name: string; type: RestaurantTableType; capacity: number; order: number }>>({});
+  const [tableToDelete, setTableToDelete] = useState<RestaurantTable | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
 
   useEffect(() => {
     setDraftSettings(settings);
     setSaveState('idle');
   }, [settings]);
+
+  useEffect(() => {
+    setTableDrafts(
+      Object.fromEntries(
+        restaurantTables.map((table, index) => [
+          table.id,
+          {
+            name: table.name,
+            type: table.type,
+            capacity: table.capacity ?? 2,
+            order: table.order ?? index + 1,
+          },
+        ]),
+      ),
+    );
+  }, [restaurantTables]);
 
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftSettings) !== JSON.stringify(settings), [draftSettings, settings]);
 
@@ -135,44 +172,49 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
       return;
     }
 
-    setDraftSettings((current) => ({
-      ...current,
-      tables: [
-        ...current.tables,
-        {
-          id: `table-${Date.now()}`,
-          name,
-          type: tableForm.type,
-          active: true,
-        },
-      ],
-    }));
+    void onCreateTable({
+      name,
+      type: tableForm.type,
+      capacity: tableForm.capacity,
+      order: restaurantTables.length + 1,
+    });
     setTableForm(EMPTY_TABLE_FORM);
   }
 
-  function toggleTable(tableId: string) {
-    setDraftSettings((current) => ({
+  function updateTableDraft(tableId: string, nextDraft: Partial<{ name: string; type: RestaurantTableType; capacity: number; order: number }>) {
+    setTableDrafts((current) => ({
       ...current,
-      tables: current.tables.map((table) => (table.id === tableId ? { ...table, active: !table.active } : table)),
+      [tableId]: {
+        ...current[tableId],
+        ...nextDraft,
+      },
     }));
   }
 
-  function deleteTable(tableId: string) {
-    setDraftSettings((current) => ({
-      ...current,
-      tables: current.tables.filter((table) => table.id !== tableId),
-    }));
+  function saveTable(table: RestaurantTable) {
+    const draft = tableDrafts[table.id];
+    const name = draft?.name.trim();
+
+    if (!draft || !name) {
+      return;
+    }
+
+    void onUpdateTable({
+      ...table,
+      name,
+      type: draft.type,
+      capacity: draft.capacity,
+      order: draft.order,
+    });
   }
 
-  function restoreDefaultTables() {
-    setDraftSettings((current) => ({
-      ...current,
-      tables: mockSettings.tables,
-    }));
-  }
+  async function confirmDeleteTable() {
+    if (!tableToDelete) {
+      return;
+    }
 
-  function hasReservationsForTable(tableName: string) {
-    return reservations.some((reservation) => reservation.table === tableName);
+    await onDeleteTable(tableToDelete);
+    setTableToDelete(null);
   }
 
   async function handleSaveSettings() {
@@ -342,6 +384,14 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
                 <input value={draftSettings.webhookCancelReservationUrl} onChange={(event) => updateDraft('webhookCancelReservationUrl', event.target.value)} />
               </label>
               <label>
+                Webhook leer mesas
+                <input value={draftSettings.webhookGetMesas} onChange={(event) => updateDraft('webhookGetMesas', event.target.value)} />
+              </label>
+              <label>
+                Webhook guardar mesa
+                <input value={draftSettings.webhookSaveMesa} onChange={(event) => updateDraft('webhookSaveMesa', event.target.value)} />
+              </label>
+              <label>
                 Webhook settings / capacidad
                 <input value={draftSettings.webhookSettingsCapacityUrl} onChange={(event) => updateDraft('webhookSettingsCapacityUrl', event.target.value)} />
               </label>
@@ -366,8 +416,8 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
                   <p className="eyebrow">Costabots Admin</p>
                   <h2>Mesas / Zonas</h2>
                 </div>
-                <button className="secondary-button" type="button" onClick={restoreDefaultTables}>
-                  Restaurar mesas por defecto
+                <button className="secondary-button" type="button" disabled={isLoadingTables} onClick={() => void onRefreshTables()}>
+                  {isLoadingTables ? 'Actualizando...' : 'Actualizar mesas'}
                 </button>
               </div>
 
@@ -386,30 +436,62 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
                     ))}
                   </select>
                 </label>
+                <label>
+                  Capacidad
+                  <input
+                    type="number"
+                    min={1}
+                    value={tableForm.capacity}
+                    onChange={(event) => setTableForm((current) => ({ ...current, capacity: Number(event.target.value) }))}
+                  />
+                </label>
                 <button type="button" onClick={addTable}>
                   Añadir mesa
                 </button>
               </div>
 
+              {tableSyncMessage && <p className="sync-message">{tableSyncMessage}</p>}
+
               <div className="table-manager-list">
-                {draftSettings.tables.map((table) => {
-                  const hasReservations = hasReservationsForTable(table.name);
+                {restaurantTables.length === 0 && <p className="empty-state">No hay mesas configuradas para este restaurante.</p>}
+                {restaurantTables.map((table) => {
+                  const tableDraft = tableDrafts[table.id] ?? {
+                    name: table.name,
+                    type: table.type,
+                    capacity: table.capacity ?? 2,
+                    order: table.order ?? 1,
+                  };
 
                   return (
-                    <div className="table-manager-item" key={table.id}>
-                      <strong>{table.name}</strong>
-                      <span>{TABLE_TYPES.find((type) => type.value === table.type)?.label ?? table.type}</span>
-                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => toggleTable(table.id)}>
+                    <div className={`table-manager-item ${table.active ? '' : 'is-inactive'}`} key={table.id}>
+                      <input value={tableDraft.name} onChange={(event) => updateTableDraft(table.id, { name: event.target.value })} />
+                      <select value={tableDraft.type} onChange={(event) => updateTableDraft(table.id, { type: event.target.value as RestaurantTableType })}>
+                        {TABLE_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        value={tableDraft.capacity}
+                        onChange={(event) => updateTableDraft(table.id, { capacity: Number(event.target.value) })}
+                      />
+                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => void onUpdateTable({ ...table, active: !table.active })}>
                         <span>{table.active ? 'Activa' : 'Inactiva'}</span>
+                      </button>
+                      <button className="secondary-button compact-action" type="button" onClick={() => saveTable(table)}>
+                        Guardar
                       </button>
                       <button
                         className="danger-button"
                         type="button"
-                        disabled={hasReservations}
-                        title={hasReservations ? 'No se puede eliminar: tiene reservas asociadas' : 'Eliminar mesa'}
-                        onClick={() => deleteTable(table.id)}
+                        disabled={!table.mesaId}
+                        title={table.mesaId ? 'Borrar mesa definitivamente' : 'No se puede borrar: falta ID_MESA'}
+                        onClick={() => setTableToDelete(table)}
                       >
-                        Eliminar
+                        Borrar
                       </button>
                     </div>
                   );
@@ -428,6 +510,31 @@ export function Settings({ settings, reservations, onSettingsSave }: SettingsPro
           Guardar configuración
         </button>
       </section>
+
+      {tableToDelete && (
+        <div className="modal-backdrop" role="presentation" onPointerDown={() => setTableToDelete(null)}>
+          <div className="show-modal cancel-modal" role="dialog" aria-modal="true" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="section-title compact">
+              <div>
+                <p className="eyebrow">Borrar mesa</p>
+                <h2>¿Seguro que quieres borrar esta mesa definitivamente?</h2>
+              </div>
+            </div>
+            <div className="cancel-summary">
+              <strong>{tableToDelete.name}</strong>
+              <span>Esta acción no se puede deshacer.</span>
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setTableToDelete(null)}>
+                Cancelar
+              </button>
+              <button className="danger-button" type="button" onClick={() => void confirmDeleteTable()}>
+                Borrar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

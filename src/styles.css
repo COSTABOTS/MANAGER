@@ -1098,7 +1098,7 @@ button:disabled {
 
 .table-manager-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.5fr) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.5fr) minmax(110px, 0.35fr) auto;
   gap: 10px;
   align-items: end;
 }
@@ -1110,7 +1110,7 @@ button:disabled {
 
 .table-manager-item {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 120px minmax(120px, 0.55fr) auto;
+  grid-template-columns: minmax(140px, 1fr) 130px 90px minmax(110px, 0.5fr) auto auto;
   align-items: center;
   gap: 10px;
   min-height: 54px;
@@ -1120,12 +1120,25 @@ button:disabled {
   background: #f7f9fc;
 }
 
+.table-manager-item.is-inactive {
+  opacity: 0.62;
+  background: #f1f3f6;
+}
+
 .table-manager-item strong {
   color: var(--ink);
 }
 
 .table-manager-item > span {
   color: var(--muted);
+  font-weight: 800;
+}
+
+.sync-message,
+.empty-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
   font-weight: 800;
 }
 
