@@ -3,6 +3,7 @@ import type { SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
 import { Control } from './pages/Control';
+import { FeedbackPublic } from './pages/FeedbackPublic';
 import { Feedbacks } from './pages/Feedbacks';
 import { Reports } from './pages/Reports';
 import { Reservations } from './pages/Reservations';
@@ -66,7 +67,7 @@ function loadClientConfigFromSession() {
   }
 }
 
-export function App() {
+function ManagerApp() {
   const [activePage, setActivePage] = useState<PageKey>('today');
   const [clientConfig, setClientConfig] = useState<ExternalClientConfig | null>(() => loadClientConfigFromSession());
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -183,6 +184,7 @@ export function App() {
     clearLoginSession();
 
     try {
+      console.log('[Login debug] URL llamada:', LOGIN_WEBHOOK_URL);
       const response = await fetch(LOGIN_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -191,13 +193,28 @@ export function App() {
         body: JSON.stringify({ usuario, password }),
       });
 
+      console.log('[Login debug] Status HTTP recibido:', response.status, response.statusText);
+
       if (!response.ok) {
+        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrará "Usuario o contraseña incorrectos".');
         throw new Error(`Login request failed with status ${response.status}`);
       }
 
       const loginResponse = (await response.json()) as ExternalClientConfig;
+      console.log('[Login debug] JSON completo recibido:', loginResponse);
+      console.log('[Login debug] Valor de response.success:', loginResponse.success);
+      const loginDebugSnapshot = {
+        success: loginResponse.success,
+        client_id: loginResponse.client_id,
+        rest_nombre: loginResponse.rest_nombre,
+      };
 
       if (!isValidClientConfig(loginResponse)) {
+        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrará "Usuario o contraseña incorrectos".', {
+          success: loginDebugSnapshot.success,
+          client_id: loginDebugSnapshot.client_id,
+          rest_nombre: loginDebugSnapshot.rest_nombre,
+        });
         clearLoginSession();
         setClientConfig(null);
         setLoginError('Usuario o contraseña incorrectos');
@@ -218,7 +235,8 @@ export function App() {
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
       console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
-    } catch {
+    } catch (error) {
+      console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrará "Usuario o contraseña incorrectos".', error);
       clearLoginSession();
       setClientConfig(null);
       setLoginError('Usuario o contraseña incorrectos');
@@ -914,4 +932,19 @@ export function App() {
       )}
     </Layout>
   );
+}
+
+function getPublicFeedbackReservationId() {
+  const match = window.location.pathname.match(/^\/feedback\/([^/]+)\/?$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : '';
+}
+
+export function App() {
+  const feedbackReservationId = getPublicFeedbackReservationId();
+
+  if (feedbackReservationId) {
+    return <FeedbackPublic idReserva={feedbackReservationId} />;
+  }
+
+  return <ManagerApp />;
 }
