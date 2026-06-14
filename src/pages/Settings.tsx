@@ -416,7 +416,11 @@ export function Settings({
                 <input value={draftSettings.webhookSaveMesa} onChange={(event) => updateDraft('webhookSaveMesa', event.target.value)} />
               </label>
               <label>
-                Webhook settings / capacidad
+                Webhook leer capacidad
+                <input value={draftSettings.webhookGetCapacidad} onChange={(event) => updateDraft('webhookGetCapacidad', event.target.value)} />
+              </label>
+              <label>
+                Webhook guardar capacidad
                 <input value={draftSettings.webhookSettingsCapacityUrl} onChange={(event) => updateDraft('webhookSettingsCapacityUrl', event.target.value)} />
               </label>
               <label>

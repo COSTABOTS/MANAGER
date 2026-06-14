@@ -1,5 +1,6 @@
 import { mockSettings } from '../mock';
 import type { ManagerSettings } from '../types';
+import { buildOperationalSettingsPayload } from './operationalSettings';
 
 export type RestaurantSettings = ManagerSettings;
 
@@ -10,6 +11,6 @@ export async function getSettings(): Promise<RestaurantSettings> {
 export async function saveSettings(settings: RestaurantSettings) {
   return {
     action: 'save_settings',
-    settings,
+    settings: buildOperationalSettingsPayload(settings),
   };
 }

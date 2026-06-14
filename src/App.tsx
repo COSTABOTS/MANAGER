@@ -25,6 +25,7 @@ import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
+import { loadCapacitySettings } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, saveRestaurantTable } from './services/tables';
@@ -172,6 +173,7 @@ export function App() {
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
+      void loadSettingsFromMake();
     }
   }, [clientConfig]);
 
@@ -341,17 +343,96 @@ export function App() {
     return getClientWebhook('webhook_settings') || settings.webhookSettings || SETTINGS_WEBHOOK_FALLBACK;
   }
 
+  function getCapacityReadWebhook() {
+    const getCapacityUrl = getClientWebhook('webhook_get_capacidad') || settings.webhookGetCapacidad;
+    if (!getCapacityUrl.trim()) {
+      console.warn('No hay WEBHOOK_GET_CAPACIDAD configurado; usando fallback');
+    }
+    return getCapacityUrl || getClientWebhook('webhook_capacidad') || settings.webhookSettingsCapacityUrl;
+  }
+
+  function getCapacitySaveWebhook() {
+    return getClientWebhook('webhook_capacidad') || settings.webhookSettingsCapacityUrl;
+  }
+
+  function buildVisibleSlotCapacity(sourceSettings: ManagerSettings, loadedCapacity: Record<string, number> = {}) {
+    const visibleSlots = generateTimeSlots(sourceSettings.openingTime, sourceSettings.closingTime, sourceSettings.bookingInterval);
+    const fallbackCapacity = sourceSettings.totalCapacity || 40;
+
+    return visibleSlots.reduce<Record<string, number>>((slots, slot) => {
+      slots[slot] = loadedCapacity[slot] ?? sourceSettings.slotCapacity[slot] ?? fallbackCapacity;
+      return slots;
+    }, {});
+  }
+
+  async function loadCapacityFromMake(baseSettings?: ManagerSettings) {
+    console.log('LOAD CAPACITY START');
+    const capacityWebhook = getCapacityReadWebhook();
+    console.log('GET CAPACITY webhook URL usado:', capacityWebhook);
+
+    if (!capacityWebhook.trim()) {
+      setSettings((current) => {
+        const mergedSource = baseSettings ?? current;
+        const nextSettings = {
+          ...mergedSource,
+          slotCapacity: buildVisibleSlotCapacity(mergedSource),
+        };
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      setSettingsMessage((current) =>
+        current && current !== 'Cargando SETTINGS...'
+          ? `${current} Capacidad no configurada.`
+          : 'Webhook de capacidad no configurado. Usando defaults seguros.',
+      );
+      return false;
+    }
+
+    try {
+      const loadedCapacity = await loadCapacitySettings(capacityWebhook);
+      setSettings((current) => {
+        const mergedSource = baseSettings ?? current;
+        const nextSettings = {
+          ...mergedSource,
+          slotCapacity: buildVisibleSlotCapacity(mergedSource, loadedCapacity),
+        };
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      return true;
+    } catch (error) {
+      console.error('error al cargar capacidad', error);
+      setSettings((current) => {
+        const mergedSource = baseSettings ?? current;
+        const nextSettings = {
+          ...mergedSource,
+          slotCapacity: buildVisibleSlotCapacity(mergedSource),
+        };
+        saveSettingsToStorage(nextSettings);
+        return nextSettings;
+      });
+      setSettingsMessage('No se pudo cargar CAPACIDAD. Usando defaults seguros.');
+      return false;
+    }
+  }
+
   async function loadSettingsFromMake() {
     const settingsWebhook = getOperationalSettingsWebhook();
 
     if (!settingsWebhook.trim()) {
+      let nextSettingsSnapshot: ManagerSettings | null = null;
       setSettings((current) => {
-        const nextSettings = applyOperationalDefaults(current);
+        const nextSettings = {
+          ...applyOperationalDefaults(current),
+        };
+        nextSettings.slotCapacity = buildVisibleSlotCapacity(nextSettings);
+        nextSettingsSnapshot = nextSettings;
         saveSettingsToStorage(nextSettings);
         return nextSettings;
       });
       setOperationalSettingsLoaded(true);
       setSettingsMessage('Webhook SETTINGS no configurado. Usando defaults operativos.');
+      await loadCapacityFromMake(nextSettingsSnapshot ?? undefined);
       return;
     }
 
@@ -360,20 +441,30 @@ export function App() {
 
     try {
       const rawSettings = await loadOperationalSettings(settingsWebhook);
+      let nextSettingsSnapshot: ManagerSettings | null = null;
       setSettings((current) => {
         const nextSettings = applyOperationalSettings(current, rawSettings);
+        nextSettings.slotCapacity = buildVisibleSlotCapacity(nextSettings);
+        nextSettingsSnapshot = nextSettings;
         saveSettingsToStorage(nextSettings);
         return nextSettings;
       });
+      const capacityLoaded = await loadCapacityFromMake(nextSettingsSnapshot ?? undefined);
       setOperationalSettingsLoaded(true);
-      setSettingsMessage('SETTINGS cargados correctamente');
+      if (capacityLoaded) {
+        setSettingsMessage('SETTINGS cargados correctamente');
+      }
     } catch (error) {
       console.error('error al cargar SETTINGS', error);
+      let nextSettingsSnapshot: ManagerSettings | null = null;
       setSettings((current) => {
         const nextSettings = applyOperationalDefaults(current);
+        nextSettings.slotCapacity = buildVisibleSlotCapacity(nextSettings);
+        nextSettingsSnapshot = nextSettings;
         saveSettingsToStorage(nextSettings);
         return nextSettings;
       });
+      await loadCapacityFromMake(nextSettingsSnapshot ?? undefined);
       setOperationalSettingsLoaded(true);
       setSettingsMessage('No se pudieron cargar SETTINGS. Usando defaults operativos.');
     } finally {
@@ -471,7 +562,8 @@ export function App() {
     const capacitySlots = generateTimeSlots(nextSettings.openingTime, nextSettings.closingTime, nextSettings.bookingInterval);
     const capacityPayload = buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity, capacitySlots);
     const settingsWebhook = getOperationalSettingsWebhook();
-    const capacityWebhook = getClientWebhook('webhook_capacidad');
+    const capacityWebhook = getCapacitySaveWebhook();
+    console.log('SAVE CAPACITY webhook URL:', capacityWebhook);
     setLastSync('Configuracion guardada correctamente');
 
     if (!settingsWebhook.trim()) {
@@ -494,6 +586,7 @@ export function App() {
       return 'success';
     }
 
+    console.log('capacidad guardada', capacityPayload);
     const capacityResult = await sendWebhook(
       capacityWebhook,
       capacityPayload,
@@ -504,6 +597,7 @@ export function App() {
       return 'success';
     }
 
+    console.error('error al guardar capacidad', capacityResult.error);
     setLastSync('Configuracion guardada localmente, pero no sincronizada');
     return 'error';
   }

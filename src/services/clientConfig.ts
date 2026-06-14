@@ -13,6 +13,7 @@ export type ClientWebhookKey =
   | 'webhook_fully_booked'
   | 'webhook_cancel'
   | 'webhook_settings'
+  | 'webhook_get_capacidad'
   | 'webhook_capacidad'
   | 'webhook_get_mesas'
   | 'webhook_save_mesa'
@@ -29,6 +30,7 @@ export interface ClientWebhooks {
   webhookCancelReservationUrl?: string;
   webhookGetMesas?: string;
   webhookSaveMesa?: string;
+  webhookGetCapacidad?: string;
   webhookSettingsCapacityUrl?: string;
   webhookShows?: string;
   webhookFeedbacks?: string;
@@ -61,7 +63,16 @@ export interface ExternalClientConfig {
   webhook_fully_booked?: string;
   webhook_cancel?: string;
   webhook_settings?: string;
+  webhookSettings?: string;
+  webhook_get_capacidad?: string;
+  WEBHOOK_GET_CAPACIDAD?: string;
+  webhookGetCapacidad?: string;
+  webhookGetCapacity?: string;
+  webhook_get_capacity?: string;
   webhook_capacidad?: string;
+  webhook_settings_capacidad?: string;
+  webhookSettingsCapacityUrl?: string;
+  webhook_capacidad_settings?: string;
   webhook_get_mesas?: string;
   webhook_save_mesa?: string;
   webhook_leer_mesas?: string;
@@ -93,7 +104,8 @@ function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebho
     webhook_fully_booked: ['webhookFullyBooked', 'fullyBooked'],
     webhook_cancel: ['webhookCancelReservationUrl', 'cancel', 'cancelReservation'],
     webhook_settings: ['webhookSettings', 'settings'],
-    webhook_capacidad: ['webhookSettingsCapacityUrl', 'capacidad', 'capacity'],
+    webhook_get_capacidad: ['WEBHOOK_GET_CAPACIDAD', 'webhookGetCapacidad', 'webhookGetCapacity', 'webhook_get_capacity', 'getCapacity', 'getCapacityWebhook', 'webhookCapacityGetUrl'],
+    webhook_capacidad: ['WEBHOOK_CAPACIDAD', 'webhookCapacity', 'webhookSettingsCapacityUrl', 'webhook_settings_capacidad', 'webhook_capacidad_settings', 'settingsCapacity', 'capacitySettings'],
     webhook_get_mesas: ['webhook_leer_mesas', 'WEBHOOK_LEER_MESAS', 'webhookLeerMesas', 'webhookGetMesas', 'getMesas', 'tablesGet'],
     webhook_save_mesa: ['webhook_guardar_mesas', 'WEBHOOK_GUARDAR_MESAS', 'webhookGuardarMesas', 'webhookSaveMesa', 'saveMesa', 'tablesSave'],
     webhook_shows: ['webhookShows', 'shows'],
@@ -114,9 +126,28 @@ export function normalizeClientConfig(config: ExternalClientConfig): ExternalCli
   const getMesas = pickClientWebhook(config, 'webhook_get_mesas');
   const saveMesa = pickClientWebhook(config, 'webhook_save_mesa');
   const getFeedbacks = pickClientWebhook(config, 'webhook_feedbacks');
+  const settings = pickClientWebhook(config, 'webhook_settings');
+  const rawGetCapacidad = toStringValue(
+    config.WEBHOOK_GET_CAPACIDAD ??
+      config.webhook_get_capacidad ??
+      config.webhookGetCapacidad ??
+      config.webhook_get_capacity ??
+      config.webhookGetCapacity ??
+      config.webhookCapacityGetUrl ??
+      config.getCapacityWebhook ??
+      config.getCapacity,
+  );
+  const getCapacidad = pickClientWebhook(config, 'webhook_get_capacidad');
+  const saveCapacidad = pickClientWebhook(config, 'webhook_capacidad');
+  console.log('WEBHOOK_GET_CAPACIDAD desde MASTER:', rawGetCapacidad);
+  console.log('Cliente config webhookGetCapacidad:', getCapacidad);
 
   return {
     ...config,
+    webhook_settings: settings,
+    webhook_get_capacidad: getCapacidad,
+    webhookGetCapacidad: getCapacidad,
+    webhook_capacidad: saveCapacidad,
     webhook_get_mesas: getMesas,
     webhook_save_mesa: saveMesa,
     webhook_feedbacks: getFeedbacks,
@@ -126,6 +157,11 @@ export function normalizeClientConfig(config: ExternalClientConfig): ExternalCli
       saveMesa,
       getFeedbacks,
       feedbacks: getFeedbacks,
+      settings,
+      getCapacidad,
+      getCapacity: getCapacidad,
+      saveCapacidad,
+      capacitySettings: saveCapacidad,
     },
   };
 }
@@ -195,8 +231,9 @@ export function populateAdminFromClientConfig(
     webhookCancelReservationUrl: toStringValue(config.webhook_cancel),
     webhookGetMesas: pickClientWebhook(config, 'webhook_get_mesas'),
     webhookSaveMesa: pickClientWebhook(config, 'webhook_save_mesa'),
-    webhookSettings: toStringValue(config.webhook_settings),
-    webhookSettingsCapacityUrl: toStringValue(config.webhook_capacidad),
+    webhookSettings: pickClientWebhook(config, 'webhook_settings'),
+    webhookGetCapacidad: pickClientWebhook(config, 'webhook_get_capacidad'),
+    webhookSettingsCapacityUrl: pickClientWebhook(config, 'webhook_capacidad'),
     webhookShows: toStringValue(config.webhook_shows),
     webhookFeedbacks: pickClientWebhook(config, 'webhook_feedbacks'),
     reservationsWebhook: '',

@@ -20,6 +20,7 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookCancelReservationUrl: storedSettings.webhookCancelReservationUrl ?? mockSettings.webhookCancelReservationUrl,
     webhookGetMesas: storedSettings.webhookGetMesas ?? mockSettings.webhookGetMesas,
     webhookSaveMesa: storedSettings.webhookSaveMesa ?? mockSettings.webhookSaveMesa,
+    webhookGetCapacidad: storedSettings.webhookGetCapacidad ?? mockSettings.webhookGetCapacidad,
     webhookSettingsCapacityUrl: storedSettings.webhookSettingsCapacityUrl ?? mockSettings.webhookSettingsCapacityUrl,
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
     maxPaxPerBooking: storedSettings.maxPaxPerBooking ?? mockSettings.maxPaxPerBooking,

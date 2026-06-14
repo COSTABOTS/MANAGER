@@ -102,6 +102,7 @@ export interface ManagerSettings {
   webhookCancelReservationUrl: string;
   webhookGetMesas: string;
   webhookSaveMesa: string;
+  webhookGetCapacidad: string;
   webhookSettingsCapacityUrl: string;
   webhookShows: string;
   webhookFeedbacks: string;

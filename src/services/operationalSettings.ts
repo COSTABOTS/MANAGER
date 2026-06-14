@@ -11,7 +11,7 @@ interface SettingsResponse {
 
 const DEFAULT_OPERATIONAL_SETTINGS = {
   BOOKINGS_ENABLED: true,
-  MAX_CAPACITY: 80,
+  MAX_CAPACITY: 60,
   MAX_PAX_PER_BOOKING: 10,
   WHATSAPP_CONFIRMATION: true,
   DAILY_BRIEFING_ENABLED: false,
@@ -110,8 +110,16 @@ function normalizeSettingsMap(settings: SettingsValueMap | SettingsRow[] | undef
   }, {});
 }
 
+function toSaveValue(value: boolean | number | string) {
+  if (typeof value === 'boolean') {
+    return value ? 'TRUE' : 'FALSE';
+  }
+
+  return String(value);
+}
+
 export function buildOperationalSettingsPayload(settings: ManagerSettings) {
-  return {
+  const settingsMap = {
     BOOKINGS_ENABLED: settings.reservasActivas,
     MAX_CAPACITY: settings.totalCapacity,
     MAX_PAX_PER_BOOKING: settings.maxPaxPerBooking,
@@ -133,6 +141,11 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
     OPEN_SATURDAY: settings.openingDays.saturday,
     OPEN_SUNDAY: settings.openingDays.sunday,
   };
+
+  return Object.entries(settingsMap).map(([variable, value]) => ({
+    variable,
+    value: toSaveValue(value),
+  }));
 }
 
 export function applyOperationalSettings(currentSettings: ManagerSettings, rawSettings: SettingsValueMap | SettingsRow[] | undefined): ManagerSettings {
@@ -190,6 +203,7 @@ export async function loadOperationalSettings(webhookUrl: string): Promise<Setti
   }
 
   const data = (await response.json()) as SettingsResponse;
+  console.log('SETTINGS recibidos crudos', data);
   if (data.ok === false || data.success === false) {
     throw new Error('Respuesta SETTINGS no valida');
   }
@@ -204,7 +218,7 @@ export async function saveOperationalSettings(webhookUrl: string, settings: Mana
 
   console.log('SETTINGS webhook URL usada', webhookUrl);
   const payload = buildOperationalSettingsPayload(settings);
-  console.log('SETTINGS guardados', payload);
+  console.log('Payload save_settings enviado:', payload);
 
   const response = await fetch(webhookUrl.trim(), {
     method: 'POST',
