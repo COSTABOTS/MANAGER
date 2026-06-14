@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/feedback/(.*)",
+      "destination": "/"
+    },
+    {
+      "source": "/((?!assets/|favicon.ico|manifest.json|robots.txt|.*\\..*).*)",
+      "destination": "/"
     }
   ]
 }
