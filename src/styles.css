@@ -236,6 +236,20 @@ select {
   padding-left: 72px;
 }
 
+.demo-banner {
+  background: #eef4ff;
+  border: 1px solid #c7d8f6;
+  border-radius: 8px;
+  color: #335f9f;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin: 0 0 14px 72px;
+  padding: 8px 14px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .brand-lockup {
   display: flex;
   align-items: center;
@@ -2117,5 +2131,279 @@ button:disabled {
 
   .rating-row {
     grid-template-columns: 90px 1fr 28px;
+  }
+}
+
+.feedback-public-shell {
+  --feedback-accent: #2f7d4a;
+  position: relative;
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--feedback-accent) 24%, transparent), transparent 30%),
+    linear-gradient(150deg, color-mix(in srgb, var(--feedback-accent) 28%, #f7faf8), #f8fbf9 46%, #eaf4ee);
+}
+
+.feedback-public-shell::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background-image: var(--feedback-bg-image);
+  background-position: center;
+  background-size: cover;
+  opacity: 0.32;
+}
+
+.feedback-public-shell::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.72)),
+    color-mix(in srgb, var(--feedback-accent) 10%, transparent);
+}
+
+.feedback-public-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 430px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 70px rgba(17, 24, 39, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+.feedback-public-form,
+.feedback-public-success {
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+  padding: 30px 22px 24px;
+  text-align: center;
+}
+
+.feedback-public-brand {
+  display: grid;
+  width: 82px;
+  height: 82px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--feedback-accent) 24%, #ffffff);
+  border-radius: 22px;
+  color: #ffffff;
+  background: var(--feedback-accent);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--feedback-accent) 24%, transparent);
+}
+
+.feedback-public-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.feedback-public-brand span {
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.feedback-public-restaurant {
+  margin: 0;
+  color: var(--feedback-accent);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.feedback-bot-message {
+  position: relative;
+  width: 100%;
+  padding: 18px;
+  border-radius: 20px;
+  background: #f7faf8;
+  text-align: left;
+}
+
+.feedback-bot-message::before {
+  position: absolute;
+  top: -9px;
+  left: 34px;
+  width: 18px;
+  height: 18px;
+  content: "";
+  background: #f7faf8;
+  transform: rotate(45deg);
+}
+
+.feedback-bot-message h1,
+.feedback-public-success h1 {
+  margin: 0;
+  color: #172033;
+  font-size: 25px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.feedback-bot-message p,
+.feedback-public-success p {
+  margin: 8px 0 0;
+  color: #566071;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.feedback-stars {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 0 0;
+  border: 0;
+}
+
+.feedback-stars button {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  color: #d5d9e1;
+  background: transparent;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.feedback-stars button.is-active {
+  color: #f5b82e;
+}
+
+.feedback-stars button:focus-visible,
+.feedback-stars button:hover {
+  outline: none;
+  background: rgba(245, 184, 46, 0.12);
+  transform: translateY(-2px);
+}
+
+.feedback-comment-field {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  color: #475467;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.feedback-comment-field textarea {
+  min-height: 116px;
+  border: 1px solid #d7dde7;
+  border-radius: 18px;
+  padding: 14px;
+  color: #172033;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.03);
+  resize: vertical;
+}
+
+.feedback-comment-field textarea:focus {
+  border-color: var(--feedback-accent);
+  outline: 4px solid color-mix(in srgb, var(--feedback-accent) 16%, transparent);
+}
+
+.feedback-submit-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 18px;
+  color: #ffffff;
+  background: var(--feedback-accent);
+  box-shadow: 0 16px 32px color-mix(in srgb, var(--feedback-accent) 28%, transparent);
+  font-weight: 900;
+}
+
+.feedback-submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+.feedback-submit-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.feedback-public-error {
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(169, 35, 35, 0.22);
+  border-radius: 14px;
+  color: var(--red);
+  background: rgba(169, 35, 35, 0.08);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.feedback-public-success {
+  min-height: 360px;
+  align-content: center;
+  padding: 38px 26px;
+}
+
+.feedback-success-icon {
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border-radius: 24px;
+  color: #ffffff;
+  background: var(--feedback-accent);
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--feedback-accent) 28%, transparent);
+}
+
+@media (max-width: 430px) {
+  .feedback-public-shell {
+    align-items: stretch;
+    padding: 14px;
+  }
+
+  .feedback-public-card {
+    align-self: center;
+    border-radius: 24px;
+  }
+
+  .feedback-public-form,
+  .feedback-public-success {
+    padding: 24px 16px 18px;
+  }
+
+  .feedback-stars {
+    gap: 0;
+  }
+
+  .feedback-stars button {
+    width: 52px;
+    height: 52px;
+  }
+
+  .feedback-bot-message h1,
+  .feedback-public-success h1 {
+    font-size: 23px;
   }
 }

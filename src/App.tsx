@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { SetStateAction } from 'react';
+import type { FormEvent, SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
+import { BrandLogo } from './components/BrandLogo';
+import { DEFAULT_COSTABOTS_LOGO } from './config/branding';
 import { Control } from './pages/Control';
+import { FeedbackPublic } from './pages/FeedbackPublic';
 import { Feedbacks } from './pages/Feedbacks';
 import { Reports } from './pages/Reports';
 import { Reservations } from './pages/Reservations';
@@ -11,6 +14,7 @@ import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
 import { mockReservations, todayState } from './mock';
 import { loadReservations as loadReservationsFromWebhook } from './services/api';
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 import {
   CLIENT_CONFIG_KEY,
   LOGIN_FLAG_KEY,
@@ -42,6 +46,8 @@ export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedba
 const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnjdpook';
 const SETTINGS_WEBHOOK_FALLBACK = '';
 
+console.log('[App loaded]', window.location.pathname);
+
 function clearLoginSession() {
   sessionStorage.removeItem(LOGIN_FLAG_KEY);
   sessionStorage.removeItem(CLIENT_CONFIG_KEY);
@@ -66,7 +72,30 @@ function loadClientConfigFromSession() {
   }
 }
 
-export function App() {
+function pickSupabaseValue(row: Record<string, unknown> | null | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+
+  return '';
+}
+
+function toSupabaseBoolean(value: unknown) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  return ['true', '1', 'yes', 'si', 'sí', 'active'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+interface ManagerAppProps {
+  onLogoutComplete?: () => void;
+}
+
+function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [activePage, setActivePage] = useState<PageKey>('today');
   const [clientConfig, setClientConfig] = useState<ExternalClientConfig | null>(() => loadClientConfigFromSession());
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -134,6 +163,7 @@ export function App() {
 
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
+  const isDemoClient = Boolean(clientConfig && (clientConfig.IS_DEMO === true || clientConfig.is_demo === true || toSupabaseBoolean(clientConfig.IS_DEMO) || toSupabaseBoolean(clientConfig.is_demo)));
 
   useEffect(() => {
     if (!clientConfig) {
@@ -183,6 +213,7 @@ export function App() {
     clearLoginSession();
 
     try {
+      console.log('[Login debug] URL llamada:', LOGIN_WEBHOOK_URL);
       const response = await fetch(LOGIN_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -191,13 +222,28 @@ export function App() {
         body: JSON.stringify({ usuario, password }),
       });
 
+      console.log('[Login debug] Status HTTP recibido:', response.status, response.statusText);
+
       if (!response.ok) {
+        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrará "Usuario o contraseña incorrectos".');
         throw new Error(`Login request failed with status ${response.status}`);
       }
 
       const loginResponse = (await response.json()) as ExternalClientConfig;
+      console.log('[Login debug] JSON completo recibido:', loginResponse);
+      console.log('[Login debug] Valor de response.success:', loginResponse.success);
+      const loginDebugSnapshot = {
+        success: loginResponse.success,
+        client_id: loginResponse.client_id,
+        rest_nombre: loginResponse.rest_nombre,
+      };
 
       if (!isValidClientConfig(loginResponse)) {
+        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrará "Usuario o contraseña incorrectos".', {
+          success: loginDebugSnapshot.success,
+          client_id: loginDebugSnapshot.client_id,
+          rest_nombre: loginDebugSnapshot.rest_nombre,
+        });
         clearLoginSession();
         setClientConfig(null);
         setLoginError('Usuario o contraseña incorrectos');
@@ -218,7 +264,8 @@ export function App() {
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
       console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
-    } catch {
+    } catch (error) {
+      console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrará "Usuario o contraseña incorrectos".', error);
       clearLoginSession();
       setClientConfig(null);
       setLoginError('Usuario o contraseña incorrectos');
@@ -236,6 +283,7 @@ export function App() {
     setOperationalSettingsLoaded(false);
     setSettingsMessage('');
     setActivePage('today');
+    onLogoutComplete?.();
   }
 
   function getReservationSyncId(reservation: Reservation) {
@@ -887,6 +935,7 @@ export function App() {
       onNavigate={setActivePage}
       onLogout={handleLogout}
     >
+      {isDemoClient && <div className="demo-banner">DEMO · Datos simulados</div>}
       {renderPage()}
       {reservationToCancel && (
         <div className="modal-backdrop" role="presentation" onPointerDown={() => setReservationToCancel(null)}>
@@ -914,4 +963,177 @@ export function App() {
       )}
     </Layout>
   );
+}
+
+function getPublicFeedbackReservationId() {
+  const match = window.location.pathname.match(/^\/feedback\/([^/]+)\/?$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : '';
+}
+
+function DemoAuthGate() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const config = getClientConfig();
+    return sessionStorage.getItem(LOGIN_FLAG_KEY) === 'true' && isValidClientConfig(config) && (config.auth_provider === 'supabase' || toSupabaseBoolean(config.IS_DEMO) || toSupabaseBoolean(config.is_demo));
+  });
+
+  async function handleDemoLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+
+    if (!isSupabaseConfigured) {
+      setError('Supabase no esta configurado');
+      return;
+    }
+
+    setIsLoading(true);
+    clearLoginSession();
+
+    try {
+      const authResult = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (authResult.error || !authResult.data.user) {
+        setError('Credenciales incorrectas');
+        return;
+      }
+
+      const userId = authResult.data.user.id;
+      const profileResult = await supabase
+        .from('PROFILES')
+        .select('user_id, client_id, role, status')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (profileResult.error) {
+        setError('Usuario sin profile');
+        return;
+      }
+
+      const profile = profileResult.data as Record<string, unknown> | null;
+      if (!profile) {
+        setError('Usuario sin profile');
+        return;
+      }
+
+      if (pickSupabaseValue(profile, ['status', 'STATUS']).toUpperCase() !== 'ACTIVE') {
+        setError('Profile inactivo');
+        return;
+      }
+
+      const clientId = pickSupabaseValue(profile, ['client_id']).trim();
+      const role = pickSupabaseValue(profile, ['role', 'ROLE']);
+
+      const { data: clientData, error: clientError } = await supabase
+        .from('CLIENTES')
+        .select('*')
+        .eq('client_id', clientId)
+        .maybeSingle();
+
+      if (clientError) {
+        setError('Cliente no encontrado');
+        return;
+      }
+
+      const client = clientData as Record<string, unknown> | null;
+      if (!client) {
+        setError('Cliente no encontrado');
+        return;
+      }
+
+      if (pickSupabaseValue(client, ['status']).toUpperCase() !== 'ACTIVE') {
+        setError('Cliente inactivo');
+        return;
+      }
+
+      const config = normalizeClientConfig({
+        success: true,
+        auth_provider: 'supabase',
+        client_id: clientId,
+        rest_nombre: pickSupabaseValue(client, ['rest_name']),
+        logo_restaurante: pickSupabaseValue(client, ['logo_url']),
+        color: pickSupabaseValue(client, ['primary_color']),
+        sheet_id: pickSupabaseValue(client, ['sheet_id']),
+        role,
+        IS_DEMO: toSupabaseBoolean(client.is_demo),
+        is_demo: toSupabaseBoolean(client.is_demo),
+      });
+
+      if (!isValidClientConfig(config)) {
+        setError('Cliente no encontrado');
+        return;
+      }
+
+      sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(config));
+      sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
+      console.log('Cliente demo cargado:', config.rest_nombre);
+      setIsAuthenticated(true);
+    } catch (loginError) {
+      console.error('Demo login error', loginError);
+      setError('Credenciales incorrectas');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleDemoLogout() {
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
+  }
+
+  if (isAuthenticated) {
+    return <ManagerApp onLogoutComplete={handleDemoLogout} />;
+  }
+
+  return (
+    <main className="login-shell">
+      <section className="login-card" aria-label="Acceso demo CostaBots Manager">
+        <div className="login-brand">
+          <BrandLogo fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="Costabots" variant="platform" preferFallback />
+          <div>
+            <p className="eyebrow">Acceso demo</p>
+            <h1>CostaBots Manager</h1>
+          </div>
+        </div>
+
+        <form className="login-form" onSubmit={handleDemoLogin}>
+          <label>
+            Email
+            <input autoComplete="email" autoFocus name="email" onChange={(event) => setEmail(event.target.value)} placeholder="email@restaurante.com" required type="email" value={email} />
+          </label>
+
+          <label>
+            Password
+            <input autoComplete="current-password" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="Password" required type="password" value={password} />
+          </label>
+
+          {error && <p className="login-error">{error}</p>}
+
+          <button className="primary-button login-submit" disabled={isLoading} type="submit">
+            {isLoading ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+export function App() {
+  const feedbackReservationId = getPublicFeedbackReservationId();
+
+  if (feedbackReservationId) {
+    console.log('[FeedbackPublic render]', feedbackReservationId);
+    return <FeedbackPublic idReserva={feedbackReservationId} />;
+  }
+
+  if (window.location.pathname === '/demo') {
+    return <DemoAuthGate />;
+  }
+
+  return <ManagerApp />;
 }
