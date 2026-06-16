@@ -6,6 +6,7 @@ export const CLIENT_CONFIG_KEY = 'costabots_client_config';
 
 export type ClientWebhookKey =
   | 'webhook_get_reservas'
+  | 'webhook_reservas'
   | 'webhook_walkin'
   | 'webhook_manual'
   | 'webhook_arrived'
@@ -56,6 +57,7 @@ export interface ExternalClientConfig {
   logo_restaurante?: string;
   color?: string;
   webhook_get_reservas?: string;
+  webhook_reservas?: string;
   webhook_walkin?: string;
   webhook_manual?: string;
   webhook_arrived?: string;
@@ -89,6 +91,7 @@ function toStringValue(value: unknown) {
 }
 
 function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebhookKey) {
+  const isDemoRoute = typeof window !== 'undefined' && window.location.pathname.includes('/demo');
   const directValue = toStringValue(config?.[key]);
   if (directValue) {
     return directValue;
@@ -96,20 +99,21 @@ function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebho
 
   const webhooks = (config?.webhooks ?? {}) as Record<string, unknown>;
   const aliases: Record<ClientWebhookKey, string[]> = {
-    webhook_get_reservas: ['webhookLeerReservas', 'getReservas', 'getReservations'],
-    webhook_walkin: ['webhookWalkin', 'walkin'],
-    webhook_manual: ['webhookReservas', 'manual', 'reservas'],
-    webhook_arrived: ['webhookLlegada', 'arrived', 'llegada'],
-    webhook_mesa: ['webhookMesa', 'mesa'],
-    webhook_fully_booked: ['webhookFullyBooked', 'fullyBooked'],
-    webhook_cancel: ['webhookCancelReservationUrl', 'cancel', 'cancelReservation'],
-    webhook_settings: ['webhookSettings', 'settings'],
-    webhook_get_capacidad: ['WEBHOOK_GET_CAPACIDAD', 'webhookGetCapacidad', 'webhookGetCapacity', 'webhook_get_capacity', 'getCapacity', 'getCapacityWebhook', 'webhookCapacityGetUrl'],
-    webhook_capacidad: ['WEBHOOK_CAPACIDAD', 'webhookCapacity', 'webhookSettingsCapacityUrl', 'webhook_settings_capacidad', 'webhook_capacidad_settings', 'settingsCapacity', 'capacitySettings'],
-    webhook_get_mesas: ['webhook_leer_mesas', 'WEBHOOK_LEER_MESAS', 'webhookLeerMesas', 'webhookGetMesas', 'getMesas', 'tablesGet'],
-    webhook_save_mesa: ['webhook_guardar_mesas', 'WEBHOOK_GUARDAR_MESAS', 'webhookGuardarMesas', 'webhookSaveMesa', 'saveMesa', 'tablesSave'],
-    webhook_shows: ['webhookShows', 'shows'],
-    webhook_feedbacks: ['webhook_leer_feedbacks', 'WEBHOOK_LEER_FEEDBACKS', 'webhookLeerFeedbacks', 'webhookFeedbacks', 'getFeedbacks', 'feedbacks'],
+    webhook_get_reservas: ['RESERVATION_LIST', 'webhookLeerReservas', 'getReservas', 'getReservations'],
+    webhook_reservas: ['RESERVATION_CREATE', 'webhookReservas', 'reservas', 'manual'],
+    webhook_walkin: ['WALKIN_CREATE', 'webhookWalkin', 'walkin'],
+    webhook_manual: ['RESERVATION_CREATE', 'webhookReservas', 'manual', 'reservas'],
+    webhook_arrived: ['ARRIVAL_UPDATE', 'webhookLlegada', 'arrived', 'llegada'],
+    webhook_mesa: ['TABLE_ASSIGN', 'webhookMesa', 'mesa'],
+    webhook_fully_booked: ['FULLY_BOOKED', 'webhookFullyBooked', 'fullyBooked'],
+    webhook_cancel: ['RESERVATION_CANCEL', 'webhookCancelReservationUrl', 'cancel', 'cancelReservation'],
+    webhook_settings: ['SETTINGS_UPDATE', 'webhookSettings', 'settings'],
+    webhook_get_capacidad: ['CAPACITY_LIST', 'WEBHOOK_GET_CAPACIDAD', 'webhookGetCapacidad', 'webhookGetCapacity', 'webhook_get_capacity', 'getCapacity', 'getCapacityWebhook', 'webhookCapacityGetUrl'],
+    webhook_capacidad: ['CAPACITY_SAVE', 'WEBHOOK_CAPACIDAD', 'webhookCapacity', 'webhookSettingsCapacityUrl', 'webhook_settings_capacidad', 'webhook_capacidad_settings', 'settingsCapacity', 'capacitySettings'],
+    webhook_get_mesas: ['TABLES_LIST', 'webhook_leer_mesas', 'WEBHOOK_LEER_MESAS', 'webhookLeerMesas', 'webhookGetMesas', 'getMesas', 'tablesGet'],
+    webhook_save_mesa: ['TABLE_SAVE', 'webhook_guardar_mesas', 'WEBHOOK_GUARDAR_MESAS', 'webhookGuardarMesas', 'webhookSaveMesa', 'saveMesa', 'tablesSave'],
+    webhook_shows: ['SHOWS_UPDATE', 'webhookShows', 'shows'],
+    webhook_feedbacks: ['FEEDBACK_CREATE', 'webhook_leer_feedbacks', 'WEBHOOK_LEER_FEEDBACKS', 'webhookLeerFeedbacks', 'webhookFeedbacks', 'getFeedbacks', 'feedbacks'],
   };
 
   for (const alias of aliases[key]) {
@@ -117,6 +121,14 @@ function pickClientWebhook(config: ExternalClientConfig | null, key: ClientWebho
     if (value) {
       return value;
     }
+  }
+
+  if (isDemoRoute) {
+    console.log('[DEMO DEBUG] resolve webhook', {
+      key,
+      configWebhooks: config?.webhooks,
+      value: '',
+    });
   }
 
   return '';
