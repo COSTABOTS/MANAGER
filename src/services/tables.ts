@@ -336,13 +336,15 @@ export async function loadTablesFromSheetsDirect({ sheetId, clientId, clientConf
 }
 
 export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConfig }: DirectSheetsTablesPayload): Promise<RestaurantTable[]> {
-  console.log('[DEMO][MESAS][EDGE] llamando get-tables');
+  console.log('[DEMO][MANAGER_API] calling tables.list');
   console.log('[DEMO][MESAS] clientConfig completo:', clientConfig);
   console.log('[DEMO][MESAS] client_id:', clientId ?? '');
   console.log('[DEMO][MESAS] sheet_id:', sheetId ?? '');
 
-  const { data, error } = await supabase.functions.invoke('get-tables');
-  console.log('[DEMO][MESAS][EDGE] respuesta:', data);
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: { action: 'tables.list' },
+  });
+  console.log('[DEMO][MANAGER_API] response', data);
 
   if (error) {
     throw error;
@@ -350,7 +352,7 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
 
   const response = data as TablesResponse & { ok?: boolean; source?: string; code?: string; message?: string };
   if (!response?.ok) {
-    throw new Error(response?.code || response?.message || 'Edge Function get-tables no devolvio ok=true');
+    throw new Error(response?.code || response?.message || 'manager-api tables.list no devolvio ok=true');
   }
 
   const rows = getRows(response);
@@ -361,7 +363,7 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
     })
     .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
 
-  console.log('[DEMO][MESAS][EDGE] mesas recibidas:', tables.length);
+  console.log('[DEMO][MANAGER_API] tables received', tables.length);
 
   if (!tables.length) {
     throw new Error('Edge Function get-tables devolvio 0 mesas');

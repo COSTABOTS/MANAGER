@@ -1,0 +1,2 @@
+[functions.get-tables-test]
+verify_jwt = false

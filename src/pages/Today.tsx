@@ -21,6 +21,8 @@ interface TodayProps {
   bookingInterval: 30 | 60;
   reservations: Reservation[];
   tableOptions: string[];
+  hasLoadedTables: boolean;
+  isLoadingTables: boolean;
   totalPax: number;
   arrivals: number;
   occupancyPercent: number;
@@ -29,6 +31,7 @@ interface TodayProps {
   onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
+  onEnsureTables: () => Promise<void>;
   onCancelReservation: (reservation: Reservation) => void;
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
@@ -55,6 +58,8 @@ export function Today({
   bookingInterval,
   reservations,
   tableOptions,
+  hasLoadedTables,
+  isLoadingTables,
   totalPax,
   occupancyPercent,
   totalCapacity,
@@ -62,6 +67,7 @@ export function Today({
   onAddManualReservation,
   onBookingStatus,
   onUpdateReservation,
+  onEnsureTables,
   onCancelReservation,
   onRefreshReservations,
   isRefreshingReservations,
@@ -294,7 +300,15 @@ export function Today({
         ) : displayReservations.length === 0 ? (
           <div className="sync-status">No hay reservas para hoy</div>
         ) : (
-          <ReservationsTable reservations={displayReservations} tableOptions={tableOptions} onUpdate={onUpdateReservation} onCancel={onCancelReservation} />
+          <ReservationsTable
+            reservations={displayReservations}
+            tableOptions={tableOptions}
+            hasLoadedTables={hasLoadedTables}
+            isLoadingTables={isLoadingTables}
+            onEnsureTables={onEnsureTables}
+            onUpdate={onUpdateReservation}
+            onCancel={onCancelReservation}
+          />
         )}
       </section>
 

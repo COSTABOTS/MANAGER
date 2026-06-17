@@ -533,11 +533,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setHasLoadedTables(true);
         setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
         setIsLoadingTables(false);
-        return;
+        return nextTables;
       } catch (error) {
         console.log('MAKE_FALLBACK_USED');
         const fallbackCode = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-        console.warn('[DEMO][MESAS][EDGE] fallback Make usado por:', fallbackCode, error);
+        console.warn('[DEMO][MANAGER_API] fallback Make', fallbackCode, error);
       }
     }
 
@@ -546,7 +546,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setTablesSyncMessage('Webhook de mesas no configurado');
       setHasLoadedTables(true);
       setIsLoadingTables(false);
-      return;
+      return [];
     }
 
     try {
@@ -554,13 +554,27 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setRestaurantTables(nextTables);
       setHasLoadedTables(true);
       setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
+      return nextTables;
     } catch (error) {
       console.error('GET_MESAS error', error);
       setRestaurantTables([]);
       setTablesSyncMessage('No se pudieron cargar mesas');
+      return [];
     } finally {
       setIsLoadingTables(false);
     }
+  }
+
+  async function ensureTablesForAssignment() {
+    console.log('[LAZY][TABLES] needed for table assignment');
+    if (hasLoadedTables) {
+      console.log('[CACHE][TABLES] using cached tables');
+      return;
+    }
+
+    console.log('[LAZY][TABLES] loading before opening selector');
+    const nextTables = await loadTables();
+    console.log('[LAZY][TABLES] loaded X tables', nextTables?.length ?? 0);
   }
 
   async function loadFeedbacks() {
@@ -1086,7 +1100,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isLoadingTables={isLoadingTables}
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
-          onRefreshTables={loadTables}
+          onRefreshTables={async () => {
+            await loadTables();
+          }}
           onCreateTable={handleCreateTable}
           onUpdateTable={handleUpdateTable}
           onDeactivateTable={handleDeactivateTable}
@@ -1111,6 +1127,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
         tableOptions={activeTableOptions}
+        hasLoadedTables={hasLoadedTables}
+        isLoadingTables={isLoadingTables}
         totalPax={totalPax}
         arrivals={arrivals}
         occupancyPercent={occupancyPercent}
@@ -1119,6 +1137,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         onAddManualReservation={addManualReservation}
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
+        onEnsureTables={ensureTablesForAssignment}
         onCancelReservation={setReservationToCancel}
         onRefreshReservations={refreshReservationsOnly}
         isRefreshingReservations={isLoadingReservations}

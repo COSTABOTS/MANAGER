@@ -4,11 +4,14 @@ import { isActiveReservation } from '../utils/reservationStatus';
 interface ReservationsTableProps {
   reservations: Reservation[];
   tableOptions: string[];
+  hasLoadedTables: boolean;
+  isLoadingTables: boolean;
+  onEnsureTables: () => Promise<void>;
   onUpdate: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
   onCancel: (reservation: Reservation) => void;
 }
 
-export function ReservationsTable({ reservations, tableOptions, onUpdate, onCancel }: ReservationsTableProps) {
+export function ReservationsTable({ reservations, tableOptions, hasLoadedTables, isLoadingTables, onEnsureTables, onUpdate, onCancel }: ReservationsTableProps) {
   function getAvailableTables(currentReservation: Reservation) {
     const occupiedTables = new Set(
       reservations
@@ -48,7 +51,13 @@ export function ReservationsTable({ reservations, tableOptions, onUpdate, onCanc
               <td data-label="Pax">{reservation.pax}</td>
               <td data-label="Peticion especial">{reservation.specialRequest || '-'}</td>
               <td data-label="Mesa">
-                {tableOptions.length === 0 ? (
+                {isLoadingTables ? (
+                  <span className="muted-cell">Cargando mesas...</span>
+                ) : tableOptions.length === 0 && !hasLoadedTables ? (
+                  <button className="secondary-button compact-action" type="button" onClick={() => void onEnsureTables()}>
+                    Asignar mesa
+                  </button>
+                ) : tableOptions.length === 0 ? (
                   <span className="muted-cell">No hay mesas configuradas para este restaurante.</span>
                 ) : (
                   <select
