@@ -32,7 +32,7 @@ import type { Feedback } from './services/feedbacks';
 import { loadCapacitySettings } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
-import { loadRestaurantTables, loadTablesFromSheetsDirect, saveRestaurantTable } from './services/tables';
+import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
@@ -498,23 +498,20 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   async function loadTables() {
     const tablesWebhook = getClientWebhook('webhook_get_mesas') || settings.webhookGetMesas;
     const sheetId = getClientSheetId();
-    const isDemoRoute = window.location.pathname.toLowerCase().includes('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemoRoute = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
 
     setIsLoadingTables(true);
 
     if (isDemoRoute) {
       try {
-        const nextTables = await loadTablesFromSheetsDirect({ sheetId, clientId: clientConfig?.client_id, clientConfig });
+        const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
         setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
         setIsLoadingTables(false);
         return;
       } catch (error) {
-        if (error instanceof Error && error.message.includes('0 mesas')) {
-          console.warn('[DEMO][MESAS] lectura directa devolvió 0 mesas, usando fallback Make');
-        }
         console.log('MAKE_FALLBACK_USED');
-        console.warn('[DEMO][MESAS] fallback a Make por error:', error);
+        console.warn('[DEMO][MESAS][EDGE] fallback Make:', error);
       }
     }
 

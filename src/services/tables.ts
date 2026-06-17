@@ -1,4 +1,5 @@
 import type { RestaurantTable, RestaurantTableType } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 type TableRow = Record<string, unknown>;
 
@@ -202,9 +203,9 @@ async function loadTablesFromSheetsDirectLegacy({ sheetId, clientId }: DirectShe
 
   console.log('[DEMO][MESAS] sheet_id encontrado');
 
-  const apiKey = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
+  const apiKey = '';
   if (!apiKey) {
-    throw new Error('Falta VITE_GOOGLE_SHEETS_API_KEY');
+    throw new Error('Lectura publica de Google Sheets desactivada en demo');
   }
 
   console.log('[DEMO][MESAS] usando lectura directa desde Sheets');
@@ -268,11 +269,11 @@ export async function loadTablesFromSheetsDirect({ sheetId, clientId, clientConf
 
   console.log('[DEMO][MESAS] sheet_id encontrado');
 
-  const apiKey = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
+  const apiKey = '';
   console.log('[DEMO][MESAS] apiKey existe:', Boolean(apiKey));
   if (!apiKey) {
     console.log('DIRECT_SHEETS_ERROR');
-    throw new Error('Falta VITE_GOOGLE_SHEETS_API_KEY');
+    throw new Error('Lectura publica de Google Sheets desactivada en demo');
   }
 
   console.log('[DEMO][MESAS] usando lectura directa desde Sheets');
@@ -331,6 +332,41 @@ export async function loadTablesFromSheetsDirect({ sheetId, clientId, clientConf
   }
 
   console.log('DIRECT_SHEETS_OK');
+  return tables;
+}
+
+export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConfig }: DirectSheetsTablesPayload): Promise<RestaurantTable[]> {
+  console.log('[DEMO][MESAS][EDGE] llamando get-tables');
+  console.log('[DEMO][MESAS] clientConfig completo:', clientConfig);
+  console.log('[DEMO][MESAS] client_id:', clientId ?? '');
+  console.log('[DEMO][MESAS] sheet_id:', sheetId ?? '');
+
+  const { data, error } = await supabase.functions.invoke('get-tables');
+  console.log('[DEMO][MESAS][EDGE] respuesta:', data);
+
+  if (error) {
+    throw error;
+  }
+
+  const response = data as TablesResponse & { ok?: boolean; source?: string };
+  if (!response?.ok) {
+    throw new Error('Edge Function get-tables no devolvio ok=true');
+  }
+
+  const rows = getRows(response);
+  const tables = rows
+    .flatMap((row) => {
+      const table = normalizeTableFromSheet(row);
+      return table ? [table] : [];
+    })
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+
+  console.log('[DEMO][MESAS][EDGE] mesas recibidas:', tables.length);
+
+  if (!tables.length) {
+    throw new Error('Edge Function get-tables devolvio 0 mesas');
+  }
+
   return tables;
 }
 
