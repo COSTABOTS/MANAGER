@@ -215,7 +215,7 @@ async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) 
   }
 
   if (!jwt) {
-    return { error: errorResponse(request, 'UNAUTHENTICATED', 'No autenticado', 401, debug) };
+    return { error: errorResponse(request, 'UNAUTHENTICATED', 'Missing or invalid Authorization header', 401, debug) };
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -224,7 +224,7 @@ async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) 
   const { data: userData, error: userError } = await authClient.auth.getUser(jwt);
 
   if (userError || !userData.user) {
-    return { error: errorResponse(request, 'UNAUTHENTICATED', 'JWT no valido', 401, debug) };
+    return { error: errorResponse(request, 'UNAUTHENTICATED', 'Missing or invalid Authorization header', 401, debug) };
   }
   debug.userId = userData.user.id;
 
