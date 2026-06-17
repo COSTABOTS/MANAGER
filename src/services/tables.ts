@@ -16,6 +16,12 @@ interface SaveTablePayload {
   clientId?: string;
 }
 
+interface DirectSheetsTablesPayload {
+  sheetId?: string;
+  clientId?: string;
+  clientConfig?: unknown;
+}
+
 function unwrapValue(value: unknown) {
   if (Array.isArray(value)) {
     return value.find((item) => item !== undefined && item !== null && item !== '') ?? '';
@@ -159,6 +165,173 @@ export async function loadRestaurantTables(webhookUrl: string, sheetId?: string,
   console.log('getMesas normalized', normalizedTables);
 
   return normalizedTables;
+}
+
+function normalizeGoogleSheetsRows(values: unknown[][] | undefined) {
+  if (!values?.length) {
+    return [];
+  }
+
+  const headers = values[0].map((header) => toStringValue(header));
+
+  return values.slice(1).flatMap((valueRow) => {
+    if (!valueRow.some((cell) => toStringValue(cell))) {
+      return [];
+    }
+
+    const row: TableRow = {};
+    valueRow.forEach((cell, index) => {
+      row[String(index)] = cell;
+      const header = headers[index];
+      if (header) {
+        row[header] = cell;
+        row[header.trim().toUpperCase()] = cell;
+      }
+    });
+
+    return [row];
+  });
+}
+
+async function loadTablesFromSheetsDirectLegacy({ sheetId, clientId }: DirectSheetsTablesPayload): Promise<RestaurantTable[]> {
+  console.log('[DEMO][MESAS] client_id:', clientId ?? '');
+
+  if (!sheetId?.trim()) {
+    throw new Error('No hay sheet_id para leer mesas');
+  }
+
+  console.log('[DEMO][MESAS] sheet_id encontrado');
+
+  const apiKey = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
+  if (!apiKey) {
+    throw new Error('Falta VITE_GOOGLE_SHEETS_API_KEY');
+  }
+
+  console.log('[DEMO][MESAS] usando lectura directa desde Sheets');
+  const range = encodeURIComponent('MESAS!A:Z');
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId.trim())}/values/${range}?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`No se pudieron leer mesas desde Sheets (${response.status})`);
+  }
+
+  const data = (await response.json()) as { values?: unknown[][] };
+  const rows = normalizeGoogleSheetsRows(data.values);
+  console.log('[DEMO][MESAS] filas leídas:', rows.length);
+
+  return rows
+    .flatMap((row) => {
+      const table = normalizeTableFromSheet(row);
+      return table ? [table] : [];
+    })
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+}
+
+function normalizeGoogleSheetsRowsWithDebug(values: unknown[][] | undefined) {
+  if (!values?.length) {
+    return { headers: [] as string[], rows: [] as TableRow[] };
+  }
+
+  const headers = values[0].map((header) => toStringValue(header));
+  const rows = values.slice(1).flatMap((valueRow) => {
+    if (!valueRow.some((cell) => toStringValue(cell))) {
+      return [];
+    }
+
+    const row: TableRow = {};
+    valueRow.forEach((cell, index) => {
+      row[String(index)] = cell;
+      const header = headers[index];
+      if (header) {
+        row[header] = cell;
+        row[header.trim().toUpperCase()] = cell;
+      }
+    });
+
+    return [row];
+  });
+
+  return { headers, rows };
+}
+
+export async function loadTablesFromSheetsDirect({ sheetId, clientId, clientConfig }: DirectSheetsTablesPayload): Promise<RestaurantTable[]> {
+  console.log('[DEMO][MESAS] modo demo activo');
+  console.log('[DEMO][MESAS] clientConfig completo:', clientConfig);
+  console.log('[DEMO][MESAS] client_id:', clientId ?? '');
+  console.log('[DEMO][MESAS] sheet_id:', sheetId ?? '');
+
+  if (!sheetId?.trim()) {
+    console.log('DIRECT_SHEETS_ERROR');
+    throw new Error('No hay sheet_id para leer mesas');
+  }
+
+  console.log('[DEMO][MESAS] sheet_id encontrado');
+
+  const apiKey = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
+  console.log('[DEMO][MESAS] apiKey existe:', Boolean(apiKey));
+  if (!apiKey) {
+    console.log('DIRECT_SHEETS_ERROR');
+    throw new Error('Falta VITE_GOOGLE_SHEETS_API_KEY');
+  }
+
+  console.log('[DEMO][MESAS] usando lectura directa desde Sheets');
+  const ranges = ['MESAS!A:Z', 'Mesas!A:Z', 'mesas!A:Z'];
+  let values: unknown[][] | undefined;
+  let lastError: unknown = null;
+
+  for (const rangeValue of ranges) {
+    const range = encodeURIComponent(rangeValue);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId.trim())}/values/${range}?key=${encodeURIComponent(apiKey)}`;
+    console.log('[DEMO][MESAS] url:', url.replace(/key=[^&]+/, 'key=***'));
+
+    try {
+      const response = await fetch(url);
+      console.log('[DEMO][MESAS] respuesta HTTP:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        console.error('[DEMO][MESAS] error Google Sheets:', { range: rangeValue, status: response.status, statusText: response.statusText, body: errorBody });
+        lastError = new Error(`No se pudieron leer mesas desde Sheets (${response.status})`);
+        continue;
+      }
+
+      const data = (await response.json()) as { values?: unknown[][] };
+      values = data.values;
+      console.log('[DEMO][MESAS] raw values:', values);
+      break;
+    } catch (error) {
+      console.error('[DEMO][MESAS] error Google Sheets:', error);
+      lastError = error;
+    }
+  }
+
+  if (!values) {
+    console.log('DIRECT_SHEETS_ERROR');
+    throw lastError instanceof Error ? lastError : new Error('No se pudieron leer mesas desde Sheets');
+  }
+
+  const { headers, rows } = normalizeGoogleSheetsRowsWithDebug(values);
+  console.log('[DEMO][MESAS] headers detectados:', headers);
+  console.log('[DEMO][MESAS] filas leídas:', rows.length);
+  console.log('[DEMO][MESAS] filas normalizadas:', rows);
+
+  const tables = rows
+    .flatMap((row) => {
+      const table = normalizeTableFromSheet(row);
+      return table ? [table] : [];
+    })
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+
+  console.log('[DEMO][MESAS] mesas finales:', tables);
+
+  if (!tables.length) {
+    console.log('DIRECT_SHEETS_EMPTY');
+    throw new Error('Lectura directa de MESAS devolvio 0 mesas');
+  }
+
+  console.log('DIRECT_SHEETS_OK');
+  return tables;
 }
 
 export async function saveRestaurantTable(webhookUrl: string, payload: SaveTablePayload) {
