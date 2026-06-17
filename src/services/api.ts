@@ -1,4 +1,5 @@
 import { mockReservations, mockSettings, mockShows } from '../mock';
+import { supabase } from '../lib/supabaseClient';
 import { normalizeReservationFromSheet } from './reservationMapper';
 import type { SheetReservationRow } from './reservationMapper';
 import type { Reservation } from '../types';
@@ -102,6 +103,47 @@ export async function loadReservations(webhookUrl: string, sheetId?: string): Pr
   }
 
   return normalizeReservationsFromSheets(rows);
+}
+
+export async function loadReservationsFromManagerApi(): Promise<Reservation[]> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
+  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
+  console.log('[DEMO][MANAGER_API] calling reservations.list');
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: { action: 'reservations.list' },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  console.log('[DEMO][MANAGER_API] reservations.list response', data);
+
+  if (error) {
+    console.error('[DEMO][MANAGER_API] reservations.list error', error);
+    throw error;
+  }
+
+  const response = data as ReservationsWebhookResponse & { ok?: boolean; code?: string; message?: string };
+
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api reservations.list no devolvio ok=true');
+  }
+
+  const rows = getReservationRows(response);
+  if (!Array.isArray(rows)) {
+    throw new Error('manager-api reservations.list no devolvio reservations[]');
+  }
+
+  const reservations = normalizeReservationsFromSheets(rows);
+  console.log('[DEMO][MANAGER_API] reservations received', reservations.length);
+
+  return reservations;
 }
 
 export async function getControlDates() {

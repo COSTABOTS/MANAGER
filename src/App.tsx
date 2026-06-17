@@ -13,7 +13,7 @@ import { Settings } from './pages/Settings';
 import { Shows } from './pages/Shows';
 import { Today } from './pages/Today';
 import { mockReservations, todayState } from './mock';
-import { loadReservations as loadReservationsFromWebhook, normalizeReservationsFromSheets } from './services/api';
+import { loadReservations as loadReservationsFromWebhook, loadReservationsFromManagerApi, normalizeReservationsFromSheets } from './services/api';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 import {
   CLIENT_CONFIG_KEY,
@@ -471,15 +471,29 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const demoReservationListWebhook = typeof clientConfig?.webhooks?.RESERVATION_LIST === 'string' ? clientConfig.webhooks.RESERVATION_LIST : '';
     const reservationsWebhook = clientConfig?.auth_provider === 'supabase' && demoReservationListWebhook ? demoReservationListWebhook : getClientWebhook('webhook_get_reservas');
     const sheetId = getClientSheetId();
-
-    if (!reservationsWebhook.trim()) {
-      setLastSync('Webhook leer reservas no configurado');
-      return;
-    }
+    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
 
     setIsLoadingReservations(true);
 
     try {
+      if (isDemo) {
+        try {
+          const nextReservations = await loadReservationsFromManagerApi();
+          setAllReservations(nextReservations);
+          setHasLoadedReservations(true);
+          setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
+          setLastSync('Datos actualizados correctamente');
+          return;
+        } catch (error) {
+          console.warn('[DEMO][MANAGER_API] reservations fallback Make', error);
+        }
+      }
+
+      if (!reservationsWebhook.trim()) {
+        setLastSync('Webhook leer reservas no configurado');
+        return;
+      }
+
       if (clientConfig?.auth_provider === 'supabase') {
         const response = await fetch(reservationsWebhook.trim(), {
           method: 'POST',

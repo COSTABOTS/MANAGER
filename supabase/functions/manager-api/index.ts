@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-type ManagerAction = 'tables.list';
+type ManagerAction = 'tables.list' | 'reservations.list';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -149,6 +149,53 @@ function normalizeBoolean(value: unknown) {
   return ['', 'true', '1', 'si', 'sí', 'yes', 'activa', 'activo'].includes(String(value ?? '').trim().toLowerCase());
 }
 
+function toSheetString(value: unknown) {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function toSheetNumber(value: unknown) {
+  const parsedNumber = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsedNumber) ? parsedNumber : 0;
+}
+
+function rowsToObjects(values: unknown[][] | undefined) {
+  if (!values?.length) {
+    return [];
+  }
+
+  const headers = values[0].map((header) => String(header ?? '').trim());
+
+  return values.slice(1).flatMap((row) => {
+    if (!row.some((cell) => String(cell ?? '').trim())) {
+      return [];
+    }
+
+    const item: SheetRow = {};
+    row.forEach((cell, index) => {
+      const value = String(cell ?? '').trim();
+      const header = headers[index];
+      item[String(index)] = value;
+      if (header) {
+        item[header] = value;
+        item[header.toUpperCase()] = value;
+      }
+    });
+
+    return [item];
+  });
+}
+
+function pick(item: SheetRow, keys: string[]) {
+  for (const key of keys) {
+    const value = item[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
 function normalizeTables(values: unknown[][] | undefined): SheetRow[] {
   if (!values?.length) {
     return [];
@@ -199,6 +246,75 @@ function normalizeTables(values: unknown[][] | undefined): SheetRow[] {
       capacidad,
       activa,
       orden,
+    }];
+  });
+}
+
+function normalizeReservations(values: unknown[][] | undefined): SheetRow[] {
+  return rowsToObjects(values).flatMap((item) => {
+    const idReserva = toSheetString(pick(item, ['ID_RESERVA', 'id_reserva', 'idReserva', '0']));
+
+    if (!idReserva) {
+      return [];
+    }
+
+    const fecha = toSheetString(pick(item, ['FECHA', 'fecha', '1']));
+    const hora = toSheetString(pick(item, ['HORA', 'hora', '2']));
+    const nombre = toSheetString(pick(item, ['NOMBRE', 'nombre', '3']));
+    const telefono = toSheetString(pick(item, ['TELEFONO', 'telefono', '4']));
+    const pax = toSheetNumber(pick(item, ['PAX', 'pax', '5']));
+    const idioma = toSheetString(pick(item, ['IDIOMA', 'idioma', '6']));
+    const peticionEspecial = toSheetString(pick(item, ['PETICION_ESPECIAL', 'PETICION ESPECIAL', 'peticionEspecial', 'peticiones', '7']));
+    const estado = toSheetString(pick(item, ['ESTADO', 'estado', '8']));
+    const origen = toSheetString(pick(item, ['ORIGEN', 'origen', '9']));
+    const mesa = toSheetString(pick(item, ['MESA', 'mesa', '10']));
+    const llego = normalizeBoolean(pick(item, ['LLEGO', 'llego', '11']));
+    const feedbackEnviado = normalizeBoolean(pick(item, ['FEEDBACK_ENVIADO', 'feedback_enviado', '12']));
+    const habitacion = toSheetString(pick(item, ['HABITACION', 'habitacion', '13']));
+
+    return [{
+      id: idReserva,
+      idReserva,
+      id_reserva: idReserva,
+      ID_RESERVA: idReserva,
+      date: fecha,
+      fecha,
+      FECHA: fecha,
+      time: hora,
+      hora,
+      HORA: hora,
+      name: nombre,
+      nombre,
+      NOMBRE: nombre,
+      phone: telefono,
+      telefono,
+      TELEFONO: telefono,
+      pax,
+      PAX: pax,
+      language: idioma,
+      idioma,
+      IDIOMA: idioma,
+      specialRequest: peticionEspecial,
+      peticionEspecial,
+      peticiones: peticionEspecial,
+      PETICION_ESPECIAL: peticionEspecial,
+      status: estado,
+      estado,
+      ESTADO: estado,
+      origin: origen,
+      origen,
+      ORIGEN: origen,
+      table: mesa,
+      mesa,
+      MESA: mesa,
+      arrived: llego,
+      llego,
+      LLEGO: llego,
+      feedbackEnviado,
+      feedback_enviado: feedbackEnviado,
+      room: habitacion,
+      habitacion,
+      HABITACION: habitacion,
     }];
   });
 }
@@ -321,6 +437,34 @@ async function listTables(request: Request, clientId: string, sheetId: string, d
   });
 }
 
+async function listReservations(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!sheetsResponse.ok) {
+    const errorBody = await sheetsResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+  }
+
+  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const reservations = normalizeReservations(sheetsData.values);
+  console.log(`[MANAGER_API] reservations=${reservations.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'reservations.list',
+    client_id: clientId,
+    reservations,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -341,10 +485,12 @@ Deno.serve(async (request) => {
       case 'tables.list':
         return await listTables(request, context.clientId, context.sheetId, debug);
 
+      case 'reservations.list':
+        return await listReservations(request, context.clientId, context.sheetId, debug);
+
       // TODO: fullybooked.get
       // TODO: fullybooked.set
       // TODO: settings.get
-      // TODO: reservations.list
       // TODO: feedbacks.list
 
       default:
