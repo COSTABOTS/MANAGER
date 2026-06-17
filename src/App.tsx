@@ -256,6 +256,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [isLoadingFeedbacks, setIsLoadingFeedbacks] = useState(false);
   const [feedbacksMessage, setFeedbacksMessage] = useState('');
   const [feedbacksLoaded, setFeedbacksLoaded] = useState(false);
+  const [hasLoadedReservations, setHasLoadedReservations] = useState(false);
+  const [hasLoadedTables, setHasLoadedTables] = useState(false);
   const [isLoadingOperationalSettings, setIsLoadingOperationalSettings] = useState(false);
   const [operationalSettingsLoaded, setOperationalSettingsLoaded] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
@@ -306,14 +308,27 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    void refreshManagerData();
-  }, [clientConfig, settings.googleSheetId, settings.webhookLeerReservas, settings.webhookGetMesas, settings.webhookFeedbacks]);
+    console.log('[BOOT] loading initial reservations only');
+    void loadReservations();
+  }, [clientConfig]);
 
   useEffect(() => {
     if (activePage === 'feedbacks' && !feedbacksLoaded && !isLoadingFeedbacks) {
+      console.log('[LAZY] loading feedbacks');
       void loadFeedbacks();
+    } else if (activePage === 'feedbacks' && feedbacksLoaded) {
+      console.log('[CACHE] feedbacks already loaded');
     }
   }, [activePage, feedbacksLoaded, isLoadingFeedbacks]);
+
+  useEffect(() => {
+    if (activePage === 'settings' && !hasLoadedTables && !isLoadingTables) {
+      console.log('[LAZY] loading tables');
+      void loadTables();
+    } else if (activePage === 'settings' && hasLoadedTables) {
+      console.log('[CACHE] tables already loaded');
+    }
+  }, [activePage, hasLoadedTables, isLoadingTables]);
 
   useEffect(() => {
     if (activePage === 'settings' && !operationalSettingsLoaded && !isLoadingOperationalSettings) {
@@ -333,6 +348,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setRestaurantTables([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
+      setHasLoadedReservations(false);
+      setHasLoadedTables(false);
       setOperationalSettingsLoaded(false);
       setSettingsMessage('');
       setTablesSyncMessage('');
@@ -393,6 +410,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setRestaurantTables([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
+      setHasLoadedReservations(false);
+      setHasLoadedTables(false);
       setOperationalSettingsLoaded(false);
       setSettingsMessage('');
       setTablesSyncMessage('');
@@ -416,6 +435,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setRestaurantTables([]);
     setFeedbacks([]);
     setFeedbacksLoaded(false);
+    setHasLoadedReservations(false);
+    setHasLoadedTables(false);
     setOperationalSettingsLoaded(false);
     setSettingsMessage('');
     setActivePage('today');
@@ -478,6 +499,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[DEMO] RESERVATION_LIST response', data);
         const rows = data.reservations ?? data.reservas ?? data.data ?? data.rows ?? [];
         setAllReservations(Array.isArray(rows) ? normalizeDemoReservations(rows as Array<Record<string, unknown>>) : []);
+        setHasLoadedReservations(true);
         setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
         setLastSync('Datos actualizados correctamente');
         return;
@@ -485,6 +507,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
       const nextReservations = await loadReservationsFromWebhook(reservationsWebhook, sheetId);
       setAllReservations(nextReservations);
+      setHasLoadedReservations(true);
       setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
       setLastSync('Datos actualizados correctamente');
     } catch (error) {
@@ -507,6 +530,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       try {
         const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
+        setHasLoadedTables(true);
         setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
         setIsLoadingTables(false);
         return;
@@ -520,6 +544,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     if (!tablesWebhook.trim()) {
       setRestaurantTables([]);
       setTablesSyncMessage('Webhook de mesas no configurado');
+      setHasLoadedTables(true);
       setIsLoadingTables(false);
       return;
     }
@@ -527,6 +552,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     try {
       const nextTables = await loadRestaurantTables(tablesWebhook, sheetId, clientConfig?.client_id);
       setRestaurantTables(nextTables);
+      setHasLoadedTables(true);
       setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
     } catch (error) {
       console.error('GET_MESAS error', error);
@@ -698,8 +724,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
   }
 
-  async function refreshManagerData() {
-    await Promise.all([loadReservations(), loadTables(), loadFeedbacks()]);
+  async function refreshReservationsOnly() {
+    await loadReservations();
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
@@ -1013,7 +1039,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return (
         <Reservations
           reservations={reservationsList}
-          onRefreshReservations={refreshManagerData}
+          onRefreshReservations={refreshReservationsOnly}
           isRefreshingReservations={isLoadingReservations}
           lastUpdatedAt={lastUpdatedAt}
           onCancelReservation={setReservationToCancel}
@@ -1094,7 +1120,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         onBookingStatus={handleBookingStatus}
         onUpdateReservation={handleUpdateReservation}
         onCancelReservation={setReservationToCancel}
-        onRefreshReservations={refreshManagerData}
+        onRefreshReservations={refreshReservationsOnly}
         isRefreshingReservations={isLoadingReservations}
         lastUpdatedAt={lastUpdatedAt}
       />
