@@ -519,15 +519,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function loadTables() {
-    const tablesWebhook = getClientWebhook('webhook_get_mesas') || settings.webhookGetMesas;
     const sheetId = getClientSheetId();
-    const isDemoRoute = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
-    const useEdgeTables = import.meta.env.VITE_USE_EDGE_TABLES === 'true';
+    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    console.log('[DEMO] route:', window.location.pathname);
+    console.log('[DEMO] isDemo:', isDemo);
+    console.log('[DEMO] loadTables() started');
 
     setIsLoadingTables(true);
 
-    if (isDemoRoute && useEdgeTables) {
+    if (isDemo) {
       try {
+        console.log('[DEMO] attempting manager-api');
         const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
         setHasLoadedTables(true);
@@ -536,10 +538,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         return nextTables;
       } catch (error) {
         console.log('MAKE_FALLBACK_USED');
+        console.log('[DEMO] using Make fallback');
         const fallbackCode = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
         console.warn('[DEMO][MANAGER_API] fallback Make', fallbackCode, error);
       }
     }
+
+    const tablesWebhook = getClientWebhook('webhook_get_mesas') || settings.webhookGetMesas;
 
     if (!tablesWebhook.trim()) {
       setRestaurantTables([]);
