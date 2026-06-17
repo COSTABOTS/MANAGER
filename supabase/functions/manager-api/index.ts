@@ -208,25 +208,27 @@ async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) 
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const authHeader = request.headers.get('Authorization') ?? '';
-  const jwt = authHeader.replace('Bearer ', '').trim();
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   debug.hasAuthHeader = Boolean(authHeader);
+  console.log('[MANAGER_API] authHeader exists', Boolean(authHeader));
+  console.log('[MANAGER_API] token length', token.length);
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return { error: errorResponse(request, 'SUPABASE_ENV_MISSING', 'Supabase env no configurado', 500, debug) };
   }
 
-  if (!jwt) {
+  if (!token) {
     return { error: errorResponse(request, 'UNAUTHENTICATED', 'Missing Authorization header', 200, debug) };
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } },
   });
-  const { data: userData, error: userError } = await authClient.auth.getUser(jwt);
+  const { data: userData, error: userError } = await authClient.auth.getUser(token);
 
   if (userError || !userData.user) {
     return {
-      error: errorResponse(request, 'INVALID_TOKEN', 'Invalid Supabase JWT', 200, {
+      error: errorResponse(request, 'INVALID_TOKEN', userError?.message || 'Invalid Supabase JWT', 200, {
         ...debug,
         supabase_error: userError?.message,
       }),
