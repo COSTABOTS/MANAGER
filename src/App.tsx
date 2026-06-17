@@ -35,7 +35,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import type { DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
+import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
@@ -144,6 +144,87 @@ function normalizeDemoSettings(rows: Array<Record<string, unknown>>) {
 
     return items;
   }, {});
+}
+
+function pickDemoReservationValue(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function toDemoString(value: unknown) {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function toDemoNumber(value: unknown) {
+  const numberValue = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function toDemoBoolean(value: unknown) {
+  return ['true', '1', 'yes', 'si', 'sÃ­'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+function normalizeDemoStatus(value: unknown): BookingStatus {
+  const status = toDemoString(value).toUpperCase();
+  if (['CANCELADA', 'CANCELADO', 'CANCELLED', 'CANCELED'].includes(status)) {
+    return 'CANCELADA';
+  }
+
+  return 'CONFIRMADA';
+}
+
+function normalizeDemoSource(value: unknown): Reservation['source'] {
+  const source = toDemoString(value).toUpperCase();
+  if (source === 'WALK-IN' || source === 'WALKIN') {
+    return 'WALKIN';
+  }
+  if (source === 'MANUAL') {
+    return 'MANUAL';
+  }
+  if (source === 'WEB') {
+    return 'WEB';
+  }
+  if (source === 'HOTEL') {
+    return 'HOTEL';
+  }
+  if (source === 'LANDBOT') {
+    return 'LANDbot';
+  }
+
+  return 'BOT';
+}
+
+function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reservation[] {
+  return rows.flatMap((row) => {
+    const idReserva = toDemoString(pickDemoReservationValue(row, ['idReserva', 'ID_RESERVA', '0']));
+    if (!idReserva) {
+      console.warn('[DEMO] Reserva sin ID_RESERVA', row);
+      return [];
+    }
+
+    return [{
+      id: idReserva,
+      idReserva,
+      date: toDemoString(pickDemoReservationValue(row, ['fecha', 'FECHA', '1'])),
+      time: toDemoString(pickDemoReservationValue(row, ['hora', 'HORA', '2'])),
+      name: toDemoString(pickDemoReservationValue(row, ['nombre', 'NOMBRE', '3'])),
+      phone: toDemoString(pickDemoReservationValue(row, ['telefono', 'TELEFONO', '4'])),
+      pax: toDemoNumber(pickDemoReservationValue(row, ['pax', 'PAX', '5'])),
+      language: toDemoString(pickDemoReservationValue(row, ['idioma', 'IDIOMA', '6'])),
+      specialRequest: toDemoString(pickDemoReservationValue(row, ['peticionEspecial', 'PETICION_ESPECIAL', '7'])),
+      status: normalizeDemoStatus(pickDemoReservationValue(row, ['estado', 'ESTADO', '8'])),
+      source: normalizeDemoSource(pickDemoReservationValue(row, ['origen', 'ORIGEN', '9'])),
+      table: toDemoString(pickDemoReservationValue(row, ['mesa', 'MESA', '10'])),
+      arrived: toDemoBoolean(pickDemoReservationValue(row, ['llego', 'LLEGO', '11'])),
+      room: toDemoString(pickDemoReservationValue(row, ['habitacion', 'HABITACION', '12'])),
+    }];
+  });
 }
 
 interface ManagerAppProps {
@@ -396,7 +477,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         const data = await response.json();
         console.log('[DEMO] RESERVATION_LIST response', data);
         const rows = data.reservations ?? data.reservas ?? data.data ?? data.rows ?? [];
-        setAllReservations(Array.isArray(rows) ? normalizeReservationsFromSheets(rows) : []);
+        setAllReservations(Array.isArray(rows) ? normalizeDemoReservations(rows as Array<Record<string, unknown>>) : []);
         setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
         setLastSync('Datos actualizados correctamente');
         return;
