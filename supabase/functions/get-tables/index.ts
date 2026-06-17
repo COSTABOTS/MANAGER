@@ -28,8 +28,8 @@ function jsonResponse(request: Request, body: unknown, status = 200) {
   });
 }
 
-function errorResponse(request: Request, code: string, message: string, status = 400) {
-  return jsonResponse(request, { ok: false, code, error: message }, status);
+function errorResponse(request: Request, code: string, message: string, status = 400, debug: Record<string, unknown> = {}) {
+  return jsonResponse(request, { ok: false, code, message, error: message, debug }, status);
 }
 
 function normalizePrivateKey(value: string) {
@@ -212,7 +212,10 @@ Deno.serve(async (request) => {
       .maybeSingle();
 
     if (profileError || !profile?.client_id) {
-      return errorResponse(request, 'PROFILE_NOT_FOUND', 'Profile activo no encontrado', 403);
+      return errorResponse(request, 'PROFILE_NOT_FOUND', 'Profile activo no encontrado', 403, {
+        user_id: userData.user.id,
+        supabase_error: profileError?.message,
+      });
     }
 
     const { data: client, error: clientError } = await dbClient
@@ -222,7 +225,10 @@ Deno.serve(async (request) => {
       .maybeSingle();
 
     if (clientError || !client) {
-      return errorResponse(request, 'CLIENT_NOT_FOUND', 'Cliente no encontrado', 404);
+      return errorResponse(request, 'CLIENT_NOT_FOUND', 'Cliente no encontrado', 404, {
+        client_id: profile.client_id,
+        supabase_error: clientError?.message,
+      });
     }
 
     if (!client.sheet_id) {
@@ -242,6 +248,13 @@ Deno.serve(async (request) => {
 
     const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
     const tables = normalizeRows(sheetsData.values);
+
+    if (!tables.length) {
+      return errorResponse(request, 'TABLES_EMPTY', 'No hay mesas activas en la hoja MESAS', 404, {
+        client_id: client.client_id,
+        rows: sheetsData.values?.length ?? 0,
+      });
+    }
 
     return jsonResponse(request, {
       ok: true,

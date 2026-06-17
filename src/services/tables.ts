@@ -348,9 +348,9 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
     throw error;
   }
 
-  const response = data as TablesResponse & { ok?: boolean; source?: string };
+  const response = data as TablesResponse & { ok?: boolean; source?: string; code?: string; message?: string };
   if (!response?.ok) {
-    throw new Error('Edge Function get-tables no devolvio ok=true');
+    throw new Error(response?.code || response?.message || 'Edge Function get-tables no devolvio ok=true');
   }
 
   const rows = getRows(response);

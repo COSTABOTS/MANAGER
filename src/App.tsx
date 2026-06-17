@@ -499,10 +499,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const tablesWebhook = getClientWebhook('webhook_get_mesas') || settings.webhookGetMesas;
     const sheetId = getClientSheetId();
     const isDemoRoute = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const useEdgeTables = import.meta.env.VITE_USE_EDGE_TABLES === 'true';
 
     setIsLoadingTables(true);
 
-    if (isDemoRoute) {
+    if (isDemoRoute && useEdgeTables) {
       try {
         const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
@@ -511,7 +512,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         return;
       } catch (error) {
         console.log('MAKE_FALLBACK_USED');
-        console.warn('[DEMO][MESAS][EDGE] fallback Make:', error);
+        const fallbackCode = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+        console.warn('[DEMO][MESAS][EDGE] fallback Make usado por:', fallbackCode, error);
       }
     }
 
