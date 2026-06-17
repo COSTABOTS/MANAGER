@@ -188,6 +188,7 @@ function normalizeTables(values: unknown[][] | undefined): SheetRow[] {
       id,
       name: mesa,
       type: zona,
+      zone: zona,
       capacity: capacidad,
       active: activa,
       order: orden,

@@ -532,6 +532,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[DEMO] attempting manager-api');
         const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
+        console.log('[DEMO][TABLES] setTables applied');
         setHasLoadedTables(true);
         setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
         setIsLoadingTables(false);

@@ -355,6 +355,11 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
   });
   console.log('[DEMO][MANAGER_API] data:', data);
   console.log('[DEMO][MANAGER_API] error:', error);
+  console.log('[DEMO][MANAGER_API] raw data:', data);
+  console.log('[DEMO][MANAGER_API] raw error:', error);
+  console.log('[DEMO][MANAGER_API] ok:', (data as { ok?: boolean } | null)?.ok);
+  console.log('[DEMO][MANAGER_API] tables:', (data as { tables?: unknown[] } | null)?.tables);
+  console.log('[DEMO][MANAGER_API] tables length:', (data as { tables?: unknown[] } | null)?.tables?.length);
 
   if (error) {
     console.error('[DEMO][MANAGER_API] full error:', JSON.stringify(error, null, 2));
@@ -367,20 +372,23 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
   }
 
   const rows = getRows(response);
-  const tables = rows
+  console.log('[DEMO][TABLES] before setTables:', rows);
+  const mappedTables = rows
     .flatMap((row) => {
       const table = normalizeTableFromSheet(row);
       return table ? [table] : [];
     })
     .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+  console.log('[DEMO][TABLES] mapped tables:', mappedTables);
+  console.log('[DEMO][TABLES] mapped length:', mappedTables?.length);
 
-  console.log('[DEMO][MANAGER_API] tables received', tables.length);
+  console.log('[DEMO][MANAGER_API] tables received', mappedTables.length);
 
-  if (!tables.length) {
+  if (!mappedTables.length) {
     throw new Error('Edge Function get-tables devolvio 0 mesas');
   }
 
-  return tables;
+  return mappedTables;
 }
 
 export async function saveRestaurantTable(webhookUrl: string, payload: SaveTablePayload) {
