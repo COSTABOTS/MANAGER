@@ -336,6 +336,10 @@ export async function loadTablesFromSheetsDirect({ sheetId, clientId, clientConf
 }
 
 export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConfig }: DirectSheetsTablesPayload): Promise<RestaurantTable[]> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  console.log('[DEMO][MANAGER_API] session exists:', Boolean(session));
+  console.log('[DEMO][MANAGER_API] access_token exists:', Boolean(session?.access_token));
   console.log('[DEMO][MANAGER_API] calling tables.list');
   console.log('[DEMO][MESAS] clientConfig completo:', clientConfig);
   console.log('[DEMO][MESAS] client_id:', clientId ?? '');
@@ -344,9 +348,11 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
   const { data, error } = await supabase.functions.invoke('manager-api', {
     body: { action: 'tables.list' },
   });
-  console.log('[DEMO][MANAGER_API] response', data);
+  console.log('[DEMO][MANAGER_API] data:', data);
+  console.log('[DEMO][MANAGER_API] error:', error);
 
   if (error) {
+    console.error('[DEMO][MANAGER_API] full error:', JSON.stringify(error, null, 2));
     throw error;
   }
 

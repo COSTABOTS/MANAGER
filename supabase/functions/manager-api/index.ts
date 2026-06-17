@@ -2,6 +2,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 type ManagerAction = 'tables.list';
 type SheetRow = Record<string, string | number | boolean>;
+type ManagerApiDebug = {
+  hasAuthHeader: boolean;
+  userId: string;
+  profileFound: boolean;
+  clientId: string;
+  clientFound: boolean;
+  hasSheetId: boolean;
+  hasGoogleSecret: boolean;
+  rowsRead: number;
+};
 
 const allowedOrigins = new Set([
   'http://localhost:5173',
@@ -31,6 +41,19 @@ function jsonResponse(request: Request, body: unknown, status = 200) {
 
 function errorResponse(request: Request, code: string, message: string, status = 400, debug: Record<string, unknown> = {}) {
   return jsonResponse(request, { ok: false, code, message, debug }, status);
+}
+
+function createDebug(): ManagerApiDebug {
+  return {
+    hasAuthHeader: false,
+    userId: '',
+    profileFound: false,
+    clientId: '',
+    clientFound: false,
+    hasSheetId: false,
+    hasGoogleSecret: Boolean(Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')),
+    rowsRead: 0,
+  };
 }
 
 function normalizePrivateKey(value: string) {
@@ -179,19 +202,20 @@ function normalizeTables(values: unknown[][] | undefined): SheetRow[] {
   });
 }
 
-async function getAuthedClientContext(request: Request) {
+async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const authHeader = request.headers.get('Authorization') ?? '';
   const jwt = authHeader.replace('Bearer ', '').trim();
+  debug.hasAuthHeader = Boolean(authHeader);
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return { error: errorResponse(request, 'SUPABASE_ENV_MISSING', 'Supabase env no configurado', 500) };
+    return { error: errorResponse(request, 'SUPABASE_ENV_MISSING', 'Supabase env no configurado', 500, debug) };
   }
 
   if (!jwt) {
-    return { error: errorResponse(request, 'UNAUTHENTICATED', 'No autenticado', 401) };
+    return { error: errorResponse(request, 'UNAUTHENTICATED', 'No autenticado', 401, debug) };
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -200,8 +224,9 @@ async function getAuthedClientContext(request: Request) {
   const { data: userData, error: userError } = await authClient.auth.getUser(jwt);
 
   if (userError || !userData.user) {
-    return { error: errorResponse(request, 'UNAUTHENTICATED', 'JWT no valido', 401) };
+    return { error: errorResponse(request, 'UNAUTHENTICATED', 'JWT no valido', 401, debug) };
   }
+  debug.userId = userData.user.id;
 
   const dbClient = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey, {
     global: { headers: supabaseServiceRoleKey ? {} : { Authorization: authHeader } },
@@ -216,11 +241,14 @@ async function getAuthedClientContext(request: Request) {
   if (profileError || !profile?.client_id) {
     return {
       error: errorResponse(request, 'PROFILE_NOT_FOUND', 'Profile activo no encontrado', 403, {
+        ...debug,
         user_id: userData.user.id,
         supabase_error: profileError?.message,
       }),
     };
   }
+  debug.profileFound = true;
+  debug.clientId = String(profile.client_id).trim();
 
   const { data: client, error: clientError } = await dbClient
     .from('CLIENTES')
@@ -231,14 +259,17 @@ async function getAuthedClientContext(request: Request) {
   if (clientError || !client) {
     return {
       error: errorResponse(request, 'CLIENT_NOT_FOUND', 'Cliente no encontrado', 404, {
+        ...debug,
         client_id: profile.client_id,
         supabase_error: clientError?.message,
       }),
     };
   }
+  debug.clientFound = true;
+  debug.hasSheetId = Boolean(client.sheet_id);
 
   if (!client.sheet_id) {
-    return { error: errorResponse(request, 'SHEET_ID_NOT_FOUND', 'Sheet ID no encontrado', 404, { client_id: client.client_id }) };
+    return { error: errorResponse(request, 'SHEET_ID_NOT_FOUND', 'Sheet ID no encontrado', 404, debug) };
   }
 
   return {
@@ -250,7 +281,7 @@ async function getAuthedClientContext(request: Request) {
   };
 }
 
-async function listTables(request: Request, clientId: string, sheetId: string) {
+async function listTables(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
@@ -266,8 +297,13 @@ async function listTables(request: Request, clientId: string, sheetId: string) {
   }
 
   const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
   const tables = normalizeTables(sheetsData.values);
   console.log(`[MANAGER_API] tables=${tables.length}`);
+
+  if (!tables.length) {
+    return errorResponse(request, 'TABLES_EMPTY', 'No hay mesas activas en MESAS', 404, debug);
+  }
 
   return jsonResponse(request, {
     ok: true,
@@ -282,19 +318,20 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: getCorsHeaders(request) });
   }
 
+  const debug = createDebug();
   try {
     const body = await request.json().catch(() => ({})) as { action?: ManagerAction | string };
     const action = body.action ?? 'tables.list';
     console.log(`[MANAGER_API] action=${action}`);
 
-    const context = await getAuthedClientContext(request);
+    const context = await getAuthedClientContext(request, debug);
     if ('error' in context) {
       return context.error;
     }
 
     switch (action) {
       case 'tables.list':
-        return await listTables(request, context.clientId, context.sheetId);
+        return await listTables(request, context.clientId, context.sheetId, debug);
 
       // TODO: fullybooked.get
       // TODO: fullybooked.set
@@ -303,7 +340,7 @@ Deno.serve(async (request) => {
       // TODO: feedbacks.list
 
       default:
-        return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 400, { action });
+        return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 400, { ...debug, action });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error desconocido';
@@ -315,6 +352,6 @@ Deno.serve(async (request) => {
           ? 'GOOGLE_SHEETS_ERROR'
           : 'MANAGER_API_ERROR';
 
-    return errorResponse(request, code, message, 500);
+    return errorResponse(request, code, message, 500, debug);
   }
 });
