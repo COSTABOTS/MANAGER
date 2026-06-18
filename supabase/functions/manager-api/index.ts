@@ -1,6 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-type ManagerAction = 'tables.list' | 'reservations.list' | 'capacity.list' | 'settings.get';
+type ManagerAction =
+  | 'tables.list'
+  | 'tables.create'
+  | 'tables.update'
+  | 'tables.delete'
+  | 'reservations.list'
+  | 'capacity.list'
+  | 'settings.get';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -108,7 +115,7 @@ async function createGoogleAccessToken() {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claim = {
     iss: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
     aud: 'https://oauth2.googleapis.com/token',
     exp: now + 3600,
     iat: now,
@@ -357,6 +364,86 @@ function normalizeSettings(values: unknown[][] | undefined): Record<string, stri
   }, {});
 }
 
+function makeTableId() {
+  return `MESA-${Date.now()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function normalizeTableInput(table: Record<string, unknown> | undefined, mesaId: string) {
+  const mesa = toSheetString(table?.mesa ?? table?.name ?? table?.MESA);
+  const zona = toSheetString(table?.zona ?? table?.type ?? table?.ZONA) || 'General';
+  const capacidad = toSheetNumber(table?.capacidad ?? table?.capacity ?? table?.CAPACIDAD);
+  const rawActive = table?.activa ?? table?.active ?? table?.ACTIVA ?? true;
+  const activa = typeof rawActive === 'boolean' ? rawActive : normalizeBoolean(rawActive);
+  const orden = toSheetNumber(table?.orden ?? table?.order ?? table?.ORDEN) || '';
+
+  if (!mesa) {
+    throw new Error('TABLE_NAME_REQUIRED');
+  }
+
+  return {
+    mesaId,
+    mesa,
+    zona,
+    capacidad,
+    activa,
+    orden,
+    values: [mesaId, mesa, zona, capacidad, activa ? 'TRUE' : 'FALSE', orden],
+  };
+}
+
+function findTableRowIndex(values: unknown[][] | undefined, mesaId: string) {
+  if (!values?.length) {
+    return -1;
+  }
+
+  const headers = values[0].map((header) => String(header ?? '').trim().toUpperCase());
+  const mesaIdColumn = Math.max(0, headers.findIndex((header) => ['MESA_ID', 'ID_MESA'].includes(header)));
+
+  for (let index = 1; index < values.length; index += 1) {
+    const value = toSheetString(values[index]?.[mesaIdColumn]);
+    if (value === mesaId) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+async function fetchSheetValues(sheetId: string, range: string, accessToken: string) {
+  const sheetsResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!sheetsResponse.ok) {
+    const errorBody = await sheetsResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+  }
+
+  return sheetsResponse.json() as Promise<{ values?: unknown[][] }>;
+}
+
+async function getSheetNumericId(sheetId: string, sheetTitle: string, accessToken: string) {
+  const metadataResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=sheets(properties(sheetId,title))`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!metadataResponse.ok) {
+    const errorBody = await metadataResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${metadataResponse.status}: ${errorBody}`);
+  }
+
+  const metadata = await metadataResponse.json() as { sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> };
+  const sheet = metadata.sheets?.find((item) => item.properties?.title === sheetTitle);
+
+  if (sheet?.properties?.sheetId === undefined) {
+    throw new Error(`SHEET_NOT_FOUND: ${sheetTitle}`);
+  }
+
+  return sheet.properties.sheetId;
+}
+
 async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
@@ -448,17 +535,7 @@ async function listTables(request: Request, clientId: string, sheetId: string, d
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const accessToken = await createGoogleAccessToken();
-  const sheetsResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('MESAS!A:Z')}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-
-  if (!sheetsResponse.ok) {
-    const errorBody = await sheetsResponse.text();
-    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
-  }
-
-  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+  const sheetsData = await fetchSheetValues(sheetId, 'MESAS!A:Z', accessToken);
   debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
   const tables = normalizeTables(sheetsData.values);
   console.log(`[MANAGER_API] tables=${tables.length}`);
@@ -472,6 +549,125 @@ async function listTables(request: Request, clientId: string, sheetId: string, d
     action: 'tables.list',
     client_id: clientId,
     tables,
+  });
+}
+
+async function createTable(request: Request, sheetId: string, body: Record<string, unknown>) {
+  const accessToken = await createGoogleAccessToken();
+  const mesaId = makeTableId();
+  const table = normalizeTableInput(body.table as Record<string, unknown> | undefined, mesaId);
+
+  const appendResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('MESAS!A:F')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [table.values] }),
+    },
+  );
+
+  if (!appendResponse.ok) {
+    const errorBody = await appendResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'tables.create',
+    mesaId,
+  });
+}
+
+async function updateTable(request: Request, sheetId: string, body: Record<string, unknown>) {
+  const mesaId = toSheetString(body.mesaId ?? body.mesa_id ?? body.id_mesa);
+  if (!mesaId) {
+    return errorResponse(request, 'MESA_ID_REQUIRED', 'MESA_ID requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'MESAS!A:Z', accessToken);
+  const rowIndex = findTableRowIndex(sheetsData.values, mesaId);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'TABLE_NOT_FOUND', 'Mesa no encontrada', 404, { mesaId });
+  }
+
+  const table = normalizeTableInput(body.table as Record<string, unknown> | undefined, mesaId);
+  const rowNumber = rowIndex + 1;
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`MESAS!A${rowNumber}:F${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [table.values] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'tables.update',
+  });
+}
+
+async function deleteTable(request: Request, sheetId: string, body: Record<string, unknown>) {
+  const mesaId = toSheetString(body.mesaId ?? body.mesa_id ?? body.id_mesa);
+  if (!mesaId) {
+    return errorResponse(request, 'MESA_ID_REQUIRED', 'MESA_ID requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'MESAS!A:Z', accessToken);
+  const rowIndex = findTableRowIndex(sheetsData.values, mesaId);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'TABLE_NOT_FOUND', 'Mesa no encontrada', 404, { mesaId });
+  }
+
+  const numericSheetId = await getSheetNumericId(sheetId, 'MESAS', accessToken);
+  const deleteResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: numericSheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      }),
+    },
+  );
+
+  if (!deleteResponse.ok) {
+    const errorBody = await deleteResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${deleteResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'tables.delete',
   });
 }
 
@@ -578,6 +774,15 @@ Deno.serve(async (request) => {
     switch (action) {
       case 'tables.list':
         return await listTables(request, context.clientId, context.sheetId, debug);
+
+      case 'tables.create':
+        return await createTable(request, context.sheetId, body as Record<string, unknown>);
+
+      case 'tables.update':
+        return await updateTable(request, context.sheetId, body as Record<string, unknown>);
+
+      case 'tables.delete':
+        return await deleteTable(request, context.sheetId, body as Record<string, unknown>);
 
       case 'reservations.list':
         return await listReservations(request, context.clientId, context.sheetId, debug);

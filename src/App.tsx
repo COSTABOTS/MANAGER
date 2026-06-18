@@ -32,7 +32,7 @@ import type { Feedback } from './services/feedbacks';
 import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
-import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable } from './services/tables';
+import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
@@ -811,15 +811,31 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
+    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
     const tableWebhook = getClientWebhook('webhook_save_mesa') || settings.webhookSaveMesa;
-
-    if (!tableWebhook.trim()) {
-      setTablesSyncMessage('Webhook de mesas no configurado');
-      return;
-    }
 
     if (action === 'delete' && !table.mesaId) {
       setTablesSyncMessage('No se puede borrar una mesa sin ID_MESA');
+      return;
+    }
+
+    if (isDemo) {
+      try {
+        await saveRestaurantTableWithManagerApi({
+          action,
+          table,
+          clientId: clientConfig?.client_id,
+        });
+        setTablesSyncMessage('Mesa sincronizada correctamente');
+        await loadTables();
+        return;
+      } catch (error) {
+        console.warn('[DEMO][TABLES] manager-api fallback Make', error);
+      }
+    }
+
+    if (!tableWebhook.trim()) {
+      setTablesSyncMessage('Webhook de mesas no configurado');
       return;
     }
 
