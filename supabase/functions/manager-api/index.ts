@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-type ManagerAction = 'tables.list' | 'reservations.list' | 'capacity.list';
+type ManagerAction = 'tables.list' | 'reservations.list' | 'capacity.list' | 'settings.get';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -344,6 +344,19 @@ function normalizeCapacity(values: unknown[][] | undefined): SheetRow[] {
   });
 }
 
+function normalizeSettings(values: unknown[][] | undefined): Record<string, string | number | boolean> {
+  return rowsToObjects(values).reduce<Record<string, string | number | boolean>>((settings, item) => {
+    const variable = toSheetString(pick(item, ['VARIABLE', 'variable', 'KEY', 'key', '0'])).toUpperCase();
+    const value = pick(item, ['VALUE', 'value', 'VALOR', 'valor', '1']);
+
+    if (variable) {
+      settings[variable] = toSheetString(value);
+    }
+
+    return settings;
+  }, {});
+}
+
 async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
@@ -518,6 +531,34 @@ async function listCapacity(request: Request, clientId: string, sheetId: string,
   });
 }
 
+async function getSettings(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('SETTINGS!A:Z')}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!sheetsResponse.ok) {
+    const errorBody = await sheetsResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+  }
+
+  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const settings = normalizeSettings(sheetsData.values);
+  console.log('[MANAGER_API] settings loaded');
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'settings.get',
+    client_id: clientId,
+    settings,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -544,9 +585,11 @@ Deno.serve(async (request) => {
       case 'capacity.list':
         return await listCapacity(request, context.clientId, context.sheetId, debug);
 
+      case 'settings.get':
+        return await getSettings(request, context.clientId, context.sheetId, debug);
+
       // TODO: fullybooked.get
       // TODO: fullybooked.set
-      // TODO: settings.get
       // TODO: feedbacks.list
 
       default:

@@ -30,7 +30,7 @@ import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDa
 import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
 import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
-import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, saveOperationalSettings } from './services/operationalSettings';
+import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -724,6 +724,34 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadSettingsFromMake() {
     const settingsWebhook = getOperationalSettingsWebhook();
+    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+
+    if (isDemo) {
+      setIsLoadingOperationalSettings(true);
+      setSettingsMessage('Cargando SETTINGS...');
+
+      try {
+        const rawSettings = await loadOperationalSettingsFromManagerApi();
+        let nextSettingsSnapshot: ManagerSettings | null = null;
+        setSettings((current) => {
+          const nextSettings = applyOperationalSettings(current, rawSettings);
+          nextSettings.slotCapacity = buildVisibleSlotCapacity(nextSettings);
+          nextSettingsSnapshot = nextSettings;
+          saveSettingsToStorage(nextSettings);
+          return nextSettings;
+        });
+        const capacityLoaded = await loadCapacityFromMake(nextSettingsSnapshot ?? undefined);
+        setOperationalSettingsLoaded(true);
+        if (capacityLoaded) {
+          setSettingsMessage('SETTINGS cargados correctamente');
+        }
+        setIsLoadingOperationalSettings(false);
+        return;
+      } catch (error) {
+        console.warn('[DEMO][MANAGER_API] settings fallback Make', error);
+        setIsLoadingOperationalSettings(false);
+      }
+    }
 
     if (!settingsWebhook.trim()) {
       let nextSettingsSnapshot: ManagerSettings | null = null;

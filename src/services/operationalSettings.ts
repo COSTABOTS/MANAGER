@@ -1,4 +1,5 @@
 import type { ManagerSettings, Weekday } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 type SettingsRow = Record<string, unknown>;
 type SettingsValueMap = Record<string, unknown>;
@@ -209,6 +210,39 @@ export async function loadOperationalSettings(webhookUrl: string): Promise<Setti
   }
 
   return data.settings ?? DEFAULT_OPERATIONAL_SETTINGS;
+}
+
+export async function loadOperationalSettingsFromManagerApi(): Promise<SettingsValueMap | SettingsRow[]> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
+  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
+  console.log('[DEMO][MANAGER_API] calling settings.get');
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: { action: 'settings.get' },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    console.error('[DEMO][MANAGER_API] settings.get error', error);
+    throw error;
+  }
+
+  const response = data as SettingsResponse & { code?: string; message?: string };
+
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api settings.get no devolvio ok=true');
+  }
+
+  console.log('[DEMO][MANAGER_API] settings received', response.settings);
+
+  return response.settings ?? DEFAULT_OPERATIONAL_SETTINGS;
 }
 
 export async function saveOperationalSettings(webhookUrl: string, settings: ManagerSettings) {
