@@ -78,12 +78,21 @@ export async function createManualReservationWithManagerApi(reservation: {
   habitacion?: string;
   idioma?: string;
   peticionEspecial?: string;
+  mesa?: string;
+  llego?: boolean;
 }) {
-  const response = await callReservationAction('reservation.create', {
+  const payload = {
     reservation: {
       ...reservation,
       origen: 'MANUAL',
+      mesa: reservation.mesa ?? '',
+      llego: Boolean(reservation.llego),
+      habitacion: reservation.habitacion ?? '',
     },
+  };
+  console.log('[DEMO][RESERVATION_CREATE] payload', payload);
+  const response = await callReservationAction('reservation.create', {
+    ...payload,
   }) as { ok?: boolean; idReserva?: string };
   console.log('[DEMO][RESERVATION] created', response.idReserva);
   return response;

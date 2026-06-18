@@ -1067,6 +1067,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           pax: reservation.pax,
           idioma: reservation.language ?? 'ES',
           peticionEspecial: reservation.specialRequest,
+          mesa: '',
+          llego: false,
         });
         setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');

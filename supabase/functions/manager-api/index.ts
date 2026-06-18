@@ -988,6 +988,7 @@ async function updateReservationCell(
     return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
   }
 
+  console.log('[MANAGER_API][reservation.arrive] row found', rowIndex + 1);
   const rowNumber = rowIndex + 1;
   const column = columnLetter(columnIndex);
   const updateResponse = await fetch(
@@ -1025,12 +1026,33 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   const pax = toSheetNumber(reservation.pax);
   const habitacion = toSheetString(reservation.habitacion ?? reservation.room);
   const idioma = toSheetString(reservation.idioma ?? reservation.language) || 'ES';
-  const peticionEspecial = toSheetString(reservation.peticionEspecial ?? reservation.peticiones ?? reservation.specialRequest);
+  const peticionEspecial = toSheetString(reservation.peticionEspecial ?? reservation.peticiones ?? reservation.specialRequest) || 'No, ninguna';
   const origen = toSheetString(reservation.origen ?? reservation.origin) || 'MANUAL';
+  const mesa = toSheetString(reservation.mesa ?? reservation.table);
+  const rawArrival = reservation.llego ?? reservation.arrived ?? false;
+  const llego = typeof rawArrival === 'boolean' ? rawArrival : normalizeBoolean(rawArrival);
 
   if (!fecha || !hora || !pax || (!nombre && !habitacion)) {
     return errorResponse(request, 'RESERVATION_REQUIRED_FIELDS', 'Faltan datos obligatorios para crear la reserva', 400);
   }
+
+  const rowToAppend = [
+    idReserva,
+    fecha,
+    hora,
+    nombre,
+    telefono,
+    pax,
+    idioma,
+    peticionEspecial,
+    'CONFIRMADA',
+    origen || 'MANUAL',
+    mesa,
+    llego ? 'TRUE' : 'FALSE',
+    'FALSE',
+    habitacion,
+  ];
+  console.log('[MANAGER_API][reservation.create] rowToAppend', rowToAppend);
 
   const accessToken = await createGoogleAccessToken();
   const appendResponse = await fetch(
@@ -1042,22 +1064,7 @@ async function createReservation(request: Request, clientId: string, sheetId: st
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        values: [[
-          idReserva,
-          fecha,
-          hora,
-          nombre,
-          telefono,
-          pax,
-          idioma,
-          peticionEspecial,
-          'CONFIRMADA',
-          origen || 'MANUAL',
-          '',
-          'FALSE',
-          'FALSE',
-          habitacion,
-        ]],
+        values: [rowToAppend],
       }),
     },
   );
@@ -1090,6 +1097,7 @@ async function updateReservationArrival(request: Request, clientId: string, shee
     return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
   }
 
+  console.log('[MANAGER_API][reservation.assignTable] row found', rowIndex + 1);
   const rowNumber = rowIndex + 1;
   const column = columnLetter(headers.llego);
   const value = llego ? 'TRUE' : 'FALSE';
