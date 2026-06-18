@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabaseClient';
+
 type CapacityRow = Record<string, unknown>;
 type SlotCapacity = Record<string, number>;
 
@@ -101,6 +103,40 @@ export async function loadCapacitySettings(webhookUrl: string) {
 
   const normalized = normalizeCapacityRows(Array.isArray(data) ? data : data.capacity ?? data.capacidad ?? data.rows ?? data.data ?? data.tables ?? data.slots);
   console.log('CAPACITY normalized:', normalized);
+
+  return normalized;
+}
+
+export async function loadCapacityFromManagerApi() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
+  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
+  console.log('[DEMO][MANAGER_API] calling capacity.list');
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: { action: 'capacity.list' },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    console.error('[DEMO][MANAGER_API] capacity.list error', error);
+    throw error;
+  }
+
+  const response = data as CapacityResponse & { ok?: boolean; code?: string; message?: string };
+
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api capacity.list no devolvio ok=true');
+  }
+
+  const normalized = normalizeCapacityRows(response.capacity ?? response.capacidad ?? response.rows ?? response.data ?? response.tables ?? response.slots);
+  console.log('[DEMO][MANAGER_API] capacity received', Object.keys(normalized).length);
 
   return normalized;
 }

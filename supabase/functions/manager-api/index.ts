@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-type ManagerAction = 'tables.list' | 'reservations.list';
+type ManagerAction = 'tables.list' | 'reservations.list' | 'capacity.list';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -319,6 +319,31 @@ function normalizeReservations(values: unknown[][] | undefined): SheetRow[] {
   });
 }
 
+function normalizeCapacity(values: unknown[][] | undefined): SheetRow[] {
+  return rowsToObjects(values).flatMap((item) => {
+    const hora = toSheetString(pick(item, ['HORA', 'hora', 'TIME', 'time', '0']));
+
+    if (!hora) {
+      return [];
+    }
+
+    const limite = toSheetNumber(pick(item, ['LIMITE', 'limite', 'CAPACIDAD', 'capacity', '1']));
+    const activo = normalizeBoolean(pick(item, ['ACTIVO', 'activo', 'ACTIVE', 'active', '2']));
+
+    return [{
+      hora,
+      time: hora,
+      HORA: hora,
+      limite,
+      capacity: limite,
+      LIMITE: limite,
+      activo,
+      active: activo,
+      ACTIVO: activo,
+    }];
+  });
+}
+
 async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
@@ -465,6 +490,34 @@ async function listReservations(request: Request, clientId: string, sheetId: str
   });
 }
 
+async function listCapacity(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('CAPACIDAD!A:C')}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!sheetsResponse.ok) {
+    const errorBody = await sheetsResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+  }
+
+  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const capacity = normalizeCapacity(sheetsData.values);
+  console.log(`[MANAGER_API] capacity rows=${capacity.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'capacity.list',
+    client_id: clientId,
+    capacity,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -487,6 +540,9 @@ Deno.serve(async (request) => {
 
       case 'reservations.list':
         return await listReservations(request, context.clientId, context.sheetId, debug);
+
+      case 'capacity.list':
+        return await listCapacity(request, context.clientId, context.sheetId, debug);
 
       // TODO: fullybooked.get
       // TODO: fullybooked.set

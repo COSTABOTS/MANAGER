@@ -29,7 +29,7 @@ import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
-import { loadCapacitySettings } from './services/capacitySettings';
+import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable } from './services/tables';
@@ -653,6 +653,26 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadCapacityFromMake(baseSettings?: ManagerSettings) {
     console.log('LOAD CAPACITY START');
+    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+
+    if (isDemo) {
+      try {
+        const loadedCapacity = await loadCapacityFromManagerApi();
+        setSettings((current) => {
+          const mergedSource = baseSettings ?? current;
+          const nextSettings = {
+            ...mergedSource,
+            slotCapacity: buildVisibleSlotCapacity(mergedSource, loadedCapacity),
+          };
+          saveSettingsToStorage(nextSettings);
+          return nextSettings;
+        });
+        return true;
+      } catch (error) {
+        console.warn('[DEMO][MANAGER_API] capacity fallback Make', error);
+      }
+    }
+
     const capacityWebhook = getCapacityReadWebhook();
     console.log('GET CAPACITY webhook URL usado:', capacityWebhook);
 
