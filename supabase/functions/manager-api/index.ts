@@ -10,6 +10,7 @@ type ManagerAction =
   | 'settings.get'
   | 'fullybooked.get'
   | 'fullybooked.set'
+  | 'reservation.create'
   | 'reservation.arrive'
   | 'reservation.assignTable';
 type SheetRow = Record<string, string | number | boolean>;
@@ -458,6 +459,10 @@ function findReservationRow(values: unknown[][] | undefined, idReserva: string) 
 
 function makeTableId() {
   return `MESA-${Date.now()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function makeReservationId() {
+  return `RES-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 }
 
 function normalizeTableInput(table: Record<string, unknown> | undefined, mesaId: string) {
@@ -1005,6 +1010,71 @@ async function updateReservationCell(
   return null;
 }
 
+async function createReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const reservation = (body.reservation ?? {}) as Record<string, unknown>;
+  const idReserva = makeReservationId();
+  console.log(`[MANAGER_API] idReserva=${idReserva}`);
+
+  const nombre = toSheetString(reservation.nombre ?? reservation.name);
+  const telefono = toSheetString(reservation.telefono ?? reservation.phone);
+  const fecha = toSheetString(reservation.fecha ?? reservation.date);
+  const hora = toSheetString(reservation.hora ?? reservation.time);
+  const pax = toSheetNumber(reservation.pax);
+  const habitacion = toSheetString(reservation.habitacion ?? reservation.room);
+  const idioma = toSheetString(reservation.idioma ?? reservation.language) || 'ES';
+  const peticionEspecial = toSheetString(reservation.peticionEspecial ?? reservation.peticiones ?? reservation.specialRequest);
+  const origen = toSheetString(reservation.origen ?? reservation.origin) || 'MANUAL';
+
+  if (!fecha || !hora || !pax || (!nombre && !habitacion)) {
+    return errorResponse(request, 'RESERVATION_REQUIRED_FIELDS', 'Faltan datos obligatorios para crear la reserva', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const appendResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:N')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: [[
+          idReserva,
+          fecha,
+          hora,
+          nombre,
+          telefono,
+          pax,
+          idioma,
+          peticionEspecial,
+          'CONFIRMADA',
+          origen || 'MANUAL',
+          '',
+          'FALSE',
+          'FALSE',
+          habitacion,
+        ]],
+      }),
+    },
+  );
+
+  if (!appendResponse.ok) {
+    const errorBody = await appendResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'reservation.create',
+    client_id: clientId,
+    idReserva,
+  });
+}
+
 async function updateReservationArrival(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -1134,6 +1204,9 @@ Deno.serve(async (request) => {
 
       case 'fullybooked.set':
         return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'reservation.create':
+        return await createReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>);
 
       case 'reservation.arrive':
         return await updateReservationArrival(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);

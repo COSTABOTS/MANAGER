@@ -36,7 +36,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import { assignTableWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
+import { assignTableWithManagerApi, createManualReservationWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
@@ -1055,7 +1055,28 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }, ['id_reserva', 'fecha', 'hora', 'pax'], 'walk-in', 'Webhook no configurado', true);
   }
 
-  function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+  async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+    if (isSupabaseDemoRoute()) {
+      try {
+        await createManualReservationWithManagerApi({
+          nombre: reservation.name,
+          habitacion: reservation.room,
+          telefono: reservation.phone,
+          fecha: reservation.date,
+          hora: reservation.time,
+          pax: reservation.pax,
+          idioma: reservation.language ?? 'ES',
+          peticionEspecial: reservation.specialRequest,
+        });
+        setLastSync('Reserva añadida correctamente');
+        console.log('[DEMO][RESERVATION] refresh list');
+        await loadReservations();
+        return;
+      } catch (error) {
+        console.warn('[DEMO][RESERVATION] create fallback Make', error);
+      }
+    }
+
     const idReserva = createReservationId();
     const manualReservation: Reservation = {
       ...reservation,

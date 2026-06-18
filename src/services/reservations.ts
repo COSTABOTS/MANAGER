@@ -41,7 +41,7 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
   };
 }
 
-async function callReservationAction(action: 'reservation.arrive' | 'reservation.assignTable', payload: Record<string, unknown>) {
+async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable', payload: Record<string, unknown>) {
   const { data: sessionData } = await supabase.auth.getSession();
   const session = sessionData.session;
 
@@ -66,6 +66,26 @@ async function callReservationAction(action: 'reservation.arrive' | 'reservation
     throw new Error(response?.code || response?.message || `${action} no devolvio ok=true`);
   }
 
+  return response;
+}
+
+export async function createManualReservationWithManagerApi(reservation: {
+  nombre: string;
+  telefono?: string;
+  fecha: string;
+  hora: string;
+  pax: number;
+  habitacion?: string;
+  idioma?: string;
+  peticionEspecial?: string;
+}) {
+  const response = await callReservationAction('reservation.create', {
+    reservation: {
+      ...reservation,
+      origen: 'MANUAL',
+    },
+  }) as { ok?: boolean; idReserva?: string };
+  console.log('[DEMO][RESERVATION] created', response.idReserva);
   return response;
 }
 

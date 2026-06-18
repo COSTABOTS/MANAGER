@@ -28,7 +28,7 @@ interface TodayProps {
   occupancyPercent: number;
   totalCapacity: number;
   onAddWalkIn: (nameOrRoom: string, pax: number) => Promise<void>;
-  onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void;
+  onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void | Promise<void>;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
   onEnsureTables: () => Promise<void>;
@@ -183,7 +183,7 @@ export function Today({
     setIsManualModalOpen(false);
   }
 
-  function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!manualDraft.date || !manualDraft.time || manualDraft.pax < 1) {
@@ -195,7 +195,7 @@ export function Today({
       return;
     }
 
-    onAddManualReservation({
+    await onAddManualReservation({
       date: manualDraft.date,
       time: manualDraft.time,
       name: manualDraft.name.trim(),
