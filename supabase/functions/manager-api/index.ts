@@ -10,6 +10,7 @@ type ManagerAction =
   | 'capacity.list'
   | 'capacity.save'
   | 'settings.get'
+  | 'settings.save'
   | 'fullybooked.get'
   | 'fullybooked.set'
   | 'reservation.create'
@@ -419,6 +420,39 @@ function normalizeSettings(values: unknown[][] | undefined): Record<string, stri
 
     return settings;
   }, {});
+}
+
+function normalizeSettingsInput(settings: unknown) {
+  if (Array.isArray(settings)) {
+    return settings.reduce<Record<string, string>>((items, row) => {
+      if (!row || typeof row !== 'object') {
+        return items;
+      }
+
+      const item = row as Record<string, unknown>;
+      const variable = toSheetString(item.variable ?? item.VARIABLE ?? item.key ?? item.KEY).toUpperCase();
+      const value = toSheetString(item.value ?? item.VALUE ?? item.valor ?? item.VALOR);
+
+      if (variable) {
+        items[variable] = value;
+      }
+
+      return items;
+    }, {});
+  }
+
+  if (settings && typeof settings === 'object') {
+    return Object.entries(settings as Record<string, unknown>).reduce<Record<string, string>>((items, [key, value]) => {
+      const variable = toSheetString(key).toUpperCase();
+      if (variable) {
+        items[variable] = toSheetString(value);
+      }
+
+      return items;
+    }, {});
+  }
+
+  return {};
 }
 
 function normalizeDateKey(value: unknown) {
@@ -1016,6 +1050,95 @@ async function getSettings(request: Request, clientId: string, sheetId: string, 
   });
 }
 
+async function saveSettings(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const settingsMap = normalizeSettingsInput(body.settings);
+  const variables = Object.keys(settingsMap);
+
+  if (variables.length === 0) {
+    return errorResponse(request, 'SETTINGS_REQUIRED', 'No se recibieron SETTINGS para guardar', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'SETTINGS!A:Z', accessToken);
+  const existingValues = sheetsData.values ?? [];
+  debug.rowsRead = Math.max(0, existingValues.length - 1);
+
+  const headerRow = existingValues[0]?.length ? existingValues[0].map((cell) => toSheetString(cell)) : ['VARIABLE', 'VALUE'];
+  const normalizedHeaders = headerRow.map((header) => header.trim().toUpperCase());
+  const variableColumn = Math.max(0, normalizedHeaders.findIndex((header) => ['VARIABLE', 'KEY'].includes(header)));
+  const valueColumn = Math.max(1, normalizedHeaders.findIndex((header) => ['VALUE', 'VALOR'].includes(header)));
+  const width = Math.max(headerRow.length, variableColumn + 1, valueColumn + 1, 2);
+
+  const nextValues = existingValues.length
+    ? existingValues.map((row) => [...row])
+    : [headerRow];
+
+  nextValues[0] = [...headerRow];
+  while (nextValues[0].length < width) {
+    nextValues[0].push('');
+  }
+  if (!nextValues[0][variableColumn]) {
+    nextValues[0][variableColumn] = 'VARIABLE';
+  }
+  if (!nextValues[0][valueColumn]) {
+    nextValues[0][valueColumn] = 'VALUE';
+  }
+
+  const rowByVariable = new Map<string, number>();
+  for (let index = 1; index < nextValues.length; index += 1) {
+    const variable = toSheetString(nextValues[index]?.[variableColumn]).toUpperCase();
+    if (variable) {
+      rowByVariable.set(variable, index);
+    }
+  }
+
+  variables.forEach((variable) => {
+    const existingRowIndex = rowByVariable.get(variable);
+    const row = existingRowIndex === undefined ? [] : [...nextValues[existingRowIndex]];
+
+    while (row.length < width) {
+      row.push('');
+    }
+
+    row[variableColumn] = variable;
+    row[valueColumn] = settingsMap[variable];
+
+    if (existingRowIndex === undefined) {
+      nextValues.push(row);
+    } else {
+      nextValues[existingRowIndex] = row;
+    }
+  });
+
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('SETTINGS!A1:Z')}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: nextValues }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  console.log(`[MANAGER_API] settings saved=${variables.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'settings.save',
+    client_id: clientId,
+  });
+}
+
 async function getFullyBooked(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -1475,6 +1598,9 @@ Deno.serve(async (request) => {
 
       case 'settings.get':
         return await getSettings(request, context.clientId, context.sheetId, debug);
+
+      case 'settings.save':
+        return await saveSettings(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'fullybooked.get':
         return await getFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);

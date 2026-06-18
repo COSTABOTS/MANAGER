@@ -274,3 +274,36 @@ export async function saveOperationalSettings(webhookUrl: string, settings: Mana
 
   return data;
 }
+
+export async function saveOperationalSettingsWithManagerApi(settings: ManagerSettings) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  const settingsPayload = buildOperationalSettingsPayload(settings).reduce<Record<string, string>>((items, item) => {
+    items[item.variable] = item.value;
+    return items;
+  }, {});
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: {
+      action: 'settings.save',
+      settings: settingsPayload,
+    },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const response = data as SettingsResponse & { code?: string; message?: string };
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api settings.save no devolvio ok=true');
+  }
+
+  console.log('[DEMO][SETTINGS] saved by manager-api');
+  return response;
+}

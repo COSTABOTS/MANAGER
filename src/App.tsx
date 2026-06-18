@@ -31,7 +31,7 @@ import { loadFeedbacks as loadFeedbacksFromWebhook, loadFeedbacksFromManagerApi 
 import type { Feedback } from './services/feedbacks';
 import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
 import { loadCapacityFromManagerApi, loadCapacitySettings, saveCapacityWithManagerApi } from './services/capacitySettings';
-import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings } from './services/operationalSettings';
+import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings, saveOperationalSettingsWithManagerApi } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -1016,13 +1016,37 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const capacityWebhook = getCapacitySaveWebhook();
     console.log('SAVE CAPACITY webhook URL:', capacityWebhook);
     setLastSync('Configuracion guardada correctamente');
+    let settingsSavedByManagerApi = false;
 
-    if (!settingsWebhook.trim()) {
-      setSettingsMessage('Webhook SETTINGS no configurado');
-      if (!isSupabaseDemoRoute()) {
+    if (isSupabaseDemoRoute()) {
+      try {
+        await saveOperationalSettingsWithManagerApi(nextSettings);
+        settingsSavedByManagerApi = true;
+        setSettingsMessage('SETTINGS guardados correctamente');
+      } catch (error) {
+        console.warn('[DEMO][SETTINGS] fallback Make', error);
+        if (!settingsWebhook.trim()) {
+          setSettingsMessage('Webhook SETTINGS no configurado');
+        }
+      }
+    }
+
+    if (!isSupabaseDemoRoute()) {
+      if (!settingsWebhook.trim()) {
+        setSettingsMessage('Webhook SETTINGS no configurado');
         return 'skipped';
       }
-    } else {
+
+      try {
+        await saveOperationalSettings(settingsWebhook, nextSettings);
+        setSettingsMessage('SETTINGS guardados correctamente');
+      } catch (error) {
+        console.error('error al guardar SETTINGS', error);
+        setSettingsMessage('No se pudieron guardar SETTINGS');
+        setLastSync('Configuracion guardada localmente, pero no sincronizada');
+        return 'error';
+      }
+    } else if (!settingsSavedByManagerApi && settingsWebhook.trim()) {
       try {
         await saveOperationalSettings(settingsWebhook, nextSettings);
         setSettingsMessage('SETTINGS guardados correctamente');
