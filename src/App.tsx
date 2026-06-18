@@ -310,9 +310,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    console.log('[BOOT] loading initial reservations only');
-    void loadReservations();
-    void loadFullyBookedStatus(dayStatus.date);
+    if (!isSupabaseDemoRoute()) {
+      console.log('[BOOT] loading initial reservations only');
+      void loadReservations();
+    }
   }, [clientConfig]);
 
   useEffect(() => {
@@ -359,7 +360,19 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
-      void loadSettingsFromMake();
+      if (window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig.auth_provider === 'supabase') {
+        console.log('[DEMO][BOOT] loading reservations + tables + fullybooked + capacity');
+        void Promise.all([
+          loadReservations(),
+          loadTables().then((tables) => {
+            console.log('[DEMO][TABLES] preloaded', tables.length);
+          }),
+          loadFullyBookedStatus(dayStatus.date),
+          loadCapacityFromMake(),
+        ]);
+      } else {
+        void loadSettingsFromMake();
+      }
     }
   }, [clientConfig]);
 
