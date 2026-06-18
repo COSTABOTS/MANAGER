@@ -36,7 +36,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import { assignTableWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
+import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
@@ -1221,6 +1221,27 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   async function confirmCancelReservation() {
     if (!reservationToCancel) {
       return;
+    }
+
+    if (isSupabaseDemoRoute()) {
+      try {
+        await cancelReservationWithManagerApi(reservationToCancel.idReserva);
+        setAllReservations((current) =>
+          current.map((reservation) =>
+            reservation.idReserva === reservationToCancel.idReserva ? { ...reservation, status: 'CANCELADA' } : reservation,
+          ),
+        );
+        setReservationToCancel(null);
+        setLastSync('Reserva cancelada');
+        try {
+          await loadReservations();
+        } catch (refreshError) {
+          console.warn('[DEMO][RESERVATION] refresh after cancel failed', refreshError);
+        }
+        return;
+      } catch (error) {
+        console.warn('[DEMO][RESERVATION] cancel fallback Make', error);
+      }
     }
 
     const cancelWebhook = getClientWebhook('webhook_cancel');

@@ -41,7 +41,7 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
   };
 }
 
-async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'walkin.create', payload: Record<string, unknown>) {
+async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'reservation.cancel' | 'walkin.create', payload: Record<string, unknown>) {
   const { data: sessionData } = await supabase.auth.getSession();
   const session = sessionData.session;
 
@@ -107,6 +107,12 @@ export async function saveArrivalWithManagerApi(idReserva: string, llego: boolea
 export async function assignTableWithManagerApi(idReserva: string, mesa: string) {
   const response = await callReservationAction('reservation.assignTable', { idReserva, mesa });
   console.log('[DEMO][RESERVATION] table assigned');
+  return response;
+}
+
+export async function cancelReservationWithManagerApi(idReserva: string) {
+  const response = await callReservationAction('reservation.cancel', { idReserva });
+  console.log('[DEMO][RESERVATION] cancelled');
   return response;
 }
 

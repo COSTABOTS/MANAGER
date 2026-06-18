@@ -13,6 +13,7 @@ type ManagerAction =
   | 'reservation.create'
   | 'reservation.arrive'
   | 'reservation.assignTable'
+  | 'reservation.cancel'
   | 'walkin.create';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
@@ -437,6 +438,7 @@ function getReservationHeaders(values: unknown[][] | undefined) {
 
   return {
     idReserva: findIndex(['ID_RESERVA', 'ID RESERVA'], 0),
+    estado: findIndex(['ESTADO', 'STATUS'], 8),
     mesa: findIndex(['MESA'], 10),
     llego: findIndex(['LLEGO', 'LLEGÓ', 'ARRIVED'], 11),
   };
@@ -1240,6 +1242,52 @@ async function assignReservationTable(request: Request, clientId: string, sheetI
   });
 }
 
+async function cancelReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
+  if (!idReserva) {
+    return errorResponse(request, 'ID_RESERVA_REQUIRED', 'ID_RESERVA requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+  }
+
+  console.log('[MANAGER_API][reservation.cancel] row found', rowIndex + 1);
+  const rowNumber = rowIndex + 1;
+  const column = columnLetter(headers.estado);
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`RESERVAS!${column}${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [['CANCELADA']] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'reservation.cancel',
+    client_id: clientId,
+    idReserva,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -1292,6 +1340,9 @@ Deno.serve(async (request) => {
 
       case 'reservation.assignTable':
         return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'reservation.cancel':
+        return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
