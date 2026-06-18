@@ -22,6 +22,7 @@ interface SettingsProps {
 
 type ReservationInterval = 30 | 60;
 type SlotCapacity = Record<string, number>;
+type SettingsTab = 'general' | 'capacity' | 'tables' | 'advanced';
 
 const userRole: 'admin' | 'manager' = 'admin';
 const DEFAULT_SLOT_CAPACITY = 40;
@@ -86,6 +87,7 @@ export function Settings({
   const [tableDrafts, setTableDrafts] = useState<Record<string, { name: string; type: RestaurantTableType; capacity: number; order: number }>>({});
   const [tableToDelete, setTableToDelete] = useState<RestaurantTable | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
 
   useEffect(() => {
     setDraftSettings(settings);
@@ -312,15 +314,38 @@ export function Settings({
         <p className="sync-message">{isLoadingSettings ? 'Cargando SETTINGS...' : settingsMessage}</p>
       )}
 
+      {isDemoMode && (
+        <div className="segmented-control settings-tabs" aria-label="Secciones Settings">
+          {[
+            { key: 'general' as const, label: 'General' },
+            { key: 'capacity' as const, label: 'Capacidad' },
+            { key: 'tables' as const, label: 'Mesas' },
+            { key: 'advanced' as const, label: 'Avanzado' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              className={activeSettingsTab === tab.key ? 'is-active' : undefined}
+              type="button"
+              onClick={() => setActiveSettingsTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <section className="settings-stack">
+        {(!isDemoMode || activeSettingsTab === 'general' || activeSettingsTab === 'capacity') && (
         <article className="settings-card">
           <div className="section-title compact">
             <div>
               <p className="eyebrow">Settings restaurante</p>
-              <h2>General</h2>
+              <h2>{isDemoMode && activeSettingsTab === 'capacity' ? 'Capacidad' : 'General'}</h2>
             </div>
           </div>
 
+          {(!isDemoMode || activeSettingsTab === 'general') && (
+            <>
           <div className="settings-grid inner">
             <label>
               Capacidad total
@@ -371,8 +396,11 @@ export function Settings({
               ))}
             </div>
           </div>
+            </>
+          )}
 
-          <div className="slot-capacity-section">
+          {(!isDemoMode || activeSettingsTab === 'capacity') && (
+          <div className={isDemoMode ? 'slot-capacity-section is-first' : 'slot-capacity-section'}>
             <p className="eyebrow">Capacidad por tramo horario</p>
             <div className="slot-capacity-grid">
               {Object.entries(draftSettings.slotCapacity).map(([slot, value]) => (
@@ -389,8 +417,11 @@ export function Settings({
               ))}
             </div>
           </div>
+          )}
         </article>
+        )}
 
+        {(!isDemoMode || activeSettingsTab === 'general') && (
         <article className="settings-card">
           <div className="section-title compact">
             <div>
@@ -415,9 +446,12 @@ export function Settings({
           <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
           <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
         </article>
+        )}
 
-        {userRole === 'admin' && (
+        {userRole === 'admin' && (!isDemoMode || activeSettingsTab === 'advanced' || activeSettingsTab === 'tables') && (
           <article className="settings-card admin-card">
+            {(!isDemoMode || activeSettingsTab === 'advanced') && (
+              <>
             <div className="section-title compact">
               <div>
                 <p className="eyebrow">Solo admin</p>
@@ -492,7 +526,10 @@ export function Settings({
               webhookFields
             )}
             <SwitchRow label="Licencia activa" checked={draftSettings.licenseActive} onChange={(value) => updateDraft('licenseActive', value)} />
+              </>
+            )}
 
+            {(!isDemoMode || activeSettingsTab === 'tables') && (
             <div className="settings-subsection">
               <div className="section-title compact">
                 <div>
@@ -581,6 +618,7 @@ export function Settings({
                 })}
               </div>
             </div>
+            )}
           </article>
         )}
       </section>

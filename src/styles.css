@@ -1053,6 +1053,10 @@ button:disabled {
   gap: 18px;
 }
 
+.settings-tabs {
+  margin-bottom: 14px;
+}
+
 .settings-save-bar {
   display: flex;
   align-items: center;
@@ -1595,6 +1599,13 @@ button:disabled {
   margin-top: 18px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
+}
+
+.slot-capacity-section.is-first,
+.settings-card > .settings-subsection:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .settings-subsection {
