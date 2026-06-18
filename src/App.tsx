@@ -49,6 +49,7 @@ const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnj
 const SETTINGS_WEBHOOK_FALLBACK = '';
 const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
+const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
 
 console.log('[App loaded]', window.location.pathname);
 
@@ -229,6 +230,152 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
   });
 }
 
+async function loadSupabaseClientConfig(userId: string) {
+  const profileResult = await supabase
+    .from('PROFILES')
+    .select('user_id, client_id, role, status')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (profileResult.error) {
+    throw new Error(`PROFILE_ERROR: ${profileResult.error.message}`);
+  }
+
+  const profile = profileResult.data as Record<string, unknown> | null;
+  if (!profile) {
+    throw new Error('PROFILE_NOT_FOUND');
+  }
+
+  const profileStatus = pickSupabaseValue(profile, ['status', 'STATUS']).toUpperCase();
+  if (profileStatus !== 'ACTIVE') {
+    throw new Error('PROFILE_INACTIVE');
+  }
+
+  const clientId = pickSupabaseValue(profile, ['client_id', 'CLIENT_ID']).trim();
+  if (!clientId) {
+    throw new Error('CLIENT_ID_NOT_FOUND');
+  }
+
+  const clientResult = await supabase
+    .from('CLIENTES')
+    .select('*')
+    .eq('client_id', clientId)
+    .maybeSingle();
+
+  if (clientResult.error) {
+    throw new Error(`CLIENT_ERROR: ${clientResult.error.message}`);
+  }
+
+  const client = clientResult.data as Record<string, unknown> | null;
+  if (!client) {
+    throw new Error('CLIENT_NOT_FOUND');
+  }
+
+  const clientStatus = pickSupabaseValue(client, ['status', 'STATUS']).toUpperCase();
+  if (clientStatus && clientStatus !== 'ACTIVE') {
+    throw new Error('CLIENT_INACTIVE');
+  }
+
+  const webhooksResult = await supabase.from('WEBHOOKS').select('*');
+  if (webhooksResult.error) {
+    console.warn('[MANAGER_API] Webhooks load warning:', webhooksResult.error);
+  }
+
+  const globalWebhooks = (webhooksResult.data ?? []).reduce<Record<string, string>>((items, row: Record<string, unknown>) => {
+    const active = row.ACTIVO ?? row.activo;
+    const action = row.TIPO_ACCION ?? row.tipo_accion;
+    const url = row.URL_WEBHOOK ?? row.url_webhook;
+    if ((active === true || active === 'true' || active === 'TRUE') && action && url) {
+      items[String(action)] = String(url);
+    }
+    return items;
+  }, {});
+
+  let operationalSettings: Record<string, unknown> = {};
+  const settingsResult = await supabase.from('SETTINGS').select('*').eq('client_id', clientId);
+  if (settingsResult.error) {
+    console.warn('[MANAGER_API] Settings load warning:', settingsResult.error);
+  } else {
+    operationalSettings = normalizeDemoSettings((settingsResult.data ?? []) as Array<Record<string, unknown>>);
+  }
+
+  const webhooks: Record<string, string> = {
+    ...globalWebhooks,
+    getReservas: globalWebhooks.RESERVATION_LIST || '',
+    reservas: globalWebhooks.RESERVATION_CREATE || '',
+    getMesas: globalWebhooks.TABLES_LIST || '',
+    saveMesa: globalWebhooks.TABLE_SAVE || '',
+    getFeedbacks: globalWebhooks.FEEDBACK_LIST || globalWebhooks.FEEDBACK_CREATE || '',
+    feedbacks: globalWebhooks.FEEDBACK_CREATE || '',
+    settings: globalWebhooks.SETTINGS_UPDATE || '',
+    getCapacidad: globalWebhooks.CAPACITY_LIST || '',
+    saveCapacidad: globalWebhooks.CAPACITY_SAVE || '',
+  };
+
+  const config = normalizeClientConfig({
+    success: true,
+    auth_provider: 'supabase',
+    client_id: clientId,
+    rest_nombre: pickSupabaseValue(client, ['rest_name', 'REST_NAME']),
+    logo_restaurante: pickSupabaseValue(client, ['logo_url', 'LOGO_URL']),
+    color: pickSupabaseValue(client, ['primary_color', 'PRIMARY_COLOR']),
+    sheet_id: pickSupabaseValue(client, ['sheet_id', 'SHEET_ID']),
+    role: pickSupabaseValue(profile, ['role', 'ROLE']),
+    IS_DEMO: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
+    is_demo: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
+    settings: operationalSettings,
+    webhooks,
+    webhooksLegacy: {
+      getReservas: webhooks.RESERVATION_LIST || '',
+      reservas: webhooks.RESERVATION_CREATE || '',
+      getMesas: webhooks.TABLES_LIST || '',
+      saveMesa: webhooks.TABLE_SAVE || '',
+      getFeedbacks: webhooks.FEEDBACK_LIST || webhooks.FEEDBACK_CREATE || '',
+      feedbacks: webhooks.FEEDBACK_CREATE || '',
+      settings: webhooks.SETTINGS_UPDATE || '',
+      getCapacidad: webhooks.CAPACITY_LIST || '',
+      saveCapacidad: webhooks.CAPACITY_SAVE || '',
+    },
+    webhookReservas: webhooks.RESERVATION_CREATE,
+    webhook_reservas: webhooks.RESERVATION_CREATE || '',
+    webhook_manual: webhooks.RESERVATION_CREATE,
+    webhookLeerReservas: webhooks.RESERVATION_LIST,
+    webhook_get_reservas: webhooks.RESERVATION_LIST,
+    webhookCancelarReserva: webhooks.RESERVATION_CANCEL,
+    webhookCancelReservationUrl: webhooks.RESERVATION_CANCEL,
+    webhook_cancel: webhooks.RESERVATION_CANCEL,
+    webhookWalkin: webhooks.WALKIN_CREATE,
+    webhook_walkin: webhooks.WALKIN_CREATE,
+    webhookLlegada: webhooks.ARRIVAL_UPDATE,
+    webhook_arrived: webhooks.ARRIVAL_UPDATE,
+    webhookMesa: webhooks.TABLE_ASSIGN,
+    webhook_mesa: webhooks.TABLE_ASSIGN,
+    webhookFullyBooked: webhooks.FULLY_BOOKED,
+    webhook_fully_booked: webhooks.FULLY_BOOKED,
+    webhookLeerMesas: webhooks.TABLES_LIST,
+    webhookGetMesas: webhooks.TABLES_LIST,
+    webhook_get_mesas: webhooks.TABLES_LIST,
+    webhookGuardarMesa: webhooks.TABLE_SAVE,
+    webhookSaveMesa: webhooks.TABLE_SAVE,
+    webhook_save_mesa: webhooks.TABLE_SAVE,
+    webhookLeerCapacidad: webhooks.CAPACITY_LIST,
+    webhookGetCapacidad: webhooks.CAPACITY_LIST,
+    webhook_get_capacidad: webhooks.CAPACITY_LIST,
+    webhookGuardarCapacidad: webhooks.CAPACITY_SAVE,
+    webhookSettingsCapacityUrl: webhooks.CAPACITY_SAVE,
+    webhook_capacidad: webhooks.CAPACITY_SAVE,
+    webhookShows: webhooks.SHOWS_UPDATE,
+    webhook_shows: webhooks.SHOWS_UPDATE,
+    webhookFeedbacks: webhooks.FEEDBACK_LIST || webhooks.FEEDBACK_CREATE,
+    webhook_feedbacks: webhooks.FEEDBACK_LIST || webhooks.FEEDBACK_CREATE,
+    webhookSettings: webhooks.SETTINGS_UPDATE,
+    webhook_settings: webhooks.SETTINGS_UPDATE,
+  });
+
+  console.log('[MANAGER_API] Client config loaded', config.client_id, config.rest_nombre);
+  return config;
+}
+
 interface ManagerAppProps {
   onLogoutComplete?: () => void;
 }
@@ -360,12 +507,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
-      if (window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig.auth_provider === 'supabase') {
-        console.log('[DEMO][BOOT] preload manager-api data');
+      if (isSupabaseDemoRoute()) {
+        console.log('[MANAGER_API][BOOT] preload manager-api data');
         void Promise.all([
           loadReservations(),
           loadTables().then((tables) => {
-            console.log('[DEMO][TABLES] preloaded', tables.length);
+            console.log('[MANAGER_API][TABLES] preloaded', tables.length);
           }),
           loadFullyBookedStatus(dayStatus.date),
           loadSettingsFromMake().then(() => {
@@ -385,6 +532,45 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     clearLoginSession();
 
     try {
+      if (USE_MANAGER_API) {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase no esta configurado');
+        }
+
+        const authResult = await supabase.auth.signInWithPassword({
+          email: usuario.trim(),
+          password,
+        });
+
+        if (authResult.error || !authResult.data.user) {
+          console.error('[MANAGER_API] Login error:', authResult.error ?? 'No auth user returned');
+          setLoginError('Usuario o contraseÃ±a incorrectos');
+          return;
+        }
+
+        const config = await loadSupabaseClientConfig(authResult.data.user.id);
+        if (!isValidClientConfig(config)) {
+          throw new Error('CLIENT_CONFIG_INVALID');
+        }
+
+        sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(config));
+        sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
+        setAllReservations([]);
+        setRestaurantTables([]);
+        setFeedbacks([]);
+        setFeedbacksLoaded(false);
+        setHasLoadedReservations(false);
+        setHasLoadedTables(false);
+        setOperationalSettingsLoaded(false);
+        setSettingsMessage('');
+        setTablesSyncMessage('');
+        setClientConfig(config);
+        setSettings((current) => populateAdminFromClientConfig(current, config));
+        console.log('Cliente cargado:', config.rest_nombre);
+        console.log('Admin cargado desde configuraciÃ³n cliente:', config.rest_nombre);
+        return;
+      }
+
       console.log('[Login debug] URL llamada:', LOGIN_WEBHOOK_URL);
       const response = await fetch(LOGIN_WEBHOOK_URL, {
         method: 'POST',
@@ -449,6 +635,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   function handleLogout() {
+    if (USE_MANAGER_API) {
+      void supabase.auth.signOut();
+    }
     clearLoginSession();
     setClientConfig(null);
     setRestaurantTables([]);
@@ -487,7 +676,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   function isSupabaseDemoRoute() {
-    return window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemoPath = window.location.pathname.toLowerCase().startsWith('/demo');
+    return (isDemoPath || USE_MANAGER_API) && clientConfig?.auth_provider === 'supabase';
   }
 
   async function loadFullyBookedStatus(date: string) {
@@ -514,7 +704,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const demoReservationListWebhook = typeof clientConfig?.webhooks?.RESERVATION_LIST === 'string' ? clientConfig.webhooks.RESERVATION_LIST : '';
     const reservationsWebhook = clientConfig?.auth_provider === 'supabase' && demoReservationListWebhook ? demoReservationListWebhook : getClientWebhook('webhook_get_reservas');
     const sheetId = getClientSheetId();
-    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemo = isSupabaseDemoRoute();
 
     setIsLoadingReservations(true);
 
@@ -577,7 +767,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadTables() {
     const sheetId = getClientSheetId();
-    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemo = isSupabaseDemoRoute();
     console.log('[DEMO] route:', window.location.pathname);
     console.log('[DEMO] isDemo:', isDemo);
     console.log('[DEMO] loadTables() started');
@@ -754,7 +944,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadCapacityFromMake(baseSettings?: ManagerSettings) {
     console.log('LOAD CAPACITY START');
-    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemo = isSupabaseDemoRoute();
 
     if (isDemo) {
       try {
@@ -825,7 +1015,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadSettingsFromMake() {
     const settingsWebhook = getOperationalSettingsWebhook();
-    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemo = isSupabaseDemoRoute();
 
     if (isDemo) {
       setIsLoadingOperationalSettings(true);
@@ -912,7 +1102,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
-    const isDemo = window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+    const isDemo = isSupabaseDemoRoute();
     const tableWebhook = getClientWebhook('webhook_save_mesa') || settings.webhookSaveMesa;
 
     if (action === 'delete' && !table.mesaId) {
