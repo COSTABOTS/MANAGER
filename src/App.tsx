@@ -361,14 +361,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
       console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
       if (window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig.auth_provider === 'supabase') {
-        console.log('[DEMO][BOOT] loading reservations + tables + fullybooked + capacity');
+        console.log('[DEMO][BOOT] preload manager-api data');
         void Promise.all([
           loadReservations(),
           loadTables().then((tables) => {
             console.log('[DEMO][TABLES] preloaded', tables.length);
           }),
           loadFullyBookedStatus(dayStatus.date),
-          loadCapacityFromMake(),
+          loadSettingsFromMake().then(() => {
+            console.log('[DEMO][BOOT] settings preloaded');
+          }),
+          preloadDemoFeedbacks(),
         ]);
       } else {
         void loadSettingsFromMake();
@@ -650,7 +653,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           setFeedbacks(nextFeedbacks);
           setFeedbacksLoaded(true);
           setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavia.');
-          return;
+          return nextFeedbacks;
         } catch (error) {
           console.warn('[DEMO][MANAGER_API] feedbacks fallback Make', error);
         }
@@ -660,7 +663,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setFeedbacks([]);
         setFeedbacksLoaded(true);
         setFeedbacksMessage('Webhook de feedbacks no configurado.');
-        return;
+        return [];
       }
 
       const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
@@ -672,6 +675,52 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setFeedbacks([]);
       setFeedbacksLoaded(true);
       setFeedbacksMessage('No se pudieron cargar los feedbacks');
+    } finally {
+      setIsLoadingFeedbacks(false);
+    }
+  }
+
+  async function preloadDemoFeedbacks(): Promise<Feedback[]> {
+    setIsLoadingFeedbacks(true);
+
+    try {
+      const nextFeedbacks = await loadFeedbacksFromManagerApi();
+      setFeedbacks(nextFeedbacks);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavia.');
+      console.log('[DEMO][BOOT] feedbacks preloaded X', nextFeedbacks.length);
+      setIsLoadingFeedbacks(false);
+      return nextFeedbacks;
+    } catch (error) {
+      console.warn('[DEMO][MANAGER_API] feedbacks fallback Make', error);
+    }
+
+    const feedbacksWebhook = getClientWebhook('webhook_feedbacks') || settings.webhookFeedbacks;
+    const sheetId = getClientSheetId();
+
+    if (!feedbacksWebhook.trim()) {
+      setFeedbacks([]);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage('Webhook de feedbacks no configurado.');
+      console.log('[DEMO][BOOT] feedbacks preloaded X', 0);
+      setIsLoadingFeedbacks(false);
+      return [];
+    }
+
+    try {
+      const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
+      setFeedbacks(nextFeedbacks);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavia.');
+      console.log('[DEMO][BOOT] feedbacks preloaded X', nextFeedbacks.length);
+      return nextFeedbacks;
+    } catch (error) {
+      console.error('GET_FEEDBACKS error', error);
+      setFeedbacks([]);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage('No se pudieron cargar los feedbacks');
+      console.log('[DEMO][BOOT] feedbacks preloaded X', 0);
+      return [];
     } finally {
       setIsLoadingFeedbacks(false);
     }
@@ -1312,7 +1361,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           feedbacks={feedbacks}
           message={feedbacksMessage}
           isLoading={isLoadingFeedbacks}
-          onRefresh={loadFeedbacks}
+          onRefresh={async () => {
+            await loadFeedbacks();
+          }}
         />
       );
     }
