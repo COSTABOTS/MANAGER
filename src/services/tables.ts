@@ -430,23 +430,28 @@ export async function saveRestaurantTableWithManagerApi(payload: SaveTablePayloa
       : payload.action === 'delete'
         ? 'tables.delete'
         : 'tables.update';
+  const requestBody = {
+    action: managerAction,
+    mesaId: table.mesaId || table.id,
+    table: {
+      mesa: table.name,
+      zona: table.type,
+      capacidad: table.capacity ?? 0,
+      activa: table.active,
+      orden: table.order ?? '',
+    },
+  };
 
   if (managerAction !== 'tables.create' && !(table.mesaId || table.id)) {
     throw new Error('MESA_ID requerido');
   }
 
+  if (managerAction === 'tables.update') {
+    console.log('[DEMO][TABLES] update payload', requestBody);
+  }
+
   const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: {
-      action: managerAction,
-      mesaId: table.mesaId || table.id,
-      table: {
-        mesa: table.name,
-        zona: table.type,
-        capacidad: table.capacity ?? 0,
-        activa: table.active,
-        orden: table.order ?? '',
-      },
-    },
+    body: requestBody,
     headers: session?.access_token
       ? {
           Authorization: `Bearer ${session.access_token}`,
@@ -461,6 +466,10 @@ export async function saveRestaurantTableWithManagerApi(payload: SaveTablePayloa
   const response = data as { ok?: boolean; code?: string; message?: string };
   if (!response?.ok) {
     throw new Error(response?.code || response?.message || `${managerAction} no devolvio ok=true`);
+  }
+
+  if (managerAction === 'tables.update') {
+    console.log('[DEMO][TABLES] update response', response);
   }
 
   if (managerAction === 'tables.create') {

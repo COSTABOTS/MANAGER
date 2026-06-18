@@ -7,7 +7,9 @@ type ManagerAction =
   | 'tables.delete'
   | 'reservations.list'
   | 'capacity.list'
-  | 'settings.get';
+  | 'settings.get'
+  | 'fullybooked.get'
+  | 'fullybooked.set';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -233,7 +235,7 @@ function normalizeTables(values: unknown[][] | undefined): SheetRow[] {
     const activa = normalizeBoolean(item.ACTIVA ?? item['4'] ?? 'TRUE');
     const orden = Number(String(item.ORDEN ?? item['5'] ?? 999).replace(',', '.')) || 999;
 
-    if (!mesa || !activa) {
+    if (!mesa) {
       return [];
     }
 
@@ -364,6 +366,64 @@ function normalizeSettings(values: unknown[][] | undefined): Record<string, stri
   }, {});
 }
 
+function normalizeDateKey(value: unknown) {
+  const date = toSheetString(value);
+  const spanishDate = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (spanishDate) {
+    const [, day, month, year] = spanishDate;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return date;
+}
+
+function formatSheetDate(value: unknown) {
+  const date = toSheetString(value);
+  const isoDate = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    const [, year, month, day] = isoDate;
+    return `${day}/${month}/${year}`;
+  }
+
+  return date;
+}
+
+function getControlHeaders(values: unknown[][] | undefined) {
+  const headers = values?.[0]?.map((header) => String(header ?? '').trim().toUpperCase()) ?? [];
+  const findIndex = (candidates: string[], fallback: number) => {
+    const index = headers.findIndex((header) => candidates.includes(header));
+    return index >= 0 ? index : fallback;
+  };
+
+  return {
+    date: findIndex(['FECHA', 'DATE'], 0),
+    status: findIndex(['ESTADO', 'STATUS'], 1),
+    fullyBooked: findIndex(['FULLY BOOKED', 'FULLY_BOOKED', 'FULLYBOOKED'], 2),
+  };
+}
+
+function isFullyBookedValue(value: unknown) {
+  const normalized = toSheetString(value).toLowerCase();
+  return ['true', '1', 'si', 'sÃ­', 'yes', 'y', 'on', 'fully booked', 'cerrado', 'cerrada'].includes(normalized);
+}
+
+function findControlRow(values: unknown[][] | undefined, date: string) {
+  if (!values?.length) {
+    return { rowIndex: -1, headers: getControlHeaders(values) };
+  }
+
+  const headers = getControlHeaders(values);
+  const targetDate = normalizeDateKey(date);
+
+  for (let index = 1; index < values.length; index += 1) {
+    if (normalizeDateKey(values[index]?.[headers.date]) === targetDate) {
+      return { rowIndex: index, headers };
+    }
+  }
+
+  return { rowIndex: -1, headers };
+}
+
 function makeTableId() {
   return `MESA-${Date.now()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
@@ -442,6 +502,19 @@ async function getSheetNumericId(sheetId: string, sheetTitle: string, accessToke
   }
 
   return sheet.properties.sheetId;
+}
+
+function columnLetter(index: number) {
+  let column = '';
+  let current = index + 1;
+
+  while (current > 0) {
+    const modulo = (current - 1) % 26;
+    column = String.fromCharCode(65 + modulo) + column;
+    current = Math.floor((current - modulo) / 26);
+  }
+
+  return column;
 }
 
 async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
@@ -583,6 +656,7 @@ async function createTable(request: Request, sheetId: string, body: Record<strin
 
 async function updateTable(request: Request, sheetId: string, body: Record<string, unknown>) {
   const mesaId = toSheetString(body.mesaId ?? body.mesa_id ?? body.id_mesa);
+  console.log('[MANAGER_API][tables.update] mesaId', mesaId);
   if (!mesaId) {
     return errorResponse(request, 'MESA_ID_REQUIRED', 'MESA_ID requerido', 400);
   }
@@ -596,6 +670,8 @@ async function updateTable(request: Request, sheetId: string, body: Record<strin
   }
 
   const table = normalizeTableInput(body.table as Record<string, unknown> | undefined, mesaId);
+  console.log('[MANAGER_API][tables.update] row found', rowIndex + 1);
+  console.log('[MANAGER_API][tables.update] values written', table.values);
   const rowNumber = rowIndex + 1;
   const updateResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`MESAS!A${rowNumber}:F${rowNumber}`)}?valueInputOption=USER_ENTERED`,
@@ -755,6 +831,105 @@ async function getSettings(request: Request, clientId: string, sheetId: string, 
   });
 }
 
+async function getFullyBooked(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const date = toSheetString(body.date ?? body.fecha);
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, "'CONTROL RESERVAS'!A:D", accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const { rowIndex, headers } = findControlRow(sheetsData.values, date);
+  const row = rowIndex >= 0 ? sheetsData.values?.[rowIndex] : undefined;
+  const fullyBooked = row ? isFullyBookedValue(row[headers.fullyBooked]) || isFullyBookedValue(row[headers.status]) : false;
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'fullybooked.get',
+    client_id: clientId,
+    date,
+    fullyBooked,
+  });
+}
+
+async function setFullyBooked(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const date = toSheetString(body.date ?? body.fecha);
+  const fullyBooked = Boolean(body.fullyBooked ?? body.fully_booked);
+
+  if (!date) {
+    return errorResponse(request, 'DATE_REQUIRED', 'Fecha requerida', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, "'CONTROL RESERVAS'!A:D", accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const { rowIndex, headers } = findControlRow(sheetsData.values, date);
+  const statusValue = fullyBooked ? 'FULLY BOOKED' : 'RESERVAS ABIERTAS';
+  const fullyBookedValue = fullyBooked ? 'TRUE' : 'FALSE';
+
+  if (rowIndex >= 1) {
+    const rowNumber = rowIndex + 1;
+    const statusColumn = columnLetter(headers.status);
+    const fullyBookedColumn = columnLetter(headers.fullyBooked);
+    const updateResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          valueInputOption: 'USER_ENTERED',
+          data: [
+            {
+              range: `'CONTROL RESERVAS'!${statusColumn}${rowNumber}`,
+              values: [[statusValue]],
+            },
+            {
+              range: `'CONTROL RESERVAS'!${fullyBookedColumn}${rowNumber}`,
+              values: [[fullyBookedValue]],
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!updateResponse.ok) {
+      const errorBody = await updateResponse.text();
+      throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+    }
+  } else {
+    const appendResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent("'CONTROL RESERVAS'!A:D")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: [[formatSheetDate(date), statusValue, fullyBookedValue, '']] }),
+      },
+    );
+
+    if (!appendResponse.ok) {
+      const errorBody = await appendResponse.text();
+      throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+    }
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'fullybooked.set',
+    client_id: clientId,
+    date,
+    fullyBooked,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -793,8 +968,12 @@ Deno.serve(async (request) => {
       case 'settings.get':
         return await getSettings(request, context.clientId, context.sheetId, debug);
 
-      // TODO: fullybooked.get
-      // TODO: fullybooked.set
+      case 'fullybooked.get':
+        return await getFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'fullybooked.set':
+        return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
       // TODO: feedbacks.list
 
       default:

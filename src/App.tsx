@@ -29,6 +29,7 @@ import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
 import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
+import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
 import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
@@ -310,6 +311,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     console.log('[BOOT] loading initial reservations only');
     void loadReservations();
+    void loadFullyBookedStatus(dayStatus.date);
   }, [clientConfig]);
 
   useEffect(() => {
@@ -465,6 +467,30 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     setLastSync(result.skipped ? missingMessage : 'Cambio guardado en la app, pero no sincronizado');
     return result;
+  }
+
+  function isSupabaseDemoRoute() {
+    return window.location.pathname.toLowerCase().startsWith('/demo') && clientConfig?.auth_provider === 'supabase';
+  }
+
+  async function loadFullyBookedStatus(date: string) {
+    if (!isSupabaseDemoRoute()) {
+      return;
+    }
+
+    try {
+      const fullyBooked = await loadFullyBookedFromManagerApi(date);
+      setDateBookingStatus((current) => {
+        const nextStatus = {
+          ...current,
+          [date]: fullyBooked ? 'fully_booked' : 'open',
+        } satisfies DateBookingStatus;
+        saveDateBookingStatusToStorage(nextStatus);
+        return nextStatus;
+      });
+    } catch (error) {
+      console.warn('[DEMO][FULLYBOOKED] fallback local status', error);
+    }
   }
 
   async function loadReservations() {
@@ -951,7 +977,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setLastSync('Configuracion guardada localmente, pero no sincronizada');
     return 'error';
   }
-  function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
+  async function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
     setDateBookingStatus((current) => {
       const nextStatus = {
         ...current,
@@ -961,7 +987,18 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return nextStatus;
     });
     setLastSync('Estado de reservas actualizado');
-    void syncValidatedWebhook(getClientWebhook('webhook_fully_booked'), {
+
+    if (isSupabaseDemoRoute()) {
+      try {
+        await saveFullyBookedWithManagerApi(date, status === 'fully_booked');
+        setLastSync('Sincronizado correctamente');
+        return;
+      } catch (error) {
+        console.warn('[DEMO][FULLYBOOKED] fallback Make', error);
+      }
+    }
+
+    await syncValidatedWebhook(getClientWebhook('webhook_fully_booked'), {
       accion: 'actualizar_fully_booked',
       fecha: date,
       fullyBooked: status === 'fully_booked',
@@ -970,7 +1007,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   function handleBookingStatus() {
-    updateDateBookingStatus(dayStatus.date, isTodayFullyBooked ? 'open' : 'fully_booked');
+    void updateDateBookingStatus(dayStatus.date, isTodayFullyBooked ? 'open' : 'fully_booked');
     // Future Make integration: updateBookingStatus({ bookingsOpen, fullyBooked })
   }
 
