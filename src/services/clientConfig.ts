@@ -48,9 +48,12 @@ export interface ExternalClientConfig {
   clientId?: string;
   client_id?: string;
   rest_nombre?: string;
+  rest_name?: string;
   restaurantName?: string;
   restaurantLogoUrl?: string;
+  logo_url?: string;
   primaryColor?: string;
+  primary_color?: string;
   googleSheetId?: string;
   sheet_id?: string;
   logo_costabots?: string;
@@ -196,8 +199,8 @@ export function isValidClientConfig(config: ExternalClientConfig | null): config
   return Boolean(
       config &&
       config.success === true &&
-      toStringValue(config.client_id) &&
-      toStringValue(config.rest_nombre),
+      toStringValue(config.client_id ?? config.clientId) &&
+      toStringValue(config.rest_nombre ?? config.rest_name ?? config.restaurantName),
   );
 }
 
@@ -229,11 +232,11 @@ export function populateAdminFromClientConfig(
 
   return {
     ...mockSettings,
-    restaurantName: toStringValue(config.rest_nombre),
+    restaurantName: toStringValue(config.rest_nombre ?? config.rest_name ?? config.restaurantName),
     costabotsLogoUrl: toStringValue(config.logo_costabots),
-    restaurantLogoUrl: toStringValue(config.logo_restaurante),
-    primaryColor: toStringValue(config.color) || mockSettings.primaryColor,
-    googleSheetId: toStringValue(config.sheet_id),
+    restaurantLogoUrl: toStringValue(config.logo_restaurante ?? config.logo_url ?? config.restaurantLogoUrl),
+    primaryColor: toStringValue(config.color ?? config.primary_color ?? config.primaryColor) || mockSettings.primaryColor,
+    googleSheetId: toStringValue(config.sheet_id ?? config.googleSheetId),
     webhookLeerReservas: toStringValue(config.webhook_get_reservas),
     webhookWalkin: toStringValue(config.webhook_walkin),
     webhookReservas: toStringValue(config.webhook_manual),

@@ -78,8 +78,14 @@ function loadClientConfigFromSession() {
 }
 
 function pickSupabaseValue(row: Record<string, unknown> | null | undefined, keys: string[]) {
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedEntries = Object.entries(row ?? {}).reduce<Record<string, unknown>>((items, [key, value]) => {
+    items[normalizeKey(key)] = value;
+    return items;
+  }, {});
+
   for (const key of keys) {
-    const value = row?.[key];
+    const value = row?.[key] ?? row?.[key.toLowerCase()] ?? row?.[key.toUpperCase()] ?? normalizedEntries[normalizeKey(key)];
     if (value !== undefined && value !== null && String(value).trim() !== '') {
       return String(value).trim();
     }
@@ -231,6 +237,7 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
 }
 
 async function loadSupabaseClientConfig(userId: string) {
+  console.log('[LOGIN][SUPABASE] user id', userId);
   const profileResult = await supabase
     .from('PROFILES')
     .select('user_id, client_id, role, status')
@@ -245,6 +252,7 @@ async function loadSupabaseClientConfig(userId: string) {
   if (!profile) {
     throw new Error('PROFILE_NOT_FOUND');
   }
+  console.log('[LOGIN][SUPABASE] profile found', profile);
 
   const profileStatus = pickSupabaseValue(profile, ['status', 'STATUS']).toUpperCase();
   if (profileStatus !== 'ACTIVE') {
@@ -270,6 +278,7 @@ async function loadSupabaseClientConfig(userId: string) {
   if (!client) {
     throw new Error('CLIENT_NOT_FOUND');
   }
+  console.log('[LOGIN][SUPABASE] client found', client);
 
   const clientStatus = pickSupabaseValue(client, ['status', 'STATUS']).toUpperCase();
   if (clientStatus && clientStatus !== 'ACTIVE') {
@@ -312,14 +321,27 @@ async function loadSupabaseClientConfig(userId: string) {
     saveCapacidad: globalWebhooks.CAPACITY_SAVE || '',
   };
 
+  const restaurantName = pickSupabaseValue(client, ['rest_name', 'REST_NAME', 'rest_nombre', 'restaurantName', 'restaurant_name']);
+  const restaurantLogo = pickSupabaseValue(client, ['logo_url', 'LOGO_URL', 'logo_restaurante', 'restaurantLogoUrl']);
+  const primaryColor = pickSupabaseValue(client, ['primary_color', 'PRIMARY_COLOR', 'color', 'primaryColor']);
+  const sheetId = pickSupabaseValue(client, ['sheet_id', 'SHEET_ID', 'googleSheetId']);
+
   const config = normalizeClientConfig({
     success: true,
     auth_provider: 'supabase',
     client_id: clientId,
-    rest_nombre: pickSupabaseValue(client, ['rest_name', 'REST_NAME']),
-    logo_restaurante: pickSupabaseValue(client, ['logo_url', 'LOGO_URL']),
-    color: pickSupabaseValue(client, ['primary_color', 'PRIMARY_COLOR']),
-    sheet_id: pickSupabaseValue(client, ['sheet_id', 'SHEET_ID']),
+    clientId,
+    rest_nombre: restaurantName,
+    rest_name: restaurantName,
+    restaurantName,
+    logo_restaurante: restaurantLogo,
+    logo_url: restaurantLogo,
+    restaurantLogoUrl: restaurantLogo,
+    color: primaryColor,
+    primary_color: primaryColor,
+    primaryColor,
+    sheet_id: sheetId,
+    googleSheetId: sheetId,
     role: pickSupabaseValue(profile, ['role', 'ROLE']),
     IS_DEMO: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
     is_demo: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
@@ -372,6 +394,7 @@ async function loadSupabaseClientConfig(userId: string) {
     webhook_settings: webhooks.SETTINGS_UPDATE,
   });
 
+  console.log('[LOGIN][SUPABASE] final config', config);
   console.log('[MANAGER_API] Client config loaded', config.client_id, config.rest_nombre);
   return config;
 }
