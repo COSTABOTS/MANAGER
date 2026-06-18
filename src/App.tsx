@@ -30,7 +30,7 @@ import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDa
 import { loadFeedbacks as loadFeedbacksFromWebhook, loadFeedbacksFromManagerApi } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
 import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
-import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
+import { loadCapacityFromManagerApi, loadCapacitySettings, saveCapacityWithManagerApi } from './services/capacitySettings';
 import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings } from './services/operationalSettings';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
@@ -1019,17 +1019,37 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     if (!settingsWebhook.trim()) {
       setSettingsMessage('Webhook SETTINGS no configurado');
-      return 'skipped';
+      if (!isSupabaseDemoRoute()) {
+        return 'skipped';
+      }
+    } else {
+      try {
+        await saveOperationalSettings(settingsWebhook, nextSettings);
+        setSettingsMessage('SETTINGS guardados correctamente');
+      } catch (error) {
+        console.error('error al guardar SETTINGS', error);
+        setSettingsMessage('No se pudieron guardar SETTINGS');
+        setLastSync('Configuracion guardada localmente, pero no sincronizada');
+        return 'error';
+      }
     }
 
-    try {
-      await saveOperationalSettings(settingsWebhook, nextSettings);
-      setSettingsMessage('SETTINGS guardados correctamente');
-    } catch (error) {
-      console.error('error al guardar SETTINGS', error);
-      setSettingsMessage('No se pudieron guardar SETTINGS');
-      setLastSync('Configuracion guardada localmente, pero no sincronizada');
-      return 'error';
+    if (!capacityWebhook.trim()) {
+      if (!isSupabaseDemoRoute()) {
+        setLastSync('Webhook de capacidad no configurado');
+        return 'success';
+      }
+    }
+
+    console.log('capacidad guardada', capacityPayload);
+    if (isSupabaseDemoRoute()) {
+      try {
+        await saveCapacityWithManagerApi(capacityPayload.slots);
+        setLastSync('Sincronizado correctamente');
+        return 'success';
+      } catch (error) {
+        console.warn('[DEMO][CAPACITY] fallback Make', error);
+      }
     }
 
     if (!capacityWebhook.trim()) {
@@ -1037,7 +1057,6 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return 'success';
     }
 
-    console.log('capacidad guardada', capacityPayload);
     const capacityResult = await sendWebhook(
       capacityWebhook,
       capacityPayload,

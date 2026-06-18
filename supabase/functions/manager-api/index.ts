@@ -8,6 +8,7 @@ type ManagerAction =
   | 'reservations.list'
   | 'feedbacks.list'
   | 'capacity.list'
+  | 'capacity.save'
   | 'settings.get'
   | 'fullybooked.get'
   | 'fullybooked.set'
@@ -893,6 +894,82 @@ async function listCapacity(request: Request, clientId: string, sheetId: string,
   });
 }
 
+async function saveCapacity(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const rawCapacity = Array.isArray(body.capacity)
+    ? body.capacity
+    : Array.isArray(body.slots)
+      ? body.slots
+      : [];
+
+  const rows = rawCapacity.flatMap((slot) => {
+    if (!slot || typeof slot !== 'object') {
+      return [];
+    }
+
+    const row = slot as Record<string, unknown>;
+    const hora = toSheetString(row.hora ?? row.time ?? row.HORA ?? row.TIME);
+    const limite = toSheetNumber(row.limite ?? row.capacity ?? row.CAPACIDAD ?? row.LIMITE);
+    const rawActive = row.activo ?? row.active ?? row.ACTIVO ?? row.ACTIVE ?? limite > 0;
+    const activo = typeof rawActive === 'boolean' ? rawActive : normalizeBoolean(rawActive);
+
+    if (!hora) {
+      return [];
+    }
+
+    return [[hora, limite, activo ? 'TRUE' : 'FALSE']];
+  });
+
+  const accessToken = await createGoogleAccessToken();
+  const clearResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('CAPACIDAD!A:C')}:clear`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    },
+  );
+
+  if (!clearResponse.ok) {
+    const errorBody = await clearResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${clearResponse.status}: ${errorBody}`);
+  }
+
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('CAPACIDAD!A1:C')}`
+    + '?valueInputOption=USER_ENTERED',
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: [['HORA', 'LIMITE', 'ACTIVO'], ...rows],
+      }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  console.log(`[MANAGER_API] capacity rows saved=${rows.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'capacity.save',
+    client_id: clientId,
+    rows: rows.length,
+  });
+}
+
 async function listFeedbacks(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -1392,6 +1469,9 @@ Deno.serve(async (request) => {
 
       case 'capacity.list':
         return await listCapacity(request, context.clientId, context.sheetId, debug);
+
+      case 'capacity.save':
+        return await saveCapacity(request, context.clientId, context.sheetId, body as Record<string, unknown>);
 
       case 'settings.get':
         return await getSettings(request, context.clientId, context.sheetId, debug);

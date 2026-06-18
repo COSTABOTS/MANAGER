@@ -3,6 +3,12 @@ import { supabase } from '../lib/supabaseClient';
 type CapacityRow = Record<string, unknown>;
 type SlotCapacity = Record<string, number>;
 
+export interface CapacitySaveSlot {
+  hora: string;
+  limite: number;
+  activo: boolean;
+}
+
 interface CapacityResponse {
   ok?: boolean;
   success?: boolean;
@@ -139,4 +145,33 @@ export async function loadCapacityFromManagerApi() {
   console.log('[DEMO][MANAGER_API] capacity received', Object.keys(normalized).length);
 
   return normalized;
+}
+
+export async function saveCapacityWithManagerApi(capacity: CapacitySaveSlot[]) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: {
+      action: 'capacity.save',
+      capacity,
+    },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const response = data as { ok?: boolean; code?: string; message?: string; rows?: number };
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api capacity.save no devolvio ok=true');
+  }
+
+  console.log('[DEMO][CAPACITY] saved by manager-api');
+  return response;
 }
