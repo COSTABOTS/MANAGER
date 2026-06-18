@@ -36,6 +36,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
+import { assignTableWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
@@ -1113,6 +1114,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     if (field === 'arrived') {
+      if (isSupabaseDemoRoute()) {
+        try {
+          await saveArrivalWithManagerApi(getReservationSyncId(nextReservation), Boolean(nextReservation.arrived));
+          setLastSync('Sincronizado correctamente');
+          return;
+        } catch (error) {
+          console.warn('[DEMO][RESERVATION] arrive fallback Make', error);
+        }
+      }
+
       await syncValidatedWebhook(getClientWebhook('webhook_arrived'), {
         accion: 'actualizar_llegada',
         id_reserva: getReservationSyncId(nextReservation),
@@ -1124,6 +1135,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         llego: nextReservation.arrived,
       }, ['id_reserva', 'fecha', 'hora'], 'la llegada');
       return;
+    }
+
+    if (isSupabaseDemoRoute()) {
+      try {
+        await assignTableWithManagerApi(getReservationSyncId(nextReservation), String(nextReservation.table));
+        setLastSync('Sincronizado correctamente');
+        return;
+      } catch (error) {
+        console.warn('[DEMO][RESERVATION] assign table fallback Make', error);
+      }
     }
 
     await syncValidatedWebhook(getClientWebhook('webhook_mesa'), {

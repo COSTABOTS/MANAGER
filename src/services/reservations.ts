@@ -1,4 +1,5 @@
 import { mockReservations } from '../mock';
+import { supabase } from '../lib/supabaseClient';
 import type { DateBookingStatusValue, Reservation } from '../types';
 import { createReservationId } from '../utils/reservationId';
 
@@ -38,4 +39,44 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
     date,
     status,
   };
+}
+
+async function callReservationAction(action: 'reservation.arrive' | 'reservation.assignTable', payload: Record<string, unknown>) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: {
+      action,
+      ...payload,
+    },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const response = data as { ok?: boolean; code?: string; message?: string };
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || `${action} no devolvio ok=true`);
+  }
+
+  return response;
+}
+
+export async function saveArrivalWithManagerApi(idReserva: string, llego: boolean) {
+  const response = await callReservationAction('reservation.arrive', { idReserva, llego });
+  console.log('[DEMO][RESERVATION] arrive saved');
+  return response;
+}
+
+export async function assignTableWithManagerApi(idReserva: string, mesa: string) {
+  const response = await callReservationAction('reservation.assignTable', { idReserva, mesa });
+  console.log('[DEMO][RESERVATION] table assigned');
+  return response;
 }

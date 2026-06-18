@@ -9,7 +9,9 @@ type ManagerAction =
   | 'capacity.list'
   | 'settings.get'
   | 'fullybooked.get'
-  | 'fullybooked.set';
+  | 'fullybooked.set'
+  | 'reservation.arrive'
+  | 'reservation.assignTable';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -417,6 +419,36 @@ function findControlRow(values: unknown[][] | undefined, date: string) {
 
   for (let index = 1; index < values.length; index += 1) {
     if (normalizeDateKey(values[index]?.[headers.date]) === targetDate) {
+      return { rowIndex: index, headers };
+    }
+  }
+
+  return { rowIndex: -1, headers };
+}
+
+function getReservationHeaders(values: unknown[][] | undefined) {
+  const headers = values?.[0]?.map((header) => String(header ?? '').trim().toUpperCase()) ?? [];
+  const findIndex = (candidates: string[], fallback: number) => {
+    const index = headers.findIndex((header) => candidates.includes(header));
+    return index >= 0 ? index : fallback;
+  };
+
+  return {
+    idReserva: findIndex(['ID_RESERVA', 'ID RESERVA'], 0),
+    mesa: findIndex(['MESA'], 10),
+    llego: findIndex(['LLEGO', 'LLEGÓ', 'ARRIVED'], 11),
+  };
+}
+
+function findReservationRow(values: unknown[][] | undefined, idReserva: string) {
+  if (!values?.length) {
+    return { rowIndex: -1, headers: getReservationHeaders(values) };
+  }
+
+  const headers = getReservationHeaders(values);
+
+  for (let index = 1; index < values.length; index += 1) {
+    if (toSheetString(values[index]?.[headers.idReserva]) === idReserva) {
       return { rowIndex: index, headers };
     }
   }
@@ -930,6 +962,135 @@ async function setFullyBooked(request: Request, clientId: string, sheetId: strin
   });
 }
 
+async function updateReservationCell(
+  request: Request,
+  sheetId: string,
+  idReserva: string,
+  columnIndex: number,
+  value: string,
+  debug: ManagerApiDebug,
+) {
+  if (!idReserva) {
+    return errorResponse(request, 'ID_RESERVA_REQUIRED', 'ID_RESERVA requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const { rowIndex } = findReservationRow(sheetsData.values, idReserva);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+  }
+
+  const rowNumber = rowIndex + 1;
+  const column = columnLetter(columnIndex);
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`RESERVAS!${column}${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [[value]] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return null;
+}
+
+async function updateReservationArrival(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
+  const rawArrival = body.llego ?? body.arrived;
+  const llego = typeof rawArrival === 'boolean' ? rawArrival : normalizeBoolean(rawArrival);
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
+  const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+  }
+
+  const rowNumber = rowIndex + 1;
+  const column = columnLetter(headers.llego);
+  const value = llego ? 'TRUE' : 'FALSE';
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`RESERVAS!${column}${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [[value]] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'reservation.arrive',
+    client_id: clientId,
+    idReserva,
+    llego,
+  });
+}
+
+async function assignReservationTable(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
+  const mesa = toSheetString(body.mesa ?? body.table);
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
+  const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+  }
+
+  const rowNumber = rowIndex + 1;
+  const column = columnLetter(headers.mesa);
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`RESERVAS!${column}${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [[mesa]] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'reservation.assignTable',
+    client_id: clientId,
+    idReserva,
+    mesa,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
@@ -973,6 +1134,12 @@ Deno.serve(async (request) => {
 
       case 'fullybooked.set':
         return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'reservation.arrive':
+        return await updateReservationArrival(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'reservation.assignTable':
+        return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       // TODO: feedbacks.list
 
