@@ -1322,6 +1322,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isLoadingTables={isLoadingTables}
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
+          isDemoMode={isSupabaseDemoRoute()}
+          clientId={clientConfig?.client_id ?? ''}
+          lastUpdatedAt={lastUpdatedAt}
           onRefreshTables={async () => {
             await loadTables();
           }}

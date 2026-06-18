@@ -1605,6 +1605,63 @@ button:disabled {
   border-top: 1px solid var(--line);
 }
 
+.api-integration-card {
+  padding: 14px;
+  border: 1px solid rgba(53, 95, 157, 0.22);
+  border-radius: 8px;
+  background: rgba(79, 127, 209, 0.06);
+}
+
+.api-integration-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.api-integration-grid div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(53, 95, 157, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.api-integration-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.api-integration-grid strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legacy-webhooks-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcff;
+}
+
+.legacy-webhooks-panel summary {
+  cursor: pointer;
+  color: var(--blue-deep);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.legacy-webhooks-panel[open] summary {
+  margin-bottom: 10px;
+}
+
 .opening-days-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(110px, 1fr));
@@ -1955,6 +2012,7 @@ button:disabled {
   .reports-grid,
   .settings-grid,
   .settings-grid.inner,
+  .api-integration-grid,
   .settings-save-bar,
   .table-manager-form,
   .table-manager-item,

@@ -9,6 +9,9 @@ interface SettingsProps {
   isLoadingTables: boolean;
   isLoadingSettings: boolean;
   settingsMessage: string;
+  isDemoMode?: boolean;
+  clientId?: string;
+  lastUpdatedAt?: string;
   onRefreshTables: () => Promise<void>;
   onCreateTable: (table: Omit<RestaurantTable, 'id' | 'active'>) => Promise<void>;
   onUpdateTable: (table: RestaurantTable) => Promise<void>;
@@ -68,6 +71,9 @@ export function Settings({
   isLoadingTables,
   isLoadingSettings,
   settingsMessage,
+  isDemoMode = false,
+  clientId = '',
+  lastUpdatedAt = '',
   onRefreshTables,
   onCreateTable,
   onUpdateTable,
@@ -227,6 +233,67 @@ export function Settings({
     setSaveState(result === 'error' ? 'error' : 'saved');
   }
 
+  const webhookFields = (
+    <div className="settings-grid inner">
+      <label>
+        Webhook reservas
+        <input value={draftSettings.webhookReservas} onChange={(event) => updateDraft('webhookReservas', event.target.value)} />
+      </label>
+      <label>
+        Webhook leer reservas
+        <input value={draftSettings.webhookLeerReservas} onChange={(event) => updateDraft('webhookLeerReservas', event.target.value)} />
+      </label>
+      <label>
+        Webhook walk-in
+        <input value={draftSettings.webhookWalkin} onChange={(event) => updateDraft('webhookWalkin', event.target.value)} />
+      </label>
+      <label>
+        Webhook llegada
+        <input value={draftSettings.webhookLlegada} onChange={(event) => updateDraft('webhookLlegada', event.target.value)} />
+      </label>
+      <label>
+        Webhook mesa
+        <input value={draftSettings.webhookMesa} onChange={(event) => updateDraft('webhookMesa', event.target.value)} />
+      </label>
+      <label>
+        Webhook fully booked
+        <input value={draftSettings.webhookFullyBooked} onChange={(event) => updateDraft('webhookFullyBooked', event.target.value)} />
+      </label>
+      <label>
+        Webhook cancelar reserva
+        <input value={draftSettings.webhookCancelReservationUrl} onChange={(event) => updateDraft('webhookCancelReservationUrl', event.target.value)} />
+      </label>
+      <label>
+        Webhook leer mesas
+        <input value={draftSettings.webhookGetMesas} onChange={(event) => updateDraft('webhookGetMesas', event.target.value)} />
+      </label>
+      <label>
+        Webhook guardar mesa
+        <input value={draftSettings.webhookSaveMesa} onChange={(event) => updateDraft('webhookSaveMesa', event.target.value)} />
+      </label>
+      <label>
+        Webhook leer capacidad
+        <input value={draftSettings.webhookGetCapacidad} onChange={(event) => updateDraft('webhookGetCapacidad', event.target.value)} />
+      </label>
+      <label>
+        Webhook guardar capacidad
+        <input value={draftSettings.webhookSettingsCapacityUrl} onChange={(event) => updateDraft('webhookSettingsCapacityUrl', event.target.value)} />
+      </label>
+      <label>
+        Webhook shows
+        <input value={draftSettings.webhookShows} onChange={(event) => updateDraft('webhookShows', event.target.value)} />
+      </label>
+      <label>
+        Webhook feedbacks
+        <input value={draftSettings.webhookFeedbacks} onChange={(event) => updateDraft('webhookFeedbacks', event.target.value)} />
+      </label>
+      <label>
+        Webhook settings
+        <input value={draftSettings.webhookSettings} onChange={(event) => updateDraft('webhookSettings', event.target.value)} />
+      </label>
+    </div>
+  );
+
   return (
     <main className="app-shell">
       <section className="top-bar">
@@ -379,63 +446,51 @@ export function Settings({
                 Google Sheet ID
                 <input value={draftSettings.googleSheetId} onChange={(event) => updateDraft('googleSheetId', event.target.value)} />
               </label>
-              <label>
-                Webhook reservas
-                <input value={draftSettings.webhookReservas} onChange={(event) => updateDraft('webhookReservas', event.target.value)} />
-              </label>
-              <label>
-                Webhook walk-in
-                <input value={draftSettings.webhookWalkin} onChange={(event) => updateDraft('webhookWalkin', event.target.value)} />
-              </label>
-              <label>
-                Webhook llegada
-                <input value={draftSettings.webhookLlegada} onChange={(event) => updateDraft('webhookLlegada', event.target.value)} />
-              </label>
-              <label>
-                Webhook mesa
-                <input value={draftSettings.webhookMesa} onChange={(event) => updateDraft('webhookMesa', event.target.value)} />
-              </label>
-              <label>
-                Webhook fully booked
-                <input value={draftSettings.webhookFullyBooked} onChange={(event) => updateDraft('webhookFullyBooked', event.target.value)} />
-              </label>
-              <label>
-                Webhook leer reservas
-                <input value={draftSettings.webhookLeerReservas} onChange={(event) => updateDraft('webhookLeerReservas', event.target.value)} />
-              </label>
-              <label>
-                Webhook cancelar reserva
-                <input value={draftSettings.webhookCancelReservationUrl} onChange={(event) => updateDraft('webhookCancelReservationUrl', event.target.value)} />
-              </label>
-              <label>
-                Webhook leer mesas
-                <input value={draftSettings.webhookGetMesas} onChange={(event) => updateDraft('webhookGetMesas', event.target.value)} />
-              </label>
-              <label>
-                Webhook guardar mesa
-                <input value={draftSettings.webhookSaveMesa} onChange={(event) => updateDraft('webhookSaveMesa', event.target.value)} />
-              </label>
-              <label>
-                Webhook leer capacidad
-                <input value={draftSettings.webhookGetCapacidad} onChange={(event) => updateDraft('webhookGetCapacidad', event.target.value)} />
-              </label>
-              <label>
-                Webhook guardar capacidad
-                <input value={draftSettings.webhookSettingsCapacityUrl} onChange={(event) => updateDraft('webhookSettingsCapacityUrl', event.target.value)} />
-              </label>
-              <label>
-                Webhook shows
-                <input value={draftSettings.webhookShows} onChange={(event) => updateDraft('webhookShows', event.target.value)} />
-              </label>
-              <label>
-                Webhook feedbacks
-                <input value={draftSettings.webhookFeedbacks} onChange={(event) => updateDraft('webhookFeedbacks', event.target.value)} />
-              </label>
-              <label>
-                Webhook settings
-                <input value={draftSettings.webhookSettings} onChange={(event) => updateDraft('webhookSettings', event.target.value)} />
-              </label>
             </div>
+            {isDemoMode ? (
+              <>
+                <div className="settings-subsection api-integration-card">
+                  <div className="section-title compact">
+                    <div>
+                      <p className="eyebrow">Integracion COSTABOTS API</p>
+                      <h2>manager-api</h2>
+                    </div>
+                    <span className="status-pill">ACTIVO</span>
+                  </div>
+                  <div className="api-integration-grid">
+                    <div>
+                      <span>Modo</span>
+                      <strong>manager-api</strong>
+                    </div>
+                    <div>
+                      <span>Estado</span>
+                      <strong>Activo</strong>
+                    </div>
+                    <div>
+                      <span>Google Sheet ID</span>
+                      <strong>{draftSettings.googleSheetId || 'No configurado'}</strong>
+                    </div>
+                    <div>
+                      <span>Client ID</span>
+                      <strong>{clientId || 'No disponible'}</strong>
+                    </div>
+                    {lastUpdatedAt && (
+                      <div>
+                        <span>Ultima sincronizacion</span>
+                        <strong>{lastUpdatedAt}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <details className="settings-subsection legacy-webhooks-panel">
+                  <summary>Avanzado / Legacy Make</summary>
+                  <p className="field-note">Fallback conservado para compatibilidad. En demo, las acciones principales usan manager-api.</p>
+                  {webhookFields}
+                </details>
+              </>
+            ) : (
+              webhookFields
+            )}
             <SwitchRow label="Licencia activa" checked={draftSettings.licenseActive} onChange={(value) => updateDraft('licenseActive', value)} />
 
             <div className="settings-subsection">
