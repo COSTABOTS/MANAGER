@@ -12,7 +12,8 @@ type ManagerAction =
   | 'fullybooked.set'
   | 'reservation.create'
   | 'reservation.arrive'
-  | 'reservation.assignTable';
+  | 'reservation.assignTable'
+  | 'walkin.create';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -1082,6 +1083,75 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   });
 }
 
+async function createWalkIn(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const walkin = (body.walkin ?? {}) as Record<string, unknown>;
+  const idReserva = makeReservationId();
+  console.log(`[MANAGER_API] walkin idReserva=${idReserva}`);
+
+  const nombre = toSheetString(walkin.nombre ?? walkin.name) || 'Walk-in';
+  const fecha = toSheetString(walkin.fecha ?? walkin.date) || new Date().toISOString().slice(0, 10);
+  const hora = toSheetString(walkin.hora ?? walkin.time) || new Intl.DateTimeFormat('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
+  const pax = toSheetNumber(walkin.pax);
+  const habitacion = toSheetString(walkin.habitacion ?? walkin.room);
+  const idioma = toSheetString(walkin.idioma ?? walkin.language) || 'ES';
+  const peticionEspecial = toSheetString(walkin.peticionEspecial ?? walkin.peticiones ?? walkin.specialRequest);
+  const mesa = toSheetString(walkin.mesa ?? walkin.table);
+
+  if (!pax) {
+    return errorResponse(request, 'WALKIN_REQUIRED_FIELDS', 'Faltan pax para crear el walk-in', 400);
+  }
+
+  const rowToAppend = [
+    idReserva,
+    fecha,
+    hora,
+    nombre,
+    '',
+    pax,
+    idioma,
+    peticionEspecial,
+    'CONFIRMADA',
+    'WALK-IN',
+    mesa,
+    'TRUE',
+    'FALSE',
+    habitacion,
+  ];
+  console.log('[MANAGER_API][walkin.create] rowToAppend', rowToAppend);
+
+  const accessToken = await createGoogleAccessToken();
+  const appendResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:N')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [rowToAppend] }),
+    },
+  );
+
+  if (!appendResponse.ok) {
+    const errorBody = await appendResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'walkin.create',
+    client_id: clientId,
+    idReserva,
+  });
+}
+
 async function updateReservationArrival(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -1221,6 +1291,9 @@ Deno.serve(async (request) => {
 
       case 'reservation.assignTable':
         return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+
+      case 'walkin.create':
+        return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
 
       // TODO: feedbacks.list
 

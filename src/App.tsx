@@ -36,7 +36,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import { assignTableWithManagerApi, createManualReservationWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
+import { assignTableWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
@@ -1026,6 +1026,29 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleAddWalkIn(nameOrRoom: string, pax: number) {
+    if (isSupabaseDemoRoute()) {
+      const date = dayStatus.date;
+      const time = getCurrentTime();
+      try {
+        await createWalkInWithManagerApi({
+          nombre: nameOrRoom || 'Walk-in',
+          habitacion: /^\d+$/.test(nameOrRoom) ? nameOrRoom : '',
+          fecha: date,
+          hora: time,
+          pax,
+          idioma: 'ES',
+          peticionEspecial: '',
+          mesa: '',
+        });
+        setLastSync('Mesa añadida correctamente');
+        console.log('[DEMO][WALKIN] refresh list');
+        await loadReservations();
+        return;
+      } catch (error) {
+        console.warn('[DEMO][WALKIN] fallback Make', error);
+      }
+    }
+
     const idReserva = createReservationId();
     const payload: WalkInPayload = {
       nameOrRoom,

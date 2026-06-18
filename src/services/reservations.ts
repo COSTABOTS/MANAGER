@@ -41,7 +41,7 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
   };
 }
 
-async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable', payload: Record<string, unknown>) {
+async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'walkin.create', payload: Record<string, unknown>) {
   const { data: sessionData } = await supabase.auth.getSession();
   const session = sessionData.session;
 
@@ -107,5 +107,28 @@ export async function saveArrivalWithManagerApi(idReserva: string, llego: boolea
 export async function assignTableWithManagerApi(idReserva: string, mesa: string) {
   const response = await callReservationAction('reservation.assignTable', { idReserva, mesa });
   console.log('[DEMO][RESERVATION] table assigned');
+  return response;
+}
+
+export async function createWalkInWithManagerApi(walkin: {
+  nombre: string;
+  pax: number;
+  fecha: string;
+  hora: string;
+  mesa?: string;
+  peticionEspecial?: string;
+  habitacion?: string;
+  idioma?: string;
+}) {
+  const response = await callReservationAction('walkin.create', {
+    walkin: {
+      ...walkin,
+      idioma: walkin.idioma ?? 'ES',
+      mesa: walkin.mesa ?? '',
+      peticionEspecial: walkin.peticionEspecial ?? '',
+      habitacion: walkin.habitacion ?? '',
+    },
+  }) as { ok?: boolean; idReserva?: string };
+  console.log('[DEMO][WALKIN] created', response.idReserva);
   return response;
 }
