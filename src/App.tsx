@@ -27,7 +27,7 @@ import {
 } from './services/clientConfig';
 import type { ExternalClientConfig } from './services/clientConfig';
 import { clearDateBookingStatusStorage, loadDateBookingStatusFromStorage, saveDateBookingStatusToStorage } from './services/dateBookingStatusStorage';
-import { loadFeedbacks as loadFeedbacksFromWebhook } from './services/feedbacks';
+import { loadFeedbacks as loadFeedbacksFromWebhook, loadFeedbacksFromManagerApi } from './services/feedbacks';
 import type { Feedback } from './services/feedbacks';
 import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
 import { loadCapacityFromManagerApi, loadCapacitySettings } from './services/capacitySettings';
@@ -641,16 +641,28 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const feedbacksWebhook = getClientWebhook('webhook_feedbacks') || settings.webhookFeedbacks;
     const sheetId = getClientSheetId();
 
-    if (!feedbacksWebhook.trim()) {
-      setFeedbacks([]);
-      setFeedbacksLoaded(true);
-      setFeedbacksMessage('Webhook de feedbacks no configurado.');
-      return;
-    }
-
     setIsLoadingFeedbacks(true);
 
     try {
+      if (isSupabaseDemoRoute()) {
+        try {
+          const nextFeedbacks = await loadFeedbacksFromManagerApi();
+          setFeedbacks(nextFeedbacks);
+          setFeedbacksLoaded(true);
+          setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavia.');
+          return;
+        } catch (error) {
+          console.warn('[DEMO][MANAGER_API] feedbacks fallback Make', error);
+        }
+      }
+
+      if (!feedbacksWebhook.trim()) {
+        setFeedbacks([]);
+        setFeedbacksLoaded(true);
+        setFeedbacksMessage('Webhook de feedbacks no configurado.');
+        return;
+      }
+
       const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
       setFeedbacks(nextFeedbacks);
       setFeedbacksLoaded(true);

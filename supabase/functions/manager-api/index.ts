@@ -6,6 +6,7 @@ type ManagerAction =
   | 'tables.update'
   | 'tables.delete'
   | 'reservations.list'
+  | 'feedbacks.list'
   | 'capacity.list'
   | 'settings.get'
   | 'fullybooked.get'
@@ -354,6 +355,54 @@ function normalizeCapacity(values: unknown[][] | undefined): SheetRow[] {
       activo,
       active: activo,
       ACTIVO: activo,
+    }];
+  });
+}
+
+function toRatingValue(value: unknown) {
+  const rawValue = toSheetString(value);
+  const starCount = Array.from(rawValue).filter((character) => character === '⭐').length;
+  if (starCount > 0) {
+    return Math.min(5, Math.max(1, starCount));
+  }
+
+  const rating = Number(rawValue.replace(',', '.'));
+  return Number.isFinite(rating) ? Math.min(5, Math.max(0, Math.round(rating))) : 0;
+}
+
+function normalizeFeedbacks(values: unknown[][] | undefined): SheetRow[] {
+  return rowsToObjects(values).flatMap((item, index) => {
+    const fecha = toSheetString(pick(item, ['FECHA', 'fecha', 'DATE', 'date', '0']));
+    const puntuacion = toRatingValue(pick(item, ['PUNTUACION', 'puntuacion', 'RATING', 'rating', '1']));
+    const comentario = toSheetString(pick(item, ['COMENTARIO', 'comentario', 'COMMENT', 'comment', '2']));
+    const cliente = toSheetString(pick(item, ['CLIENTE', 'cliente', 'NOMBRE', 'nombre', '4']));
+    const habitacion = toSheetString(pick(item, ['HABITACION', 'habitacion', 'ROOM', 'room', '5']));
+    const timestamp = toSheetString(pick(item, ['TIMESTAMP', 'timestamp', '6']));
+
+    if (!fecha && !comentario && !cliente && puntuacion === 0) {
+      return [];
+    }
+
+    const id = timestamp || `${fecha}-${cliente}-${index}`;
+    return [{
+      id,
+      date: fecha,
+      fecha,
+      FECHA: fecha,
+      rating: puntuacion,
+      puntuacion,
+      PUNTUACION: puntuacion,
+      comment: comentario,
+      comentario,
+      COMENTARIO: comentario,
+      client: cliente,
+      cliente,
+      CLIENTE: cliente,
+      room: habitacion,
+      habitacion,
+      HABITACION: habitacion,
+      timestamp,
+      TIMESTAMP: timestamp,
     }];
   });
 }
@@ -844,6 +893,24 @@ async function listCapacity(request: Request, clientId: string, sheetId: string,
   });
 }
 
+async function listFeedbacks(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'FEEDBACKS!A:Z', accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const feedbacks = normalizeFeedbacks(sheetsData.values);
+  console.log(`[MANAGER_API] feedbacks=${feedbacks.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'feedbacks.list',
+    client_id: clientId,
+    feedbacks,
+  });
+}
+
 async function getSettings(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -1320,6 +1387,9 @@ Deno.serve(async (request) => {
       case 'reservations.list':
         return await listReservations(request, context.clientId, context.sheetId, debug);
 
+      case 'feedbacks.list':
+        return await listFeedbacks(request, context.clientId, context.sheetId, debug);
+
       case 'capacity.list':
         return await listCapacity(request, context.clientId, context.sheetId, debug);
 
@@ -1346,8 +1416,6 @@ Deno.serve(async (request) => {
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
-
-      // TODO: feedbacks.list
 
       default:
         return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 400, { ...debug, action });

@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabaseClient';
+
 type FeedbackRow = Record<string, unknown>;
 
 interface FeedbacksResponse {
@@ -127,6 +129,37 @@ export async function loadFeedbacks(webhookUrl: string, sheetId?: string): Promi
   });
 
   console.log('Feedbacks normalized', normalizedFeedbacks);
+
+  return normalizedFeedbacks;
+}
+
+export async function loadFeedbacksFromManagerApi(): Promise<Feedback[]> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  const { data, error } = await supabase.functions.invoke('manager-api', {
+    body: { action: 'feedbacks.list' },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const response = data as { ok?: boolean; code?: string; message?: string; feedbacks?: FeedbackRow[] };
+  if (!response?.ok) {
+    throw new Error(response?.code || response?.message || 'manager-api feedbacks.list no devolvio ok=true');
+  }
+
+  const normalizedFeedbacks = (response.feedbacks ?? []).flatMap((row, index) => {
+    const feedback = normalizeFeedback(row, index);
+    return feedback ? [feedback] : [];
+  });
+  console.log('[DEMO][MANAGER_API] feedbacks received', normalizedFeedbacks.length);
 
   return normalizedFeedbacks;
 }
