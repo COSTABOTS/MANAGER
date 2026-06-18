@@ -612,8 +612,9 @@ async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) 
 
   const { data: client, error: clientError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, sheet_id, rest_name')
+    .select('client_id, sheet_id, rest_name, status')
     .eq('client_id', String(profile.client_id).trim())
+    .eq('status', 'ACTIVE')
     .maybeSingle();
 
   if (clientError || !client) {
