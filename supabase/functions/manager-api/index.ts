@@ -1556,6 +1556,17 @@ async function cancelReservation(request: Request, clientId: string, sheetId: st
 }
 
 Deno.serve(async (request) => {
+  console.log(
+    '[MANAGER_API] KEY MODE:',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      ? 'SERVICE_ROLE'
+      : 'ANON',
+  );
+  console.log(
+    '[MANAGER_API] SERVICE ROLE AVAILABLE:',
+    !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+  );
+
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(request) });
   }

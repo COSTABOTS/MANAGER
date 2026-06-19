@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
@@ -421,6 +421,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => (clientConfig ? {} : loadDateBookingStatusFromStorage()));
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
+  const isLoadingReservationsRef = useRef(false);
   const [restaurantTables, setRestaurantTables] = useState<RestaurantTable[]>([]);
   const [isLoadingTables, setIsLoadingTables] = useState(false);
   const [tablesSyncMessage, setTablesSyncMessage] = useState('');
@@ -476,6 +477,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const isDemoClient = Boolean(clientConfig && (clientConfig.IS_DEMO === true || clientConfig.is_demo === true || toSupabaseBoolean(clientConfig.IS_DEMO) || toSupabaseBoolean(clientConfig.is_demo)));
 
   useEffect(() => {
+    isLoadingReservationsRef.current = isLoadingReservations;
+  }, [isLoadingReservations]);
+
+  useEffect(() => {
     if (!clientConfig) {
       return;
     }
@@ -484,6 +489,29 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.log('[BOOT] loading initial reservations only');
       void loadReservations();
     }
+  }, [clientConfig]);
+
+  useEffect(() => {
+    if (!USE_MANAGER_API || !clientConfig || !isValidClientConfig(clientConfig)) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'hidden' || isLoadingReservationsRef.current) {
+        return;
+      }
+
+      void supabase.auth.getSession().then(({ data }) => {
+        if (!data.session || isLoadingReservationsRef.current) {
+          return;
+        }
+
+        console.log('[AUTO_REFRESH] reservations.list');
+        void loadReservations();
+      });
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
   }, [clientConfig]);
 
   useEffect(() => {
