@@ -8,6 +8,42 @@ interface FeedbacksProps {
   onRefresh: () => Promise<void>;
 }
 
+function parseFeedbackDate(value: string) {
+  const rawValue = String(value || '').trim();
+
+  if (!rawValue) {
+    return 0;
+  }
+
+  const dayFirstMatch = rawValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (dayFirstMatch) {
+    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dayFirstMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    ).getTime();
+  }
+
+  const parsed = Date.parse(rawValue);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getFeedbackDateTime(feedback: Feedback) {
+  return Math.max(parseFeedbackDate(feedback.timestamp), parseFeedbackDate(feedback.date));
+}
+
+function getNegativeAlerts(feedbacks: Feedback[]) {
+  return feedbacks
+    .filter((feedback) => Number(feedback.rating) > 0 && Number(feedback.rating) <= 2)
+    .slice()
+    .sort((a, b) => getFeedbackDateTime(b) - getFeedbackDateTime(a))
+    .slice(0, 5);
+}
+
 export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: FeedbacksProps) {
   const [scoreFilter, setScoreFilter] = useState('all');
   const [query, setQuery] = useState('');
@@ -22,11 +58,8 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
     return validFeedbacks.reduce((total, feedback) => total + feedback.rating, 0) / validFeedbacks.length;
   }, [validFeedbacks]);
 
-  const alertFeedbacks = feedbacks
-    .filter((feedback) => feedback.rating > 0 && feedback.rating <= 2)
-    .slice()
-    .sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
-  const latestAlert = alertFeedbacks[0];
+  const negativeAlerts = useMemo(() => getNegativeAlerts(feedbacks), [feedbacks]);
+  const latestAlert = negativeAlerts[0];
 
   const visibleFeedbacks = feedbacks.filter((feedback) => {
     const matchesScore = scoreFilter === 'all' || feedback.rating === Number(scoreFilter);
@@ -66,8 +99,8 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
       </section>
 
       <section className="feedback-alerts-card">
-        {alertFeedbacks.length === 0 ? (
-          <p className="empty-state">Sin incidencias recientes</p>
+        {negativeAlerts.length === 0 ? (
+          <p className="empty-state">No hay alertas negativas recientes.</p>
         ) : (
           <>
             <div className="feedback-last-alert">
@@ -81,7 +114,7 @@ export function Feedbacks({ feedbacks, message, isLoading, onRefresh }: Feedback
             </div>
             {showAlerts && (
               <div className="feedback-alert-list">
-                {alertFeedbacks.map((feedback) => (
+                {negativeAlerts.map((feedback) => (
                   <article className="feedback-alert-item" key={feedback.id}>
                     <span className="alert-dot" aria-hidden="true" />
                     <div>
