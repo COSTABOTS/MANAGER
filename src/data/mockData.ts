@@ -38,6 +38,7 @@ export const mockSettings: ManagerSettings = {
   filtroResenas: true,
   mensajePostCena: false,
   feedbackAlertPhone: '',
+  servicesEnabled: ['CENA'],
   costabotsLogoUrl: '',
   restaurantName: 'Safari Restaurant',
   restaurantLogoUrl: '',

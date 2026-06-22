@@ -288,6 +288,9 @@ function normalizeReservations(values: unknown[][] | undefined): SheetRow[] {
     const llego = normalizeBoolean(pick(item, ['LLEGO', 'llego', '11']));
     const feedbackEnviado = normalizeBoolean(pick(item, ['FEEDBACK_ENVIADO', 'feedback_enviado', '12']));
     const habitacion = toSheetString(pick(item, ['HABITACION', 'habitacion', '13']));
+    const servicio = toSheetString(pick(item, ['SERVICIO', 'servicio', 'service', '16'])) || 'CENA';
+    const paqueteBalinesa = toSheetString(pick(item, ['PAQUETE BALINESA', 'PAQUETE_BALINESA', 'paqueteBalinesa', 'paquete_balinesa', '17']));
+    const recurso = toSheetString(pick(item, ['RECURSO', 'recurso', 'resource', '18']));
 
     return [{
       id: idReserva,
@@ -332,6 +335,15 @@ function normalizeReservations(values: unknown[][] | undefined): SheetRow[] {
       room: habitacion,
       habitacion,
       HABITACION: habitacion,
+      service: servicio,
+      servicio,
+      SERVICIO: servicio,
+      balinesePackage: paqueteBalinesa,
+      paqueteBalinesa,
+      PAQUETE_BALINESA: paqueteBalinesa,
+      resource: recurso,
+      recurso,
+      RECURSO: recurso,
     }];
   });
 }

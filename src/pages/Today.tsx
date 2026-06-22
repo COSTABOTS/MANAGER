@@ -7,7 +7,7 @@ import { WalkInForm } from '../components/WalkInForm';
 import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
-import type { DayState, Reservation } from '../types';
+import type { BookingService, DayState, Reservation } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime } from '../utils/date';
 
@@ -20,6 +20,9 @@ interface TodayProps {
   closingTime: string;
   bookingInterval: 30 | 60;
   reservations: Reservation[];
+  serviceTabs: BookingService[];
+  selectedService: BookingService;
+  onServiceChange: (service: BookingService) => void;
   tableOptions: string[];
   hasLoadedTables: boolean;
   isLoadingTables: boolean;
@@ -57,6 +60,9 @@ export function Today({
   closingTime,
   bookingInterval,
   reservations,
+  serviceTabs,
+  selectedService,
+  onServiceChange,
   tableOptions,
   hasLoadedTables,
   isLoadingTables,
@@ -293,6 +299,20 @@ export function Today({
             <span className="last-updated">Última actualización: {lastUpdatedAt || '--:--:--'}</span>
           </div>
         </div>
+        {serviceTabs.length > 1 && (
+          <div className="segmented-control today-service-tabs" aria-label="Servicio">
+            {serviceTabs.map((service) => (
+              <button
+                key={service}
+                className={selectedService === service ? 'is-active' : undefined}
+                type="button"
+                onClick={() => onServiceChange(service)}
+              >
+                {service}
+              </button>
+            ))}
+          </div>
+        )}
         {isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (

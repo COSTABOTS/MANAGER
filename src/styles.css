@@ -1025,6 +1025,10 @@ button:disabled {
   background: var(--blue-deep);
 }
 
+.today-service-tabs {
+  margin: 0 0 14px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;

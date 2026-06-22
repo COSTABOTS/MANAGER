@@ -1,4 +1,4 @@
-import type { BookingSource, Reservation } from '../types';
+import type { BookingService, BookingSource, Reservation } from '../types';
 import { normalizeBookingStatus } from '../utils/reservationStatus';
 
 export type SheetReservationRow = Record<string, unknown>;
@@ -76,6 +76,16 @@ function normalizeDate(date: string) {
   return value;
 }
 
+function normalizeService(service: string): BookingService {
+  const normalized = service.trim().toUpperCase();
+
+  if (normalized === 'DESAYUNO' || normalized === 'ALMUERZO' || normalized === 'BALINESA') {
+    return normalized;
+  }
+
+  return 'CENA';
+}
+
 export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation | null {
   const idReserva = toStringValue(pick(row, ['id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)', '8']));
 
@@ -86,6 +96,7 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
 
   const origin = toStringValue(pick(row, ['origin', 'origen', 'ORIGEN', 'ORIGEN (K)', '10']));
   const status = toStringValue(pick(row, ['status', 'estado', 'ESTADO', 'ESTADO (H)', '7']));
+  const service = toStringValue(pick(row, ['service', 'servicio', 'SERVICIO', 'SERVICIO (Q)', '16']));
 
   return {
     id: idReserva,
@@ -112,6 +123,11 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
     language: toStringValue(pick(row, ['language', 'idioma', 'IDIOMA', 'IDIOMA (J)', '9'])),
     table: toStringValue(pick(row, ['table', 'mesa', 'MESA', 'MESA (L)', '11'])),
     arrived: toBooleanValue(pick(row, ['arrived', 'llego', 'LLEGO', 'LLEGO (M)', '12'])),
+    service: normalizeService(service),
+    balinesePackage: toStringValue(
+      pick(row, ['balinesePackage', 'paqueteBalinesa', 'paquete_balinesa', 'PAQUETE BALINESA', 'PAQUETE_BALINESA', 'PAQUETE BALINESA (R)', '17']),
+    ),
+    resource: toStringValue(pick(row, ['resource', 'recurso', 'RECURSO', 'RECURSO (S)', '18'])),
     rowNumber: toNumberValue(pick(row, ['rowNumber', 'Row number', '__ROW_NUMBER__'])),
   };
 }

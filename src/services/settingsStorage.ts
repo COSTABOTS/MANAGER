@@ -28,6 +28,7 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     dailyBriefingEnabled: storedSettings.dailyBriefingEnabled ?? mockSettings.dailyBriefingEnabled,
     dailyBriefingTime: storedSettings.dailyBriefingTime ?? mockSettings.dailyBriefingTime,
     feedbackAlertPhone: storedSettings.feedbackAlertPhone ?? mockSettings.feedbackAlertPhone,
+    servicesEnabled: storedSettings.servicesEnabled ?? mockSettings.servicesEnabled,
     openingDays: {
       ...mockSettings.openingDays,
       ...(storedSettings.openingDays ?? {}),

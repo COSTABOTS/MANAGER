@@ -37,7 +37,7 @@ import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, 
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
-import type { BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
+import type { BookingService, BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
@@ -50,8 +50,36 @@ const SETTINGS_WEBHOOK_FALLBACK = '';
 const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
+const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA'];
 
 console.log('[App loaded]', window.location.pathname);
+
+function normalizeBookingService(value: unknown): BookingService {
+  const service = String(value ?? '').trim().toUpperCase();
+  if (service === 'DESAYUNO' || service === 'ALMUERZO' || service === 'BALINESA') {
+    return service;
+  }
+
+  return 'CENA';
+}
+
+function normalizeEnabledServices(services: unknown): BookingService[] {
+  const source = Array.isArray(services)
+    ? services
+    : String(services ?? '')
+        .split(/[,\n;]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+  const normalized = source.map(normalizeBookingService);
+  const uniqueServices = normalized.filter((service, index) => normalized.indexOf(service) === index);
+
+  return uniqueServices.length > 0 ? uniqueServices : ['CENA'];
+}
+
+function getTodayTabServices(services: BookingService[]): BookingService[] {
+  const visibleServices = services.filter((service) => TODAY_TAB_SERVICES.includes(service));
+  return visibleServices.length > 0 ? visibleServices : ['CENA'];
+}
 
 function clearLoginSession() {
   sessionStorage.removeItem(LOGIN_FLAG_KEY);
@@ -209,6 +237,15 @@ function normalizeDemoSource(value: unknown): Reservation['source'] {
   return 'BOT';
 }
 
+function normalizeDemoService(value: unknown): BookingService {
+  const service = toDemoString(value).toUpperCase();
+  if (service === 'DESAYUNO' || service === 'ALMUERZO' || service === 'BALINESA') {
+    return service;
+  }
+
+  return 'CENA';
+}
+
 function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reservation[] {
   return rows.flatMap((row) => {
     const idReserva = toDemoString(pickDemoReservationValue(row, ['idReserva', 'ID_RESERVA', '0']));
@@ -232,6 +269,9 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
       table: toDemoString(pickDemoReservationValue(row, ['mesa', 'MESA', '10'])),
       arrived: toDemoBoolean(pickDemoReservationValue(row, ['llego', 'LLEGO', '11'])),
       room: toDemoString(pickDemoReservationValue(row, ['habitacion', 'HABITACION', '12'])),
+      service: normalizeDemoService(pickDemoReservationValue(row, ['servicio', 'SERVICIO', 'service', '16'])),
+      balinesePackage: toDemoString(pickDemoReservationValue(row, ['paqueteBalinesa', 'PAQUETE_BALINESA', 'PAQUETE BALINESA', '17'])),
+      resource: toDemoString(pickDemoReservationValue(row, ['recurso', 'RECURSO', 'resource', '18'])),
     }];
   });
 }
@@ -436,6 +476,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [settingsMessage, setSettingsMessage] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
+  const [selectedTodayService, setSelectedTodayService] = useState<BookingService>('CENA');
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
     setSettings((current) => {
@@ -445,12 +486,26 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     });
   }
 
-  const todayReservations = useMemo(
+  const enabledServices = useMemo(() => normalizeEnabledServices(settings.servicesEnabled), [settings.servicesEnabled]);
+  const todayTabServices = useMemo(() => getTodayTabServices(enabledServices), [enabledServices]);
+
+  useEffect(() => {
+    if (!todayTabServices.includes(selectedTodayService)) {
+      setSelectedTodayService(todayTabServices[0] ?? 'CENA');
+    }
+  }, [selectedTodayService, todayTabServices]);
+
+  const todayActiveReservations = useMemo(
     () =>
       allReservations
         .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation))
         .sort((a, b) => a.time.localeCompare(b.time)),
     [allReservations, dayStatus.date],
+  );
+
+  const todayReservations = useMemo(
+    () => todayActiveReservations.filter((reservation) => normalizeBookingService(reservation.service) === selectedTodayService),
+    [selectedTodayService, todayActiveReservations],
   );
 
   const reservationsList = useMemo(() => allReservations, [allReservations]);
@@ -1698,6 +1753,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         closingTime={settings.closingTime}
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
+        serviceTabs={todayTabServices}
+        selectedService={selectedTodayService}
+        onServiceChange={setSelectedTodayService}
         tableOptions={activeTableOptions}
         hasLoadedTables={hasLoadedTables}
         isLoadingTables={isLoadingTables}

@@ -1,4 +1,4 @@
-import type { ManagerSettings, Weekday } from '../types';
+import type { BookingService, ManagerSettings, Weekday } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 type SettingsRow = Record<string, unknown>;
@@ -21,6 +21,7 @@ const DEFAULT_OPERATIONAL_SETTINGS = {
   POST_DINNER_MESSAGE_ENABLED: false,
   REVIEW_FILTER_ENABLED: true,
   FEEDBACK_ALERT_PHONE: '',
+  SERVICES_ENABLED: ['CENA'] as BookingService[],
   OPENING_TIME: '18:00',
   CLOSING_TIME: '21:30',
   BOOKING_INTERVAL: 30,
@@ -77,6 +78,21 @@ function toBooleanValue(value: unknown, fallback: boolean) {
 function toNumberValue(value: unknown, fallback: number) {
   const numberValue = Number(toStringValue(value).replace(',', '.'));
   return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function toServicesEnabled(value: unknown, fallback: BookingService[]) {
+  const allowedServices: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'];
+  const items = Array.isArray(value)
+    ? value
+    : toStringValue(unwrapValue(value))
+        .split(/[,\n;]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+  const services = items
+    .map((item) => String(item).trim().toUpperCase())
+    .filter((item): item is BookingService => allowedServices.includes(item as BookingService));
+
+  return services.length > 0 ? services : fallback;
 }
 
 function getRowValue(row: SettingsRow, keys: string[]) {
@@ -160,6 +176,7 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     openingDays[appKey] = toBooleanValue(settingsMap[settingKey], DEFAULT_OPERATIONAL_SETTINGS[settingKey] as boolean);
   });
 
+  const servicesEnabledSetting = (settingsMap as SettingsValueMap).SERVICES_ENABLED ?? (settingsMap as SettingsValueMap).services_enabled;
   const normalizedSettings: ManagerSettings = {
     ...currentSettings,
     reservasActivas: toBooleanValue(settingsMap.BOOKINGS_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.BOOKINGS_ENABLED),
@@ -172,6 +189,7 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     mensajePostCena: toBooleanValue(settingsMap.POST_DINNER_MESSAGE_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_ENABLED),
     filtroResenas: toBooleanValue(settingsMap.REVIEW_FILTER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.REVIEW_FILTER_ENABLED),
     feedbackAlertPhone: toStringValue(settingsMap.FEEDBACK_ALERT_PHONE),
+    servicesEnabled: toServicesEnabled(servicesEnabledSetting, DEFAULT_OPERATIONAL_SETTINGS.SERVICES_ENABLED),
     openingTime: toStringValue(settingsMap.OPENING_TIME) || DEFAULT_OPERATIONAL_SETTINGS.OPENING_TIME,
     closingTime: toStringValue(settingsMap.CLOSING_TIME) || DEFAULT_OPERATIONAL_SETTINGS.CLOSING_TIME,
     bookingInterval: toNumberValue(settingsMap.BOOKING_INTERVAL, DEFAULT_OPERATIONAL_SETTINGS.BOOKING_INTERVAL) === 60 ? 60 : 30,

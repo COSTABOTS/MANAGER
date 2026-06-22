@@ -1,5 +1,6 @@
 export type BookingStatus = 'CONFIRMADA' | 'CANCELADA';
 export type BookingSource = 'LANDbot' | 'BOT' | 'WALKIN' | 'WEB' | 'HOTEL' | 'MANUAL';
+export type BookingService = 'DESAYUNO' | 'ALMUERZO' | 'CENA' | 'BALINESA';
 export type DateBookingStatusValue = 'open' | 'fully_booked';
 export type DateBookingStatus = Record<string, DateBookingStatusValue>;
 
@@ -18,6 +19,9 @@ export interface Reservation {
   language?: string;
   table: string;
   arrived: boolean;
+  service?: BookingService;
+  balinesePackage?: string;
+  resource?: string;
   rowNumber?: number;
 }
 
@@ -88,6 +92,7 @@ export interface ManagerSettings {
   filtroResenas: boolean;
   mensajePostCena: boolean;
   feedbackAlertPhone: string;
+  servicesEnabled: BookingService[];
   costabotsLogoUrl: string;
   restaurantName: string;
   restaurantLogoUrl: string;
