@@ -7,7 +7,7 @@ import { WalkInForm } from '../components/WalkInForm';
 import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
-import type { BookingService, DayState, Reservation } from '../types';
+import type { BookingService, DayState, ReservableResource, Reservation } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime } from '../utils/date';
 
@@ -20,6 +20,7 @@ interface TodayProps {
   closingTime: string;
   bookingInterval: 30 | 60;
   reservations: Reservation[];
+  reservableResources: ReservableResource[];
   serviceTabs: BookingService[];
   selectedService: BookingService;
   onServiceChange: (service: BookingService) => void;
@@ -51,6 +52,25 @@ const EMPTY_MANUAL_RESERVATION = {
   specialRequest: '',
 };
 
+const EMPTY_BALINESE_DRAFT = {
+  name: '',
+  room: '',
+  phone: '',
+  adults: 2,
+  children: 0,
+  package: 'BASIC' as 'BASIC' | 'PREMIUM',
+  specialRequest: '',
+};
+
+const BALINESE_PACKAGES = {
+  BASIC: '50€ Agua + fruta',
+  PREMIUM: '100€ Agua + fruta + almuerzo en Safari',
+};
+
+function normalizeResourceName(value: string | undefined) {
+  return String(value ?? '').trim().toUpperCase();
+}
+
 export function Today({
   dayStatus,
   lastSync,
@@ -60,6 +80,7 @@ export function Today({
   closingTime,
   bookingInterval,
   reservations,
+  reservableResources,
   serviceTabs,
   selectedService,
   onServiceChange,
@@ -83,6 +104,9 @@ export function Today({
   const [isLoadingToday, setIsLoadingToday] = useState(false);
   const [todayError, setTodayError] = useState<string | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [selectedBalineseResource, setSelectedBalineseResource] = useState<ReservableResource | null>(null);
+  const [balineseDraft, setBalineseDraft] = useState(EMPTY_BALINESE_DRAFT);
+  const [balineseError, setBalineseError] = useState('');
   const [manualError, setManualError] = useState('');
   const [isToastVisible, setIsToastVisible] = useState(false);
   const timeSlots = useMemo(() => generateTimeSlots(openingTime, closingTime, bookingInterval), [bookingInterval, closingTime, openingTime]);
@@ -152,6 +176,22 @@ export function Today({
   }, [isManualModalOpen]);
 
   const displayReservations = reservations;
+  const activeBalineseResources = useMemo(
+    () =>
+      reservableResources
+        .filter((resource) => resource.active)
+        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name)),
+    [reservableResources],
+  );
+  const balineseReservationsByResource = useMemo(
+    () =>
+      new Map(
+        reservations
+          .filter((reservation) => normalizeResourceName(reservation.resource))
+          .map((reservation) => [normalizeResourceName(reservation.resource), reservation]),
+      ),
+    [reservations],
+  );
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
   const displayTotalPax = totalPax;
@@ -187,6 +227,53 @@ export function Today({
   function closeManualModal() {
     resetManualDraft();
     setIsManualModalOpen(false);
+  }
+
+  function updateBalineseDraft<T extends keyof typeof balineseDraft>(key: T, value: (typeof balineseDraft)[T]) {
+    setBalineseDraft((current) => ({ ...current, [key]: value }));
+    setBalineseError('');
+  }
+
+  function closeBalineseModal() {
+    setSelectedBalineseResource(null);
+    setBalineseDraft(EMPTY_BALINESE_DRAFT);
+    setBalineseError('');
+  }
+
+  async function handleBalineseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedBalineseResource) {
+      return;
+    }
+
+    const pax = balineseDraft.adults + balineseDraft.children;
+    const maxCapacity = Math.min(selectedBalineseResource.capacity || 4, 4);
+
+    if (!balineseDraft.name.trim() && !balineseDraft.room.trim()) {
+      setBalineseError('Introduce al menos nombre o habitación.');
+      return;
+    }
+
+    if (pax < 1 || pax > maxCapacity) {
+      setBalineseError(`La capacidad máxima de este recurso es ${maxCapacity} personas.`);
+      return;
+    }
+
+    await onAddManualReservation({
+      date: dayStatus.date,
+      time: '00:00',
+      name: balineseDraft.name.trim(),
+      room: balineseDraft.room.trim(),
+      phone: balineseDraft.phone.trim(),
+      pax,
+      specialRequest: balineseDraft.specialRequest.trim(),
+      service: 'BALINESA',
+      balinesePackage: balineseDraft.package,
+      resource: selectedBalineseResource.name,
+    });
+
+    closeBalineseModal();
   }
 
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -278,12 +365,24 @@ export function Today({
       </section>
 
       <section className="table-section">
-        <div className="section-title">
-          <div>
-            <p className="eyebrow">Turno de hoy</p>
-            <h2>Reservas</h2>
+        <div className="today-reservations-toolbar">
+          <div className="today-service-tabs-area">
+            {serviceTabs.length > 1 && (
+              <div className="segmented-control today-service-tabs" aria-label="Servicio">
+                {serviceTabs.map((service) => (
+                  <button
+                    key={service}
+                    className={selectedService === service ? 'is-active' : undefined}
+                    type="button"
+                    onClick={() => onServiceChange(service)}
+                  >
+                    {service}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="reservation-actions">
+          <div className="today-refresh-actions">
             <button
               className="secondary-button"
               type="button"
@@ -292,28 +391,42 @@ export function Today({
             >
               Actualizar datos
             </button>
-            <span className="reservation-count">
-              <Plus size={16} />
-              {displayReservations.length} reservas
-            </span>
             <span className="last-updated">Última actualización: {lastUpdatedAt || '--:--:--'}</span>
           </div>
         </div>
-        {serviceTabs.length > 1 && (
-          <div className="segmented-control today-service-tabs" aria-label="Servicio">
-            {serviceTabs.map((service) => (
-              <button
-                key={service}
-                className={selectedService === service ? 'is-active' : undefined}
-                type="button"
-                onClick={() => onServiceChange(service)}
-              >
-                {service}
-              </button>
-            ))}
+        {selectedService === 'BALINESA' ? (
+          <div className="balinese-resource-grid">
+            {activeBalineseResources.length === 0 && <div className="sync-status">No hay recursos activos configurados.</div>}
+            {activeBalineseResources.map((resource) => {
+              const reservedReservation = balineseReservationsByResource.get(normalizeResourceName(resource.name));
+              const isReserved = Boolean(reservedReservation);
+
+              return (
+                <article className={`balinese-resource-card ${isReserved ? 'is-reserved' : 'is-free'}`} key={resource.id}>
+                  <div className="balinese-resource-header">
+                    <strong>{resource.name}</strong>
+                    <span>{isReserved ? 'Reservada' : 'Libre'}</span>
+                  </div>
+                  <p>Capacidad: {resource.capacity || 4}</p>
+                  {reservedReservation ? (
+                    <div className="balinese-reservation-summary">
+                      <span>Nombre: {reservedReservation.name || '-'}</span>
+                      <span>Hab: {reservedReservation.room || '-'}</span>
+                      <span>Paquete: {reservedReservation.balinesePackage || '-'}</span>
+                      <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservedReservation)}>
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setSelectedBalineseResource(resource)}>
+                      Reservar
+                    </button>
+                  )}
+                </article>
+              );
+            })}
           </div>
-        )}
-        {isLoadingToday ? (
+        ) : isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (
           <div className="sync-status">No se pudieron cargar reservas desde Make.</div>
@@ -386,6 +499,65 @@ export function Today({
 
             <div className="modal-actions">
               <button className="secondary-button" type="button" onClick={closeManualModal}>
+                Cancelar
+              </button>
+              <button type="submit">Guardar reserva</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {selectedBalineseResource && (
+        <div className="modal-backdrop" role="presentation" onPointerDown={closeBalineseModal}>
+          <form className="show-modal manual-modal" onPointerDown={(event) => event.stopPropagation()} onSubmit={handleBalineseSubmit}>
+            <div className="section-title compact">
+              <div>
+                <p className="eyebrow">Reservar balinesa</p>
+                <h2>{selectedBalineseResource.name}</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={closeBalineseModal} aria-label="Cerrar">
+                <X size={22} />
+              </button>
+            </div>
+
+            {balineseError && <p className="form-error">{balineseError}</p>}
+
+            <div className="manual-form-grid">
+              <label>
+                Nombre
+                <input value={balineseDraft.name} onChange={(event) => updateBalineseDraft('name', event.target.value)} />
+              </label>
+              <label>
+                Habitación
+                <input value={balineseDraft.room} onChange={(event) => updateBalineseDraft('room', event.target.value)} />
+              </label>
+              <label>
+                Teléfono
+                <input value={balineseDraft.phone} onChange={(event) => updateBalineseDraft('phone', event.target.value)} />
+              </label>
+              <label>
+                Adultos
+                <input min={0} max={4} type="number" value={balineseDraft.adults} onChange={(event) => updateBalineseDraft('adults', Number(event.target.value))} />
+              </label>
+              <label>
+                Niños
+                <input min={0} max={4} type="number" value={balineseDraft.children} onChange={(event) => updateBalineseDraft('children', Number(event.target.value))} />
+              </label>
+              <label>
+                Paquete
+                <select value={balineseDraft.package} onChange={(event) => updateBalineseDraft('package', event.target.value as 'BASIC' | 'PREMIUM')}>
+                  <option value="BASIC">BASIC - {BALINESE_PACKAGES.BASIC}</option>
+                  <option value="PREMIUM">PREMIUM - {BALINESE_PACKAGES.PREMIUM}</option>
+                </select>
+              </label>
+              <label className="manual-form-wide">
+                Petición especial
+                <input value={balineseDraft.specialRequest} onChange={(event) => updateBalineseDraft('specialRequest', event.target.value)} />
+              </label>
+            </div>
+
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={closeBalineseModal}>
                 Cancelar
               </button>
               <button type="submit">Guardar reserva</button>

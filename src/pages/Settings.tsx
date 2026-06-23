@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ManagerSettings, RestaurantTable, RestaurantTableType, Weekday } from '../types';
+import type { BookingService, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 
 interface SettingsProps {
   settings: ManagerSettings;
   restaurantTables: RestaurantTable[];
+  reservableResources: ReservableResource[];
   tableSyncMessage: string;
+  resourcesSyncMessage: string;
   isLoadingTables: boolean;
+  isLoadingResources: boolean;
   isLoadingSettings: boolean;
   settingsMessage: string;
   isDemoMode?: boolean;
@@ -17,12 +20,16 @@ interface SettingsProps {
   onUpdateTable: (table: RestaurantTable) => Promise<void>;
   onDeactivateTable: (table: RestaurantTable) => Promise<void>;
   onDeleteTable: (table: RestaurantTable) => Promise<void>;
+  onRefreshResources: () => Promise<void>;
+  onCreateResource: (resource: Omit<ReservableResource, 'id' | 'active'>) => Promise<void>;
+  onUpdateResource: (resource: ReservableResource) => Promise<void>;
+  onDeleteResource: (resource: ReservableResource) => Promise<void>;
   onSettingsSave: (settings: ManagerSettings) => Promise<'success' | 'error' | 'skipped'>;
 }
 
 type ReservationInterval = 30 | 60;
 type SlotCapacity = Record<string, number>;
-type SettingsTab = 'general' | 'capacity' | 'tables' | 'advanced';
+type SettingsTab = 'general' | 'capacity' | 'tables' | 'resources' | 'advanced';
 
 const userRole: 'admin' | 'manager' = 'admin';
 const DEFAULT_SLOT_CAPACITY = 40;
@@ -45,11 +52,20 @@ const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
   { key: 'saturday', label: 'Sabado' },
   { key: 'sunday', label: 'Domingo' },
 ];
-
+const SERVICE_HOUR_FIELDS: Array<{ key: ServiceWithHours; label: string }> = [
+  { key: 'DESAYUNO', label: 'Desayuno' },
+  { key: 'ALMUERZO', label: 'Almuerzo' },
+  { key: 'CENA', label: 'Cena' },
+];
 const EMPTY_TABLE_FORM = {
   name: '',
   type: 'interior' as RestaurantTableType,
   capacity: 2,
+};
+const EMPTY_RESOURCE_FORM = {
+  name: '',
+  zone: 'PISCINA',
+  capacity: 4,
 };
 
 function rebuildSlotCapacity(
@@ -68,8 +84,11 @@ function rebuildSlotCapacity(
 export function Settings({
   settings,
   restaurantTables,
+  reservableResources,
   tableSyncMessage,
+  resourcesSyncMessage,
   isLoadingTables,
+  isLoadingResources,
   isLoadingSettings,
   settingsMessage,
   isDemoMode = false,
@@ -80,10 +99,16 @@ export function Settings({
   onUpdateTable,
   onDeactivateTable,
   onDeleteTable,
+  onRefreshResources,
+  onCreateResource,
+  onUpdateResource,
+  onDeleteResource,
   onSettingsSave,
 }: SettingsProps) {
   const [draftSettings, setDraftSettings] = useState(settings);
   const [tableForm, setTableForm] = useState(EMPTY_TABLE_FORM);
+  const [resourceForm, setResourceForm] = useState(EMPTY_RESOURCE_FORM);
+  const [resourceDrafts, setResourceDrafts] = useState<Record<string, { name: string; zone: string; capacity: number; order: number }>>({});
   const [tableDrafts, setTableDrafts] = useState<Record<string, { name: string; type: RestaurantTableType; capacity: number; order: number }>>({});
   const [tableToDelete, setTableToDelete] = useState<RestaurantTable | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
@@ -109,6 +134,28 @@ export function Settings({
       ),
     );
   }, [restaurantTables]);
+
+  useEffect(() => {
+    setResourceDrafts(
+      Object.fromEntries(
+        reservableResources.map((resource, index) => [
+          resource.id,
+          {
+            name: resource.name,
+            zone: resource.zone,
+            capacity: resource.capacity,
+            order: resource.order ?? index + 1,
+          },
+        ]),
+      ),
+    );
+  }, [reservableResources]);
+
+  useEffect(() => {
+    if (activeSettingsTab === 'resources') {
+      console.log('[RESOURCES][RENDER]', reservableResources);
+    }
+  }, [activeSettingsTab, reservableResources]);
 
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftSettings) !== JSON.stringify(settings), [draftSettings, settings]);
 
@@ -178,6 +225,34 @@ export function Settings({
     }));
   }
 
+  function updateServiceHour(service: ServiceWithHours, field: 'start' | 'end', value: string) {
+    setDraftSettings((current) => ({
+      ...current,
+      serviceHours: {
+        ...current.serviceHours,
+        [service]: {
+          ...current.serviceHours[service],
+          [field]: value,
+        },
+      },
+    }));
+  }
+
+  function updateServiceEnabled(service: BookingService, enabled: boolean) {
+    setDraftSettings((current) => {
+      const currentServices: BookingService[] = current.servicesEnabled.length > 0 ? current.servicesEnabled : ['CENA'];
+      const nextServices = enabled
+        ? [...currentServices, service]
+        : currentServices.filter((item) => item !== service);
+      const uniqueServices = nextServices.filter((item, index) => nextServices.indexOf(item) === index);
+
+      return {
+        ...current,
+        servicesEnabled: uniqueServices.length > 0 ? uniqueServices : ['CENA'],
+      };
+    });
+  }
+
   function addTable() {
     const name = tableForm.name.trim();
     if (!name) {
@@ -218,6 +293,60 @@ export function Settings({
       capacity: draft.capacity,
       order: draft.order,
     });
+  }
+
+  function addResource() {
+    const name = resourceForm.name.trim();
+    if (!name) {
+      return;
+    }
+
+    void onCreateResource({
+      name,
+      recurso: name,
+      zone: resourceForm.zone,
+      zona: resourceForm.zone,
+      capacity: resourceForm.capacity,
+      order: reservableResources.length + 1,
+    });
+    setResourceForm(EMPTY_RESOURCE_FORM);
+  }
+
+  function updateResourceDraft(resourceId: string, nextDraft: Partial<{ name: string; zone: string; capacity: number; order: number }>) {
+    setResourceDrafts((current) => ({
+      ...current,
+      [resourceId]: {
+        ...current[resourceId],
+        ...nextDraft,
+      },
+    }));
+  }
+
+  function updateResource(resource: ReservableResource, nextResource: Partial<ReservableResource>) {
+    void onUpdateResource({ ...resource, ...nextResource });
+  }
+
+  function saveResource(resource: ReservableResource) {
+    const draft = resourceDrafts[resource.id];
+    const name = draft?.name.trim();
+
+    if (!draft || !name) {
+      return;
+    }
+
+    void onUpdateResource({
+      ...resource,
+      name,
+      recurso: name,
+      zone: draft.zone,
+      zona: draft.zone,
+      capacity: draft.capacity,
+      order: draft.order,
+    });
+  }
+
+  function deleteResource(resource: ReservableResource) {
+    void onDeleteResource(resource);
   }
 
   async function confirmDeleteTable() {
@@ -320,6 +449,7 @@ export function Settings({
             { key: 'general' as const, label: 'General' },
             { key: 'capacity' as const, label: 'Capacidad' },
             { key: 'tables' as const, label: 'Mesas' },
+            { key: 'resources' as const, label: 'Recursos' },
             { key: 'advanced' as const, label: 'Avanzado' },
           ].map((tab) => (
             <button
@@ -378,6 +508,49 @@ export function Settings({
                   <option value={60}>60 minutos</option>
                 </select>
               </label>
+            </div>
+          </div>
+
+          <div className="settings-subsection">
+            <p className="eyebrow">Horarios de servicio</p>
+            <label className="service-enabled-toggle service-enabled-toggle-inline">
+              <input
+                type="checkbox"
+                checked={draftSettings.servicesEnabled.includes('BALINESA')}
+                onChange={(event) => updateServiceEnabled('BALINESA', event.target.checked)}
+              />
+              <strong>Balinesa</strong>
+              <span className="muted-cell">Sin horario operativo todavia</span>
+            </label>
+            <div className="settings-grid inner">
+              {SERVICE_HOUR_FIELDS.map((service) => (
+                <div className="service-hours-row" key={service.key}>
+                  <label className="service-enabled-toggle">
+                    <input
+                      type="checkbox"
+                      checked={draftSettings.servicesEnabled.includes(service.key)}
+                      onChange={(event) => updateServiceEnabled(service.key, event.target.checked)}
+                    />
+                    <strong>{service.label}</strong>
+                  </label>
+                  <label>
+                    Inicio
+                    <input
+                      type="time"
+                      value={draftSettings.serviceHours[service.key].start}
+                      onChange={(event) => updateServiceHour(service.key, 'start', event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Fin
+                    <input
+                      type="time"
+                      value={draftSettings.serviceHours[service.key].end}
+                      onChange={(event) => updateServiceHour(service.key, 'end', event.target.value)}
+                    />
+                  </label>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -448,7 +621,7 @@ export function Settings({
         </article>
         )}
 
-        {userRole === 'admin' && (!isDemoMode || activeSettingsTab === 'advanced' || activeSettingsTab === 'tables') && (
+        {userRole === 'admin' && (!isDemoMode || activeSettingsTab === 'advanced' || activeSettingsTab === 'tables' || activeSettingsTab === 'resources') && (
           <article className="settings-card admin-card">
             {(!isDemoMode || activeSettingsTab === 'advanced') && (
               <>
@@ -611,6 +784,79 @@ export function Settings({
                         title={table.mesaId ? 'Borrar mesa definitivamente' : 'No se puede borrar: falta ID_MESA'}
                         onClick={() => setTableToDelete(table)}
                       >
+                        Borrar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            )}
+
+            {(!isDemoMode || activeSettingsTab === 'resources') && (
+            <div className="settings-subsection">
+              <div className="section-title compact">
+                <div>
+                  <p className="eyebrow">Costabots Admin</p>
+                  <h2>Recursos</h2>
+                </div>
+                <button className="secondary-button" type="button" disabled={isLoadingResources} onClick={() => void onRefreshResources()}>
+                  {isLoadingResources ? 'Actualizando...' : 'Actualizar recursos'}
+                </button>
+              </div>
+
+              <div className="table-manager-form">
+                <label>
+                  Nombre recurso
+                  <input value={resourceForm.name} onChange={(event) => setResourceForm((current) => ({ ...current, name: event.target.value }))} placeholder="BALINESA_1" />
+                </label>
+                <label>
+                  Zona
+                  <input value={resourceForm.zone} onChange={(event) => setResourceForm((current) => ({ ...current, zone: event.target.value }))} placeholder="PISCINA" />
+                </label>
+                <label>
+                  Capacidad
+                  <input
+                    type="number"
+                    min={1}
+                    value={resourceForm.capacity}
+                    onChange={(event) => setResourceForm((current) => ({ ...current, capacity: Number(event.target.value) }))}
+                  />
+                </label>
+                <button type="button" onClick={addResource}>
+                  Añadir recurso
+                </button>
+              </div>
+
+              {resourcesSyncMessage && <p className="sync-message">{resourcesSyncMessage}</p>}
+
+              <div className="table-manager-list">
+                {reservableResources.length === 0 && <p className="empty-state">No hay recursos configurados.</p>}
+                {reservableResources.map((resource) => {
+                  const resourceDraft = resourceDrafts[resource.id] ?? {
+                    name: resource.name,
+                    zone: resource.zone,
+                    capacity: resource.capacity,
+                    order: resource.order ?? 1,
+                  };
+
+                  return (
+                    <div className={`table-manager-item resource-manager-item ${resource.active ? '' : 'is-inactive'}`} key={resource.id}>
+                      <input value={resourceDraft.name} onChange={(event) => updateResourceDraft(resource.id, { name: event.target.value })} />
+                      <input value={resourceDraft.zone} onChange={(event) => updateResourceDraft(resource.id, { zone: event.target.value })} />
+                      <input
+                        type="number"
+                        min={1}
+                        value={resourceDraft.capacity}
+                        onChange={(event) => updateResourceDraft(resource.id, { capacity: Number(event.target.value) })}
+                      />
+                      <button className={`compact-toggle ${resource.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => updateResource(resource, { active: !resource.active })}>
+                        <span>{resource.active ? 'Activa' : 'Inactiva'}</span>
+                      </button>
+                      <button className="secondary-button compact-action" type="button" onClick={() => saveResource(resource)}>
+                        Guardar
+                      </button>
+                      <button className="danger-button" type="button" onClick={() => deleteResource(resource)}>
                         Borrar
                       </button>
                     </div>

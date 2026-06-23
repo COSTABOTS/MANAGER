@@ -22,6 +22,12 @@ const DEFAULT_OPERATIONAL_SETTINGS = {
   REVIEW_FILTER_ENABLED: true,
   FEEDBACK_ALERT_PHONE: '',
   SERVICES_ENABLED: ['CENA'] as BookingService[],
+  DESAYUNO_START: '08:00',
+  DESAYUNO_END: '10:30',
+  ALMUERZO_START: '12:00',
+  ALMUERZO_END: '16:00',
+  CENA_START: '18:00',
+  CENA_END: '21:30',
   OPENING_TIME: '18:00',
   CLOSING_TIME: '21:30',
   BOOKING_INTERVAL: 30,
@@ -78,6 +84,25 @@ function toBooleanValue(value: unknown, fallback: boolean) {
 function toNumberValue(value: unknown, fallback: number) {
   const numberValue = Number(toStringValue(value).replace(',', '.'));
   return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeTimeValue(value: unknown, fallback: string) {
+  const rawValue = toStringValue(value);
+  const timeMatch = rawValue.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+
+  if (!timeMatch) {
+    return fallback;
+  }
+
+  const [, hours, minutes] = timeMatch;
+  const hourNumber = Number(hours);
+  const minuteNumber = Number(minutes);
+
+  if (!Number.isInteger(hourNumber) || !Number.isInteger(minuteNumber) || hourNumber < 0 || hourNumber > 23 || minuteNumber < 0 || minuteNumber > 59) {
+    return fallback;
+  }
+
+  return `${String(hourNumber).padStart(2, '0')}:${String(minuteNumber).padStart(2, '0')}`;
 }
 
 function toServicesEnabled(value: unknown, fallback: BookingService[]) {
@@ -147,6 +172,13 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
     POST_DINNER_MESSAGE_ENABLED: settings.mensajePostCena,
     REVIEW_FILTER_ENABLED: settings.filtroResenas,
     FEEDBACK_ALERT_PHONE: settings.feedbackAlertPhone,
+    SERVICES_ENABLED: (settings.servicesEnabled.length > 0 ? settings.servicesEnabled : ['CENA']).join(','),
+    DESAYUNO_START: settings.serviceHours.DESAYUNO.start,
+    DESAYUNO_END: settings.serviceHours.DESAYUNO.end,
+    ALMUERZO_START: settings.serviceHours.ALMUERZO.start,
+    ALMUERZO_END: settings.serviceHours.ALMUERZO.end,
+    CENA_START: settings.serviceHours.CENA.start,
+    CENA_END: settings.serviceHours.CENA.end,
     OPENING_TIME: settings.openingTime,
     CLOSING_TIME: settings.closingTime,
     BOOKING_INTERVAL: settings.bookingInterval,
@@ -190,6 +222,20 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     filtroResenas: toBooleanValue(settingsMap.REVIEW_FILTER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.REVIEW_FILTER_ENABLED),
     feedbackAlertPhone: toStringValue(settingsMap.FEEDBACK_ALERT_PHONE),
     servicesEnabled: toServicesEnabled(servicesEnabledSetting, DEFAULT_OPERATIONAL_SETTINGS.SERVICES_ENABLED),
+    serviceHours: {
+      DESAYUNO: {
+        start: normalizeTimeValue(settingsMap.DESAYUNO_START, DEFAULT_OPERATIONAL_SETTINGS.DESAYUNO_START),
+        end: normalizeTimeValue(settingsMap.DESAYUNO_END, DEFAULT_OPERATIONAL_SETTINGS.DESAYUNO_END),
+      },
+      ALMUERZO: {
+        start: normalizeTimeValue(settingsMap.ALMUERZO_START, DEFAULT_OPERATIONAL_SETTINGS.ALMUERZO_START),
+        end: normalizeTimeValue(settingsMap.ALMUERZO_END, DEFAULT_OPERATIONAL_SETTINGS.ALMUERZO_END),
+      },
+      CENA: {
+        start: normalizeTimeValue(settingsMap.CENA_START, DEFAULT_OPERATIONAL_SETTINGS.CENA_START),
+        end: normalizeTimeValue(settingsMap.CENA_END, DEFAULT_OPERATIONAL_SETTINGS.CENA_END),
+      },
+    },
     openingTime: toStringValue(settingsMap.OPENING_TIME) || DEFAULT_OPERATIONAL_SETTINGS.OPENING_TIME,
     closingTime: toStringValue(settingsMap.CLOSING_TIME) || DEFAULT_OPERATIONAL_SETTINGS.CLOSING_TIME,
     bookingInterval: toNumberValue(settingsMap.BOOKING_INTERVAL, DEFAULT_OPERATIONAL_SETTINGS.BOOKING_INTERVAL) === 60 ? 60 : 30,

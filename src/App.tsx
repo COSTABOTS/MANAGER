@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, SetStateAction } from 'react';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
@@ -37,7 +37,8 @@ import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, 
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
-import type { BookingService, BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, Reservation, RestaurantTable, WalkInPayload } from './types';
+import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
+import type { BookingService, BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
@@ -50,12 +51,21 @@ const SETTINGS_WEBHOOK_FALLBACK = '';
 const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
-const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA'];
+const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'];
+const TIMED_SERVICE_ORDER: Array<'DESAYUNO' | 'ALMUERZO' | 'CENA'> = ['DESAYUNO', 'ALMUERZO', 'CENA'];
+const DEFAULT_SERVICE_HOURS: ManagerSettings['serviceHours'] = {
+  DESAYUNO: { start: '08:00', end: '10:30' },
+  ALMUERZO: { start: '12:00', end: '16:00' },
+  CENA: { start: '18:00', end: '21:30' },
+};
 
 console.log('[App loaded]', window.location.pathname);
 
 function normalizeBookingService(value: unknown): BookingService {
-  const service = String(value ?? '').trim().toUpperCase();
+  const service = String(value ?? '')
+    .trim()
+    .replace(/^[\s"'[\]]+|[\s"'[\]]+$/g, '')
+    .toUpperCase();
   if (service === 'DESAYUNO' || service === 'ALMUERZO' || service === 'BALINESA') {
     return service;
   }
@@ -77,8 +87,59 @@ function normalizeEnabledServices(services: unknown): BookingService[] {
 }
 
 function getTodayTabServices(services: BookingService[]): BookingService[] {
-  const visibleServices = services.filter((service) => TODAY_TAB_SERVICES.includes(service));
+  const visibleServices = TODAY_TAB_SERVICES.filter((service) => services.includes(service));
   return visibleServices.length > 0 ? visibleServices : ['CENA'];
+}
+
+function timeToMinutes(time: unknown) {
+  const rawTime = String(time ?? '').trim();
+  const match = rawTime.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function isTimeInRange(time: string, start: string, end: string) {
+  const current = timeToMinutes(time);
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+
+  if (current === null || startMinutes === null || endMinutes === null) {
+    return false;
+  }
+
+  if (startMinutes <= endMinutes) {
+    return current >= startMinutes && current <= endMinutes;
+  }
+
+  return current >= startMinutes || current <= endMinutes;
+}
+
+function getWalkInServiceForTime(time: string, settings: ManagerSettings): BookingService {
+  const enabledServices = normalizeEnabledServices(settings.servicesEnabled);
+
+  for (const service of TIMED_SERVICE_ORDER) {
+    if (!enabledServices.includes(service)) {
+      continue;
+    }
+
+    const serviceHours = settings.serviceHours?.[service] ?? DEFAULT_SERVICE_HOURS[service];
+    if (serviceHours && isTimeInRange(time, serviceHours.start, serviceHours.end)) {
+      return service;
+    }
+  }
+
+  return 'CENA';
 }
 
 function clearLoginSession() {
@@ -127,7 +188,7 @@ function toSupabaseBoolean(value: unknown) {
     return value;
   }
 
-  return ['true', '1', 'yes', 'si', 'sí', 'active'].includes(String(value ?? '').trim().toLowerCase());
+  return ['true', '1', 'yes', 'si', 'sÃ­', 'active'].includes(String(value ?? '').trim().toLowerCase());
 }
 
 function normalizeDemoWebhooks(rows: Array<Record<string, unknown>>) {
@@ -204,7 +265,7 @@ function toDemoNumber(value: unknown) {
 }
 
 function toDemoBoolean(value: unknown) {
-  return ['true', '1', 'yes', 'si', 'sÃ­'].includes(String(value ?? '').trim().toLowerCase());
+  return ['true', '1', 'yes', 'si', 'sÃƒÂ­'].includes(String(value ?? '').trim().toLowerCase());
 }
 
 function normalizeDemoStatus(value: unknown): BookingStatus {
@@ -465,6 +526,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [restaurantTables, setRestaurantTables] = useState<RestaurantTable[]>([]);
   const [isLoadingTables, setIsLoadingTables] = useState(false);
   const [tablesSyncMessage, setTablesSyncMessage] = useState('');
+  const [reservableResources, setReservableResources] = useState<ReservableResource[]>([]);
+  const [isLoadingResources, setIsLoadingResources] = useState(false);
+  const [resourcesSyncMessage, setResourcesSyncMessage] = useState('');
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [isLoadingFeedbacks, setIsLoadingFeedbacks] = useState(false);
   const [feedbacksMessage, setFeedbacksMessage] = useState('');
@@ -588,6 +652,24 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }, [activePage, hasLoadedTables, isLoadingTables]);
 
   useEffect(() => {
+    if (activePage === 'settings' && shouldUseManagerApiForResources()) {
+      void loadResources();
+    }
+  }, [activePage, clientConfig?.client_id]);
+
+  useEffect(() => {
+    if (
+      activePage === 'today'
+      && selectedTodayService === 'BALINESA'
+      && reservableResources.length === 0
+      && !isLoadingResources
+      && shouldUseManagerApiForResources()
+    ) {
+      void loadResources();
+    }
+  }, [activePage, selectedTodayService, reservableResources.length, isLoadingResources, clientConfig?.client_id]);
+
+  useEffect(() => {
     if (activePage === 'settings' && !operationalSettingsLoaded && !isLoadingOperationalSettings) {
       void loadSettingsFromMake();
     }
@@ -603,6 +685,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       });
       setAllReservations([]);
       setRestaurantTables([]);
+      console.log('[RESOURCES][SET]', 'clientConfig effect reset', []);
+      setReservableResources([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
       setHasLoadedReservations(false);
@@ -612,7 +696,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setTablesSyncMessage('');
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
-      console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
+      console.log('Admin cargado desde configuraciÃ³n cliente:', clientConfig.rest_nombre);
       if (isSupabaseDemoRoute()) {
         console.log('[MANAGER_API][BOOT] preload manager-api data');
         void Promise.all([
@@ -650,7 +734,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
         if (authResult.error || !authResult.data.user) {
           console.error('[MANAGER_API] Login error:', authResult.error ?? 'No auth user returned');
-          setLoginError('Usuario o contraseÃ±a incorrectos');
+          setLoginError('Usuario o contraseÃƒÂ±a incorrectos');
           return;
         }
 
@@ -663,6 +747,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
         setAllReservations([]);
         setRestaurantTables([]);
+        console.log('[RESOURCES][SET]', 'supabase login reset', []);
+        setReservableResources([]);
         setFeedbacks([]);
         setFeedbacksLoaded(false);
         setHasLoadedReservations(false);
@@ -673,7 +759,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setClientConfig(config);
         setSettings((current) => populateAdminFromClientConfig(current, config));
         console.log('Cliente cargado:', config.rest_nombre);
-        console.log('Admin cargado desde configuraciÃ³n cliente:', config.rest_nombre);
+        console.log('Admin cargado desde configuraciÃƒÂ³n cliente:', config.rest_nombre);
         return;
       }
 
@@ -689,7 +775,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.log('[Login debug] Status HTTP recibido:', response.status, response.statusText);
 
       if (!response.ok) {
-        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrará "Usuario o contraseña incorrectos".');
+        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".');
         throw new Error(`Login request failed with status ${response.status}`);
       }
 
@@ -703,14 +789,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       };
 
       if (!isValidClientConfig(loginResponse)) {
-        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrará "Usuario o contraseña incorrectos".', {
+        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".', {
           success: loginDebugSnapshot.success,
           client_id: loginDebugSnapshot.client_id,
           rest_nombre: loginDebugSnapshot.rest_nombre,
         });
         clearLoginSession();
         setClientConfig(null);
-        setLoginError('Usuario o contraseña incorrectos');
+        setLoginError('Usuario o contraseÃ±a incorrectos');
         return;
       }
 
@@ -719,6 +805,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
       setAllReservations([]);
       setRestaurantTables([]);
+      console.log('[RESOURCES][SET]', 'legacy login reset', []);
+      setReservableResources([]);
       setFeedbacks([]);
       setFeedbacksLoaded(false);
       setHasLoadedReservations(false);
@@ -729,12 +817,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
-      console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
+      console.log('Admin cargado desde configuraciÃ³n cliente:', config.rest_nombre);
     } catch (error) {
-      console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrará "Usuario o contraseña incorrectos".', error);
+      console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".', error);
       clearLoginSession();
       setClientConfig(null);
-      setLoginError('Usuario o contraseña incorrectos');
+      setLoginError('Usuario o contraseÃ±a incorrectos');
     } finally {
       setIsLoggingIn(false);
     }
@@ -747,6 +835,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     clearLoginSession();
     setClientConfig(null);
     setRestaurantTables([]);
+    console.log('[RESOURCES][SET]', 'logout reset', []);
+    setReservableResources([]);
     setFeedbacks([]);
     setFeedbacksLoaded(false);
     setHasLoadedReservations(false);
@@ -784,6 +874,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   function isSupabaseDemoRoute() {
     const isDemoPath = window.location.pathname.toLowerCase().startsWith('/demo');
     return (isDemoPath || USE_MANAGER_API) && clientConfig?.auth_provider === 'supabase';
+  }
+
+  function shouldUseManagerApiForTables() {
+    return USE_MANAGER_API && Boolean(clientConfig);
+  }
+
+  function shouldUseManagerApiForResources() {
+    return USE_MANAGER_API && Boolean(clientConfig);
   }
 
   async function loadFullyBookedStatus(date: string) {
@@ -873,28 +971,26 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function loadTables() {
     const sheetId = getClientSheetId();
-    const isDemo = isSupabaseDemoRoute();
+    const useManagerApiTables = shouldUseManagerApiForTables();
     console.log('[DEMO] route:', window.location.pathname);
-    console.log('[DEMO] isDemo:', isDemo);
+    console.log('[DEMO] isDemo:', isSupabaseDemoRoute());
     console.log('[DEMO] loadTables() started');
 
     setIsLoadingTables(true);
 
-    if (isDemo) {
+    if (useManagerApiTables) {
       try {
-        console.log('[DEMO] attempting manager-api');
+        console.log('[MANAGER_API][TABLES] attempting tables.list');
         const nextTables = await loadTablesFromSupabaseEdge({ sheetId, clientId: clientConfig?.client_id, clientConfig });
         setRestaurantTables(nextTables);
-        console.log('[DEMO][TABLES] setTables applied');
+        console.log('[MANAGER_API][TABLES] setTables applied');
         setHasLoadedTables(true);
         setTablesSyncMessage(nextTables.length ? 'Mesas actualizadas correctamente' : 'No hay mesas configuradas para este restaurante.');
         setIsLoadingTables(false);
         return nextTables;
       } catch (error) {
-        console.log('MAKE_FALLBACK_USED');
-        console.log('[DEMO] using Make fallback');
         const fallbackCode = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-        console.warn('[DEMO][MANAGER_API] fallback Make', fallbackCode, error);
+        console.warn('[MANAGER_API][TABLES] tables.list failed', fallbackCode, error);
       }
     }
 
@@ -902,7 +998,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     if (!tablesWebhook.trim()) {
       setRestaurantTables([]);
-      setTablesSyncMessage('Webhook de mesas no configurado');
+      setTablesSyncMessage(useManagerApiTables ? 'No se pudieron cargar mesas' : 'Webhook de mesas no configurado');
       setHasLoadedTables(true);
       setIsLoadingTables(false);
       return [];
@@ -936,6 +1032,34 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     console.log('[LAZY][TABLES] loaded X tables', nextTables?.length ?? 0);
   }
 
+  async function loadResources() {
+    const sheetId = getClientSheetId();
+
+    if (!shouldUseManagerApiForResources()) {
+      console.log('[RESOURCES][SET]', 'loadResources disabled', []);
+      setReservableResources([]);
+      setResourcesSyncMessage('Recursos disponibles solo con manager-api');
+      return [];
+    }
+
+    setIsLoadingResources(true);
+    try {
+      const nextResources = await loadResourcesWithManagerApi({ sheetId, clientId: clientConfig?.client_id, clientConfig });
+      console.log('[RESOURCES][LOADED]', nextResources);
+      console.log('[RESOURCES][SET]', 'loadResources success', nextResources);
+      setReservableResources(nextResources);
+      setResourcesSyncMessage(nextResources.length ? 'Recursos actualizados correctamente' : 'No hay recursos configurados.');
+      return nextResources;
+    } catch (error) {
+      console.error('[MANAGER_API][RESOURCES] error', error);
+      console.log('[RESOURCES][SET]', 'loadResources error keeping current resources', reservableResources);
+      setResourcesSyncMessage('No se pudieron cargar recursos');
+      return [];
+    } finally {
+      setIsLoadingResources(false);
+    }
+  }
+
   async function loadFeedbacks() {
     const feedbacksWebhook = getClientWebhook('webhook_feedbacks') || settings.webhookFeedbacks;
     const sheetId = getClientSheetId();
@@ -965,7 +1089,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
       setFeedbacks(nextFeedbacks);
       setFeedbacksLoaded(true);
-      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavía.');
+      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavÃ­a.');
     } catch (error) {
       console.error('GET_FEEDBACKS error', error);
       setFeedbacks([]);
@@ -1208,7 +1332,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
-    const isDemo = isSupabaseDemoRoute();
+    const useManagerApiTables = shouldUseManagerApiForTables();
     const tableWebhook = getClientWebhook('webhook_save_mesa') || settings.webhookSaveMesa;
 
     if (action === 'delete' && !table.mesaId) {
@@ -1216,7 +1340,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    if (isDemo) {
+    if (useManagerApiTables) {
       try {
         await saveRestaurantTableWithManagerApi({
           action,
@@ -1227,12 +1351,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         await loadTables();
         return;
       } catch (error) {
-        console.warn('[DEMO][TABLES] manager-api fallback Make', error);
+        console.warn('[MANAGER_API][TABLES] save failed', error);
       }
     }
 
     if (!tableWebhook.trim()) {
-      setTablesSyncMessage('Webhook de mesas no configurado');
+      setTablesSyncMessage(useManagerApiTables ? 'No se pudo guardar la mesa' : 'Webhook de mesas no configurado');
       return;
     }
 
@@ -1270,6 +1394,43 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function handleDeleteTable(table: RestaurantTable) {
     await syncTable('delete', table);
+  }
+
+  async function syncResource(action: 'create' | 'update' | 'delete', resource: ReservableResource) {
+    if (!shouldUseManagerApiForResources()) {
+      setResourcesSyncMessage('Recursos disponibles solo con manager-api');
+      return;
+    }
+
+    try {
+      await saveResourceWithManagerApi({
+        action,
+        resource,
+      });
+      setResourcesSyncMessage('Recurso sincronizado correctamente');
+      await loadResources();
+    } catch (error) {
+      console.error('SAVE_RESOURCE error', error);
+      setResourcesSyncMessage('No se pudo guardar el recurso');
+    }
+  }
+
+  async function handleCreateResource(resource: Omit<ReservableResource, 'id' | 'active'>) {
+    const nextResource: ReservableResource = {
+      ...resource,
+      id: `BAL-${Date.now()}`,
+      active: true,
+    };
+
+    await syncResource('create', nextResource);
+  }
+
+  async function handleUpdateResource(resource: ReservableResource) {
+    await syncResource('update', resource);
+  }
+
+  async function handleDeleteResource(resource: ReservableResource) {
+    await syncResource('delete', resource);
   }
 
   async function syncValidatedWebhook(
@@ -1426,21 +1587,31 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleAddWalkIn(nameOrRoom: string, pax: number) {
+    const walkInTime = getCurrentTime();
+    const walkInService = getWalkInServiceForTime(walkInTime, settings);
+
     if (isSupabaseDemoRoute()) {
       const date = dayStatus.date;
-      const time = getCurrentTime();
       try {
+        console.log('[WALKIN_SERVICE]', {
+          time: walkInTime,
+          servicesEnabled: settings.servicesEnabled,
+          serviceHours: settings.serviceHours,
+          calculatedService: walkInService,
+        });
+        console.log('[STEP1]', walkInService);
         await createWalkInWithManagerApi({
           nombre: nameOrRoom || 'Walk-in',
           habitacion: /^\d+$/.test(nameOrRoom) ? nameOrRoom : '',
           fecha: date,
-          hora: time,
+          hora: walkInTime,
           pax,
           idioma: 'ES',
           peticionEspecial: '',
           mesa: '',
+          servicio: walkInService,
         });
-        setLastSync('Mesa añadida correctamente');
+        setLastSync('Mesa aÃ±adida correctamente');
         console.log('[DEMO][WALKIN] refresh list');
         await loadReservations();
         return;
@@ -1454,7 +1625,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       nameOrRoom,
       pax,
       date: dayStatus.date,
-      time: getCurrentTime(),
+      time: walkInTime,
       status: 'CONFIRMADA',
       source: 'WALKIN',
     };
@@ -1472,10 +1643,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       source: 'WALKIN',
       table: '',
       arrived: true,
+      service: walkInService,
     };
 
     setAllReservations((current) => [...current, optimisticReservation]);
-    setLastSync('Mesa añadida correctamente');
+    setLastSync('Mesa aÃ±adida correctamente');
     void syncValidatedWebhook(getClientWebhook('webhook_walkin'), {
       accion: 'crear_walkin',
       id_reserva: optimisticReservation.idReserva,
@@ -1488,10 +1660,15 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       origen: 'WALK-IN',
       estado: 'CONFIRMADA',
       llego: true,
+      servicio: walkInService,
+      service: walkInService,
+      SERVICIO: walkInService,
     }, ['id_reserva', 'fecha', 'hora', 'pax'], 'walk-in', 'Webhook no configurado', true);
   }
 
   async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+    const reservationService = reservation.service ?? getWalkInServiceForTime(reservation.time, settings);
+
     if (isSupabaseDemoRoute()) {
       try {
         await createManualReservationWithManagerApi({
@@ -1505,8 +1682,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           peticionEspecial: reservation.specialRequest,
           mesa: '',
           llego: false,
+          servicio: reservationService,
+          service: reservationService,
+          paqueteBalinesa: reservation.balinesePackage ?? '',
+          balinesePackage: reservation.balinesePackage ?? '',
+          recurso: reservation.resource ?? '',
+          resource: reservation.resource ?? '',
         });
-        setLastSync('Reserva añadida correctamente');
+        setLastSync('Reserva aÃ±adida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
         await loadReservations();
         return;
@@ -1524,10 +1707,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       source: 'MANUAL',
       table: '',
       arrived: false,
+      service: reservationService,
+      balinesePackage: reservation.balinesePackage,
+      resource: reservation.resource,
     };
 
     setAllReservations((current) => [...current, manualReservation]);
-    setLastSync('Reserva añadida correctamente');
+    setLastSync('Reserva aÃ±adida correctamente');
     void syncValidatedWebhook(
       getClientWebhook('webhook_manual'),
       {
@@ -1543,6 +1729,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         peticiones: manualReservation.specialRequest,
         origen: 'MANUAL',
         estado: 'CONFIRMADA',
+        servicio: reservationService,
+        service: reservationService,
+        SERVICIO: reservationService,
+        paqueteBalinesa: reservation.balinesePackage ?? '',
+        PAQUETE_BALINESA: reservation.balinesePackage ?? '',
+        recurso: reservation.resource ?? '',
+        RECURSO: reservation.resource ?? '',
       },
       ['id_reserva', 'fecha', 'hora', 'pax'],
       'reserva manual',
@@ -1720,8 +1913,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         <Settings
           settings={settings}
           restaurantTables={restaurantTables}
+          reservableResources={reservableResources}
           tableSyncMessage={tablesSyncMessage}
+          resourcesSyncMessage={resourcesSyncMessage}
           isLoadingTables={isLoadingTables}
+          isLoadingResources={isLoadingResources}
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
           isDemoMode={isSupabaseDemoRoute()}
@@ -1734,6 +1930,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           onUpdateTable={handleUpdateTable}
           onDeactivateTable={handleDeactivateTable}
           onDeleteTable={handleDeleteTable}
+          onRefreshResources={async () => {
+            await loadResources();
+          }}
+          onCreateResource={handleCreateResource}
+          onUpdateResource={handleUpdateResource}
+          onDeleteResource={handleDeleteResource}
           onSettingsSave={handleSettingsSave}
         />
       );
@@ -1753,6 +1955,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         closingTime={settings.closingTime}
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
+        reservableResources={reservableResources}
         serviceTabs={todayTabServices}
         selectedService={selectedTodayService}
         onServiceChange={setSelectedTodayService}
@@ -1788,7 +1991,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       onNavigate={setActivePage}
       onLogout={handleLogout}
     >
-      {isDemoClient && <div className="demo-banner">DEMO · Datos simulados</div>}
+      {isDemoClient && <div className="demo-banner">DEMO Â· Datos simulados</div>}
       {renderPage()}
       {reservationToCancel && (
         <div className="modal-backdrop" role="presentation" onPointerDown={() => setReservationToCancel(null)}>
@@ -1796,19 +1999,19 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
             <div className="section-title compact">
               <div>
                 <p className="eyebrow">Cancelar reserva</p>
-                <h2>¿Cancelar esta reserva?</h2>
+                <h2>{reservationToCancel.service === 'BALINESA' ? '¿Seguro que quieres cancelar esta reserva de balinesa?' : '¿Cancelar esta reserva?'}</h2>
               </div>
             </div>
             <div className="cancel-summary">
               <strong>{reservationToCancel.name || reservationToCancel.room || 'Reserva sin nombre'}</strong>
-              <span>{reservationToCancel.date} · {reservationToCancel.time} · {reservationToCancel.pax} pax</span>
+              <span>{reservationToCancel.date} Â· {reservationToCancel.time} Â· {reservationToCancel.pax} pax</span>
             </div>
             <div className="modal-actions">
               <button className="secondary-button" type="button" onClick={() => setReservationToCancel(null)}>
                 No, mantener
               </button>
               <button className="danger-button" type="button" onClick={() => void confirmCancelReservation()}>
-                Sí, cancelar
+                SÃ­, cancelar
               </button>
             </div>
           </div>
@@ -2112,3 +2315,4 @@ export function App() {
 
   return <ManagerApp />;
 }
+

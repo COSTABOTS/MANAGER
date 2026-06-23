@@ -1026,7 +1026,29 @@ button:disabled {
 }
 
 .today-service-tabs {
-  margin: 0 0 14px;
+  margin: 0;
+}
+
+.today-reservations-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.today-service-tabs-area {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.today-refresh-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  text-align: right;
 }
 
 .status-pill {
@@ -1140,6 +1162,76 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7f9fc;
+}
+
+.resource-manager-item {
+  grid-template-columns: minmax(140px, 1fr) minmax(110px, 0.7fr) 90px minmax(110px, 0.5fr) auto auto;
+}
+
+.balinese-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.balinese-resource-card {
+  display: grid;
+  gap: 10px;
+  min-height: 156px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 5px solid #3aa6a0;
+  border-radius: 8px;
+  background: #f8fcfb;
+}
+
+.balinese-resource-card.is-reserved {
+  border-left-color: #b98a2f;
+  background: #fbf7ed;
+}
+
+.balinese-resource-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.balinese-resource-header strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.balinese-resource-header span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #dff5ed;
+  color: #166044;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.balinese-resource-card.is-reserved .balinese-resource-header span {
+  background: #f3dfb8;
+  color: #7a4c00;
+}
+
+.balinese-resource-card p,
+.balinese-reservation-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.balinese-reservation-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.balinese-resource-card button {
+  align-self: end;
 }
 
 .table-manager-item.is-inactive {
@@ -1883,6 +1975,44 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
+.service-hours-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.service-hours-row strong {
+  grid-column: 1 / -1;
+  color: var(--header-dark);
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.service-enabled-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--header-dark);
+}
+
+.service-enabled-toggle input {
+  width: auto;
+  min-height: auto;
+}
+
+.service-enabled-toggle strong {
+  grid-column: auto;
+}
+
+.service-enabled-toggle-inline {
+  margin: 0 0 12px;
+}
+
 .section-title.compact {
   padding: 0 0 14px;
 }
@@ -1926,6 +2056,47 @@ button:disabled {
   background: #f3f5f8;
 }
 
+.reservations-table tr.service-desayuno:not(.has-arrived) td {
+  background: #fff0ee;
+}
+
+.reservations-table tr.service-desayuno:not(.has-arrived):nth-child(even) td {
+  background: #ffe8e4;
+}
+
+.reservations-table tr.service-desayuno:not(.has-arrived) td:first-child {
+  border-left: 4px solid #e89a8e;
+}
+
+.reservations-table tr.service-almuerzo:not(.has-arrived) td {
+  background: #fff8df;
+}
+
+.reservations-table tr.service-almuerzo:not(.has-arrived):nth-child(even) td {
+  background: #fff2cb;
+}
+
+.reservations-table tr.service-almuerzo:not(.has-arrived) td:first-child {
+  border-left: 4px solid #ddb354;
+}
+
+.reservations-table tr.service-balinesa:not(.has-arrived) td {
+  background: #fbf1ff;
+}
+
+.reservations-table tr.service-balinesa:not(.has-arrived):nth-child(even) td {
+  background: #f6e7fd;
+}
+
+.reservations-table tr.service-balinesa:not(.has-arrived) td:first-child {
+  border-left: 5px solid #9b4fc2;
+}
+
+.reservations-table tr.reservation-row.service-balinesa:not(.has-arrived) td {
+  border-top: 1px solid #d2b3e5;
+  border-bottom: 1px solid #d2b3e5;
+}
+
 .reservations-table tr.has-arrived td {
   color: #10251a;
   background: #e5f5eb;
@@ -1933,6 +2104,10 @@ button:disabled {
 
 .reservations-table tr.has-arrived:nth-child(even) td {
   background: #e0f1e7;
+}
+
+.reservations-table tr.has-arrived td:first-child {
+  border-left: 4px solid #51a66e;
 }
 
 .reservations-table tr.is-cancelada td {
@@ -1961,6 +2136,44 @@ button:disabled {
 
 .reservations-table tr.is-past:not(.is-cancelada) td:not(:last-child) {
   opacity: 0.74;
+}
+
+.service-book-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.service-book-badge-desayuno {
+  color: #8f372f;
+  background: #ffe6e1;
+  border-color: #f2b8ae;
+}
+
+.service-book-badge-almuerzo {
+  color: #7c5c18;
+  background: #fff1c8;
+  border-color: #e9c96e;
+}
+
+.service-book-badge-cena {
+  color: #1e6240;
+  background: #e1f3e9;
+  border-color: #a7d6bb;
+}
+
+.service-book-badge-balinesa {
+  color: #12656f;
+  background: #dff7f4;
+  border-color: #81d5ce;
 }
 
 .table-input {
@@ -2119,6 +2332,17 @@ button:disabled {
   .today-main-grid .walkin-form,
   .today-main-grid .booking-toggle {
     grid-column: 1 / -1;
+  }
+
+  .today-reservations-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .today-refresh-actions {
+    align-items: flex-start;
+    justify-content: space-between;
+    text-align: left;
   }
 
   .toggle-track {

@@ -80,6 +80,12 @@ export async function createManualReservationWithManagerApi(reservation: {
   peticionEspecial?: string;
   mesa?: string;
   llego?: boolean;
+  servicio?: string;
+  service?: string;
+  paqueteBalinesa?: string;
+  balinesePackage?: string;
+  recurso?: string;
+  resource?: string;
 }) {
   const payload = {
     reservation: {
@@ -88,6 +94,12 @@ export async function createManualReservationWithManagerApi(reservation: {
       mesa: reservation.mesa ?? '',
       llego: Boolean(reservation.llego),
       habitacion: reservation.habitacion ?? '',
+      servicio: reservation.servicio ?? reservation.service ?? 'CENA',
+      service: reservation.service ?? reservation.servicio ?? 'CENA',
+      paqueteBalinesa: reservation.paqueteBalinesa ?? reservation.balinesePackage ?? '',
+      balinesePackage: reservation.balinesePackage ?? reservation.paqueteBalinesa ?? '',
+      recurso: reservation.recurso ?? reservation.resource ?? '',
+      resource: reservation.resource ?? reservation.recurso ?? '',
     },
   };
   console.log('[DEMO][RESERVATION_CREATE] payload', payload);
@@ -125,16 +137,22 @@ export async function createWalkInWithManagerApi(walkin: {
   peticionEspecial?: string;
   habitacion?: string;
   idioma?: string;
+  servicio?: string;
+  service?: string;
 }) {
-  const response = await callReservationAction('walkin.create', {
+  const body = {
     walkin: {
       ...walkin,
       idioma: walkin.idioma ?? 'ES',
       mesa: walkin.mesa ?? '',
       peticionEspecial: walkin.peticionEspecial ?? '',
       habitacion: walkin.habitacion ?? '',
+      servicio: walkin.servicio ?? walkin.service ?? 'CENA',
+      service: walkin.service ?? walkin.servicio ?? 'CENA',
     },
-  }) as { ok?: boolean; idReserva?: string };
+  };
+  console.log('[STEP2] payload', body);
+  const response = await callReservationAction('walkin.create', body) as { ok?: boolean; idReserva?: string };
   console.log('[DEMO][WALKIN] created', response.idReserva);
   return response;
 }

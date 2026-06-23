@@ -29,6 +29,21 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     dailyBriefingTime: storedSettings.dailyBriefingTime ?? mockSettings.dailyBriefingTime,
     feedbackAlertPhone: storedSettings.feedbackAlertPhone ?? mockSettings.feedbackAlertPhone,
     servicesEnabled: storedSettings.servicesEnabled ?? mockSettings.servicesEnabled,
+    reservableResources: storedSettings.reservableResources ?? mockSettings.reservableResources,
+    serviceHours: {
+      DESAYUNO: {
+        ...mockSettings.serviceHours.DESAYUNO,
+        ...(storedSettings.serviceHours?.DESAYUNO ?? {}),
+      },
+      ALMUERZO: {
+        ...mockSettings.serviceHours.ALMUERZO,
+        ...(storedSettings.serviceHours?.ALMUERZO ?? {}),
+      },
+      CENA: {
+        ...mockSettings.serviceHours.CENA,
+        ...(storedSettings.serviceHours?.CENA ?? {}),
+      },
+    },
     openingDays: {
       ...mockSettings.openingDays,
       ...(storedSettings.openingDays ?? {}),

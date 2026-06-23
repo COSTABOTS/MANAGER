@@ -39,6 +39,12 @@ export const mockSettings: ManagerSettings = {
   mensajePostCena: false,
   feedbackAlertPhone: '',
   servicesEnabled: ['CENA'],
+  serviceHours: {
+    DESAYUNO: { start: '08:00', end: '10:30' },
+    ALMUERZO: { start: '12:00', end: '16:00' },
+    CENA: { start: '18:00', end: '21:30' },
+  },
+  reservableResources: [],
   costabotsLogoUrl: '',
   restaurantName: 'Safari Restaurant',
   restaurantLogoUrl: '',

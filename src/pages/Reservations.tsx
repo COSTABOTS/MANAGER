@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Reservation } from '../types';
+import type { BookingService, Reservation } from '../types';
 import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation, isCanceledReservation } from '../utils/reservationStatus';
 
@@ -122,6 +122,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
             <thead>
               <tr>
                 <th>Fecha</th>
+                <th>Servicio</th>
                 <th>Hora</th>
                 <th>Nombre</th>
                 <th>Habitacion</th>
@@ -138,10 +139,14 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                 const pastReservation = isPastReservation(reservation, today);
                 const canceledReservation = isCanceledReservation(reservation);
                 const canCancel = isActiveReservation(reservation) && !pastReservation && Boolean(reservation.idReserva);
+                const service = getReservationService(reservation);
 
                 return (
-                  <tr key={reservation.idReserva} className={getReservationRowClassName(canceledReservation, pastReservation)}>
+                  <tr key={reservation.idReserva} className={getReservationRowClassName(canceledReservation, pastReservation, service)}>
                     <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
+                    <td data-label="Servicio">
+                      <span className={`service-book-badge service-book-badge-${service.toLowerCase()}`}>{service}</span>
+                    </td>
                     <td data-label="Hora">{reservation.time}</td>
                     <td data-label="Nombre">{reservation.name}</td>
                     <td data-label="Habitacion">{reservation.room || '-'}</td>
@@ -180,8 +185,24 @@ function isPastReservation(reservation: Reservation, today: string) {
   return normalizeDateForCompare(reservation.date) < today;
 }
 
-function getReservationRowClassName(isCanceled: boolean, isPast: boolean) {
-  return ['reservation-row', isCanceled ? 'is-cancelada' : '', isPast ? 'is-past' : ''].filter(Boolean).join(' ');
+function getReservationService(reservation: Reservation): BookingService {
+  const service = String(reservation.service ?? '').trim().toUpperCase();
+  if (service === 'DESAYUNO' || service === 'ALMUERZO' || service === 'BALINESA') {
+    return service;
+  }
+
+  return 'CENA';
+}
+
+function getReservationRowClassName(isCanceled: boolean, isPast: boolean, service: BookingService) {
+  return [
+    'reservation-row',
+    isCanceled ? 'is-cancelada' : '',
+    isPast ? 'is-past' : '',
+    !isCanceled && !isPast ? `service-${service.toLowerCase()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function getReservationOrigin(source: Reservation['source']) {

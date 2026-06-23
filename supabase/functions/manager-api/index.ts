@@ -5,6 +5,10 @@ type ManagerAction =
   | 'tables.create'
   | 'tables.update'
   | 'tables.delete'
+  | 'resources.list'
+  | 'resources.create'
+  | 'resources.update'
+  | 'resources.delete'
   | 'reservations.list'
   | 'feedbacks.list'
   | 'capacity.list'
@@ -560,6 +564,10 @@ function makeTableId() {
   return `MESA-${Date.now()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
+function makeResourceId() {
+  return `BAL-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+}
+
 function makeReservationId() {
   return `RES-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 }
@@ -598,6 +606,105 @@ function findTableRowIndex(values: unknown[][] | undefined, mesaId: string) {
   for (let index = 1; index < values.length; index += 1) {
     const value = toSheetString(values[index]?.[mesaIdColumn]);
     if (value === mesaId) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function normalizeResources(values: unknown[][] | undefined) {
+  if (!values?.length) {
+    return [];
+  }
+
+  const headers = values[0].map((header) => String(header ?? '').trim());
+  const rows = values.slice(1).flatMap((valueRow) => {
+    if (!valueRow.some((cell) => toSheetString(cell))) {
+      return [];
+    }
+
+    const row: SheetRow = {};
+    valueRow.forEach((cell, index) => {
+      const value = toSheetString(cell);
+      const header = headers[index];
+      row[String(index)] = value;
+      if (header) {
+        row[header] = value;
+        row[header.toUpperCase()] = value;
+        row[header.toLowerCase()] = value;
+      }
+    });
+
+    return [row];
+  });
+
+  return rows
+    .flatMap((row) => {
+      const recursoId = toSheetString(row.RECURSO_ID ?? row.recurso_id ?? row.ID_RECURSO ?? row.id ?? row[0]);
+      const recurso = toSheetString(row.RECURSO ?? row.recurso ?? row.name ?? row.NOMBRE ?? row.nombre ?? row[1]);
+      const zona = toSheetString(row.ZONA ?? row.zona ?? row.zone ?? row[2]) || 'General';
+      const capacidad = toSheetNumber(row.CAPACIDAD ?? row.capacidad ?? row.capacity ?? row[3]);
+      const activeValue = row.ACTIVA ?? row.activa ?? row.ACTIVO ?? row.activo ?? row.active ?? row[4];
+      const activa = activeValue === undefined || activeValue === '' ? true : normalizeBoolean(activeValue);
+      const orden = toSheetNumber(row.ORDEN ?? row.orden ?? row.order ?? row[5]) || 999;
+
+      if (!recurso) {
+        return [];
+      }
+
+      return [{
+        id: recursoId || `RECURSO-${recurso}`,
+        recursoId: recursoId || `RECURSO-${recurso}`,
+        name: recurso,
+        recurso,
+        zone: zona,
+        zona,
+        capacity: capacidad,
+        capacidad,
+        active: activa,
+        activa,
+        order: orden,
+        orden,
+      }];
+    })
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999) || a.name.localeCompare(b.name));
+}
+
+function normalizeResourceInput(resource: Record<string, unknown> | undefined, recursoId: string) {
+  const recurso = toSheetString(resource?.recurso ?? resource?.name ?? resource?.RECURSO);
+  const zona = toSheetString(resource?.zona ?? resource?.zone ?? resource?.ZONA) || 'General';
+  const capacidad = toSheetNumber(resource?.capacidad ?? resource?.capacity ?? resource?.CAPACIDAD);
+  const rawActive = resource?.activa ?? resource?.active ?? resource?.ACTIVA ?? true;
+  const activa = typeof rawActive === 'boolean' ? rawActive : normalizeBoolean(rawActive);
+  const orden = toSheetNumber(resource?.orden ?? resource?.order ?? resource?.ORDEN) || '';
+
+  if (!recurso) {
+    throw new Error('RESOURCE_NAME_REQUIRED');
+  }
+
+  return {
+    recursoId,
+    recurso,
+    zona,
+    capacidad,
+    activa,
+    orden,
+    values: [recursoId, recurso, zona, capacidad, activa ? 'TRUE' : 'FALSE', orden],
+  };
+}
+
+function findResourceRowIndex(values: unknown[][] | undefined, recursoId: string) {
+  if (!values?.length) {
+    return -1;
+  }
+
+  const headers = values[0].map((header) => String(header ?? '').trim().toUpperCase());
+  const recursoIdColumn = Math.max(0, headers.findIndex((header) => ['RECURSO_ID', 'ID_RECURSO'].includes(header)));
+
+  for (let index = 1; index < values.length; index += 1) {
+    const value = toSheetString(values[index]?.[recursoIdColumn]);
+    if (value === recursoId) {
       return index;
     }
   }
@@ -881,6 +988,146 @@ async function deleteTable(request: Request, sheetId: string, body: Record<strin
   return jsonResponse(request, {
     ok: true,
     action: 'tables.delete',
+  });
+}
+
+async function listResources(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+  console.log('[MANAGER_API] action=resources.list');
+  console.log(`[MANAGER_API] client_id=${clientId}`);
+  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RECURSOS!A:F', accessToken);
+  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+  const resources = normalizeResources(sheetsData.values);
+  console.log(`[MANAGER_API] resources=${resources.length}`);
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'resources.list',
+    client_id: clientId,
+    resources,
+  });
+}
+
+async function createResource(request: Request, sheetId: string, body: Record<string, unknown>) {
+  const accessToken = await createGoogleAccessToken();
+  const recursoId = makeResourceId();
+  const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
+
+  const appendResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RECURSOS!A:F')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [resource.values] }),
+    },
+  );
+
+  if (!appendResponse.ok) {
+    const errorBody = await appendResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'resources.create',
+    recursoId,
+  });
+}
+
+async function updateResource(request: Request, sheetId: string, body: Record<string, unknown>) {
+  console.log('[MANAGER_API] action=resources.update');
+  const recursoId = toSheetString(body.recursoId ?? body.recurso_id ?? body.id_recurso);
+  if (!recursoId) {
+    return errorResponse(request, 'RECURSO_ID_REQUIRED', 'RECURSO_ID requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RECURSOS!A:F', accessToken);
+  const rowIndex = findResourceRowIndex(sheetsData.values, recursoId);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
+  }
+
+  const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
+  const rowNumber = rowIndex + 1;
+  const updateResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(`RECURSOS!A${rowNumber}:F${rowNumber}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: [resource.values] }),
+    },
+  );
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${updateResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'resources.update',
+  });
+}
+
+async function deleteResource(request: Request, sheetId: string, body: Record<string, unknown>) {
+  console.log('[MANAGER_API] action=resources.delete');
+  const recursoId = toSheetString(body.recursoId ?? body.recurso_id ?? body.id_recurso);
+  if (!recursoId) {
+    return errorResponse(request, 'RECURSO_ID_REQUIRED', 'RECURSO_ID requerido', 400);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const sheetsData = await fetchSheetValues(sheetId, 'RECURSOS!A:F', accessToken);
+  const rowIndex = findResourceRowIndex(sheetsData.values, recursoId);
+
+  if (rowIndex < 1) {
+    return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
+  }
+
+  const numericSheetId = await getSheetNumericId(sheetId, 'RECURSOS', accessToken);
+  const deleteResponse = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}:batchUpdate`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: numericSheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      }),
+    },
+  );
+
+  if (!deleteResponse.ok) {
+    const errorBody = await deleteResponse.text();
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${deleteResponse.status}: ${errorBody}`);
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'resources.delete',
   });
 }
 
@@ -1312,6 +1559,10 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   const peticionEspecial = toSheetString(reservation.peticionEspecial ?? reservation.peticiones ?? reservation.specialRequest) || 'No, ninguna';
   const origen = toSheetString(reservation.origen ?? reservation.origin) || 'MANUAL';
   const mesa = toSheetString(reservation.mesa ?? reservation.table);
+  const rawServicio = toSheetString(reservation.servicio ?? reservation.service).toUpperCase();
+  const servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
+  const paqueteBalinesa = toSheetString(reservation.paqueteBalinesa ?? reservation.balinesePackage ?? reservation.paquete_balinesa);
+  const recurso = toSheetString(reservation.recurso ?? reservation.resource);
   const rawArrival = reservation.llego ?? reservation.arrived ?? false;
   const llego = typeof rawArrival === 'boolean' ? rawArrival : normalizeBoolean(rawArrival);
 
@@ -1334,12 +1585,18 @@ async function createReservation(request: Request, clientId: string, sheetId: st
     llego ? 'TRUE' : 'FALSE',
     'FALSE',
     habitacion,
+    '',
+    '',
+    servicio,
+    paqueteBalinesa,
+    recurso,
   ];
   console.log('[MANAGER_API][reservation.create] rowToAppend', rowToAppend);
+  console.log('[MANAGER_API][reservation.create] row length', rowToAppend.length, 'Q index 16', rowToAppend[16], 'R index 17', rowToAppend[17], 'S index 18', rowToAppend[18]);
 
   const accessToken = await createGoogleAccessToken();
   const appendResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:N')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       headers: {
@@ -1370,6 +1627,8 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const walkin = (body.walkin ?? {}) as Record<string, unknown>;
+  console.log('[STEP3] walkin recibido', walkin);
+  console.log('[STEP4] servicio recibido', walkin.servicio, walkin.service);
   const idReserva = makeReservationId();
   console.log(`[MANAGER_API] walkin idReserva=${idReserva}`);
 
@@ -1385,6 +1644,8 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   const idioma = toSheetString(walkin.idioma ?? walkin.language) || 'ES';
   const peticionEspecial = toSheetString(walkin.peticionEspecial ?? walkin.peticiones ?? walkin.specialRequest);
   const mesa = toSheetString(walkin.mesa ?? walkin.table);
+  const rawServicio = toSheetString(walkin.servicio ?? walkin.service).toUpperCase();
+  const servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
 
   if (!pax) {
     return errorResponse(request, 'WALKIN_REQUIRED_FIELDS', 'Faltan pax para crear el walk-in', 400);
@@ -1405,12 +1666,27 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
     'TRUE',
     'FALSE',
     habitacion,
+    '',
+    '',
+    servicio,
+    '',
+    '',
   ];
   console.log('[MANAGER_API][walkin.create] rowToAppend', rowToAppend);
+  console.log('[MANAGER_API][walkin.create] row length', rowToAppend.length, 'Q index 16', rowToAppend[16], 'R index 17', rowToAppend[17], 'S index 18', rowToAppend[18]);
+  console.log('[MANAGER_API][walkin.create][Q_TEST]', {
+    action: 'walkin.create',
+    rowLength: rowToAppend.length,
+    appendRange: 'RESERVAS!A:S',
+    servicioFinal: servicio,
+    row16: rowToAppend[16],
+    row17: rowToAppend[17],
+    row18: rowToAppend[18],
+  });
 
   const accessToken = await createGoogleAccessToken();
   const appendResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:N')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       headers: {
@@ -1606,6 +1882,18 @@ Deno.serve(async (request) => {
 
       case 'tables.delete':
         return await deleteTable(request, context.sheetId, body as Record<string, unknown>);
+
+      case 'resources.list':
+        return await listResources(request, context.clientId, context.sheetId, debug);
+
+      case 'resources.create':
+        return await createResource(request, context.sheetId, body as Record<string, unknown>);
+
+      case 'resources.update':
+        return await updateResource(request, context.sheetId, body as Record<string, unknown>);
+
+      case 'resources.delete':
+        return await deleteResource(request, context.sheetId, body as Record<string, unknown>);
 
       case 'reservations.list':
         return await listReservations(request, context.clientId, context.sheetId, debug);
