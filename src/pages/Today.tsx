@@ -9,7 +9,8 @@ import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import type { TodayData } from '../services/api';
 import type { BookingService, DayState, ReservableResource, Reservation } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
-import { formatDisplayDate, getCurrentTime } from '../utils/date';
+import { formatDisplayDate, getCurrentTime, normalizeDateForCompare } from '../utils/date';
+import { isActiveReservation } from '../utils/reservationStatus';
 
 interface TodayProps {
   dayStatus: DayState;
@@ -20,6 +21,7 @@ interface TodayProps {
   closingTime: string;
   bookingInterval: 30 | 60;
   reservations: Reservation[];
+  allReservations: Reservation[];
   reservableResources: ReservableResource[];
   serviceTabs: BookingService[];
   selectedService: BookingService;
@@ -62,6 +64,18 @@ const EMPTY_BALINESE_DRAFT = {
   specialRequest: '',
 };
 
+const EMPTY_OTHER_DAY_BALINESE_DRAFT = {
+  date: '',
+  resourceId: '',
+  name: '',
+  room: '',
+  phone: '',
+  adults: 2,
+  children: 0,
+  package: 'BASIC' as 'BASIC' | 'PREMIUM',
+  specialRequest: '',
+};
+
 const BALINESE_PACKAGES = {
   BASIC: '50€ Agua + fruta',
   PREMIUM: '100€ Agua + fruta + almuerzo en Safari',
@@ -80,6 +94,7 @@ export function Today({
   closingTime,
   bookingInterval,
   reservations,
+  allReservations,
   reservableResources,
   serviceTabs,
   selectedService,
@@ -107,6 +122,12 @@ export function Today({
   const [selectedBalineseResource, setSelectedBalineseResource] = useState<ReservableResource | null>(null);
   const [balineseDraft, setBalineseDraft] = useState(EMPTY_BALINESE_DRAFT);
   const [balineseError, setBalineseError] = useState('');
+  const [isOtherDayBalineseOpen, setIsOtherDayBalineseOpen] = useState(false);
+  const [otherDayBalineseDraft, setOtherDayBalineseDraft] = useState({
+    ...EMPTY_OTHER_DAY_BALINESE_DRAFT,
+    date: dayStatus.date,
+  });
+  const [otherDayBalineseError, setOtherDayBalineseError] = useState('');
   const [manualError, setManualError] = useState('');
   const [isToastVisible, setIsToastVisible] = useState(false);
   const timeSlots = useMemo(() => generateTimeSlots(openingTime, closingTime, bookingInterval), [bookingInterval, closingTime, openingTime]);
@@ -192,6 +213,10 @@ export function Today({
       ),
     [reservations],
   );
+  const otherDaySelectedResource = useMemo(
+    () => activeBalineseResources.find((resource) => resource.id === otherDayBalineseDraft.resourceId) ?? null,
+    [activeBalineseResources, otherDayBalineseDraft.resourceId],
+  );
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
   const displayTotalPax = totalPax;
@@ -240,6 +265,44 @@ export function Today({
     setBalineseError('');
   }
 
+  function openOtherDayBalineseModal() {
+    setOtherDayBalineseDraft({
+      ...EMPTY_OTHER_DAY_BALINESE_DRAFT,
+      date: dayStatus.date,
+      resourceId: activeBalineseResources[0]?.id ?? '',
+    });
+    setOtherDayBalineseError('');
+    setIsOtherDayBalineseOpen(true);
+  }
+
+  function closeOtherDayBalineseModal() {
+    setOtherDayBalineseDraft({
+      ...EMPTY_OTHER_DAY_BALINESE_DRAFT,
+      date: dayStatus.date,
+    });
+    setOtherDayBalineseError('');
+    setIsOtherDayBalineseOpen(false);
+  }
+
+  function updateOtherDayBalineseDraft<T extends keyof typeof otherDayBalineseDraft>(key: T, value: (typeof otherDayBalineseDraft)[T]) {
+    setOtherDayBalineseDraft((current) => ({ ...current, [key]: value }));
+    setOtherDayBalineseError('');
+  }
+
+  function isBalineseResourceBooked(resourceName: string, date: string) {
+    const normalizedResource = normalizeResourceName(resourceName);
+    const normalizedDate = normalizeDateForCompare(date);
+
+    return allReservations.some((reservation) => {
+      return (
+        isActiveReservation(reservation)
+        && reservation.service === 'BALINESA'
+        && normalizeDateForCompare(reservation.date) === normalizedDate
+        && normalizeResourceName(reservation.resource) === normalizedResource
+      );
+    });
+  }
+
   async function handleBalineseSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -274,6 +337,53 @@ export function Today({
     });
 
     closeBalineseModal();
+  }
+
+  async function handleOtherDayBalineseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!otherDaySelectedResource) {
+      setOtherDayBalineseError('Selecciona una balinesa.');
+      return;
+    }
+
+    const pax = otherDayBalineseDraft.adults + otherDayBalineseDraft.children;
+    const maxCapacity = Math.min(otherDaySelectedResource.capacity || 4, 4);
+
+    if (!otherDayBalineseDraft.date) {
+      setOtherDayBalineseError('Selecciona una fecha.');
+      return;
+    }
+
+    if (!otherDayBalineseDraft.name.trim() && !otherDayBalineseDraft.room.trim()) {
+      setOtherDayBalineseError('Introduce al menos nombre o habitacion.');
+      return;
+    }
+
+    if (pax < 1 || pax > maxCapacity) {
+      setOtherDayBalineseError(`La capacidad maxima de este recurso es ${maxCapacity} personas.`);
+      return;
+    }
+
+    if (isBalineseResourceBooked(otherDaySelectedResource.name, otherDayBalineseDraft.date)) {
+      setOtherDayBalineseError('Esta balinesa ya esta reservada para ese dia.');
+      return;
+    }
+
+    await onAddManualReservation({
+      date: otherDayBalineseDraft.date,
+      time: '00:00',
+      name: otherDayBalineseDraft.name.trim(),
+      room: otherDayBalineseDraft.room.trim(),
+      phone: otherDayBalineseDraft.phone.trim(),
+      pax,
+      specialRequest: otherDayBalineseDraft.specialRequest.trim(),
+      service: 'BALINESA',
+      balinesePackage: otherDayBalineseDraft.package,
+      resource: otherDaySelectedResource.name,
+    });
+
+    closeOtherDayBalineseModal();
   }
 
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -395,37 +505,44 @@ export function Today({
           </div>
         </div>
         {selectedService === 'BALINESA' ? (
-          <div className="balinese-resource-grid">
-            {activeBalineseResources.length === 0 && <div className="sync-status">No hay recursos activos configurados.</div>}
-            {activeBalineseResources.map((resource) => {
-              const reservedReservation = balineseReservationsByResource.get(normalizeResourceName(resource.name));
-              const isReserved = Boolean(reservedReservation);
+          <>
+            <div className="balinese-resource-grid">
+              {activeBalineseResources.length === 0 && <div className="sync-status">No hay recursos activos configurados.</div>}
+              {activeBalineseResources.map((resource) => {
+                const reservedReservation = balineseReservationsByResource.get(normalizeResourceName(resource.name));
+                const isReserved = Boolean(reservedReservation);
 
-              return (
-                <article className={`balinese-resource-card ${isReserved ? 'is-reserved' : 'is-free'}`} key={resource.id}>
-                  <div className="balinese-resource-header">
-                    <strong>{resource.name}</strong>
-                    <span>{isReserved ? 'Reservada' : 'Libre'}</span>
-                  </div>
-                  <p>Capacidad: {resource.capacity || 4}</p>
-                  {reservedReservation ? (
-                    <div className="balinese-reservation-summary">
-                      <span>Nombre: {reservedReservation.name || '-'}</span>
-                      <span>Hab: {reservedReservation.room || '-'}</span>
-                      <span>Paquete: {reservedReservation.balinesePackage || '-'}</span>
-                      <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservedReservation)}>
-                        Cancelar
-                      </button>
+                return (
+                  <article className={`balinese-resource-card ${isReserved ? 'is-reserved' : 'is-free'}`} key={resource.id}>
+                    <div className="balinese-resource-header">
+                      <strong>{resource.name}</strong>
+                      <span>{isReserved ? 'Reservada' : 'Libre'}</span>
                     </div>
-                  ) : (
-                    <button type="button" onClick={() => setSelectedBalineseResource(resource)}>
-                      Reservar
-                    </button>
-                  )}
-                </article>
-              );
-            })}
-          </div>
+                    <p>Capacidad: {resource.capacity || 4}</p>
+                    {reservedReservation ? (
+                      <div className="balinese-reservation-summary">
+                        <span>Nombre: {reservedReservation.name || '-'}</span>
+                        <span>Hab: {reservedReservation.room || '-'}</span>
+                        <span>Paquete: {reservedReservation.balinesePackage || '-'}</span>
+                        <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservedReservation)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setSelectedBalineseResource(resource)}>
+                        Reservar
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+            <div className="balinese-secondary-action">
+              <button className="balinese-other-day-button" type="button" disabled={activeBalineseResources.length === 0} onClick={openOtherDayBalineseModal}>
+                + Reservar balinesa otro dia
+              </button>
+            </div>
+          </>
         ) : isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (
@@ -558,6 +675,80 @@ export function Today({
 
             <div className="modal-actions">
               <button className="secondary-button" type="button" onClick={closeBalineseModal}>
+                Cancelar
+              </button>
+              <button type="submit">Guardar reserva</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {isOtherDayBalineseOpen && (
+        <div className="modal-backdrop" role="presentation" onPointerDown={closeOtherDayBalineseModal}>
+          <form className="show-modal manual-modal" onPointerDown={(event) => event.stopPropagation()} onSubmit={handleOtherDayBalineseSubmit}>
+            <div className="section-title compact">
+              <div>
+                <p className="eyebrow">Reservar balinesa</p>
+                <h2>Otro dia</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={closeOtherDayBalineseModal} aria-label="Cerrar">
+                <X size={22} />
+              </button>
+            </div>
+
+            {otherDayBalineseError && <p className="form-error">{otherDayBalineseError}</p>}
+
+            <div className="manual-form-grid">
+              <label>
+                Fecha
+                <input value={otherDayBalineseDraft.date} type="date" onChange={(event) => updateOtherDayBalineseDraft('date', event.target.value)} />
+              </label>
+              <label>
+                Balinesa
+                <select value={otherDayBalineseDraft.resourceId} onChange={(event) => updateOtherDayBalineseDraft('resourceId', event.target.value)}>
+                  <option value="">Seleccionar</option>
+                  {activeBalineseResources.map((resource) => (
+                    <option key={resource.id} value={resource.id}>
+                      {resource.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Nombre
+                <input value={otherDayBalineseDraft.name} onChange={(event) => updateOtherDayBalineseDraft('name', event.target.value)} />
+              </label>
+              <label>
+                Habitacion
+                <input value={otherDayBalineseDraft.room} onChange={(event) => updateOtherDayBalineseDraft('room', event.target.value)} />
+              </label>
+              <label>
+                Telefono
+                <input value={otherDayBalineseDraft.phone} onChange={(event) => updateOtherDayBalineseDraft('phone', event.target.value)} />
+              </label>
+              <label>
+                Adultos
+                <input min={0} max={4} type="number" value={otherDayBalineseDraft.adults} onChange={(event) => updateOtherDayBalineseDraft('adults', Number(event.target.value))} />
+              </label>
+              <label>
+                Ninos
+                <input min={0} max={4} type="number" value={otherDayBalineseDraft.children} onChange={(event) => updateOtherDayBalineseDraft('children', Number(event.target.value))} />
+              </label>
+              <label>
+                Paquete
+                <select value={otherDayBalineseDraft.package} onChange={(event) => updateOtherDayBalineseDraft('package', event.target.value as 'BASIC' | 'PREMIUM')}>
+                  <option value="BASIC">BASIC - {BALINESE_PACKAGES.BASIC}</option>
+                  <option value="PREMIUM">PREMIUM - {BALINESE_PACKAGES.PREMIUM}</option>
+                </select>
+              </label>
+              <label className="manual-form-wide">
+                Peticiones / notas
+                <input value={otherDayBalineseDraft.specialRequest} onChange={(event) => updateOtherDayBalineseDraft('specialRequest', event.target.value)} />
+              </label>
+            </div>
+
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={closeOtherDayBalineseModal}>
                 Cancelar
               </button>
               <button type="submit">Guardar reserva</button>

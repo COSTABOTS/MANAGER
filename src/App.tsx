@@ -91,6 +91,54 @@ function getTodayTabServices(services: BookingService[]): BookingService[] {
   return visibleServices.length > 0 ? visibleServices : ['CENA'];
 }
 
+function getServiceForCurrentHour(): Exclude<BookingService, 'BALINESA'> {
+  const hour = new Date().getHours();
+
+  if (hour >= 6 && hour <= 10) {
+    return 'DESAYUNO';
+  }
+
+  if (hour >= 11 && hour <= 17) {
+    return 'ALMUERZO';
+  }
+
+  return 'CENA';
+}
+
+function getInitialTodayService(serviceTabs: BookingService[]): BookingService {
+  const timedService = getServiceForCurrentHour();
+
+  if (serviceTabs.includes(timedService)) {
+    return timedService;
+  }
+
+  if (serviceTabs.includes('CENA')) {
+    return 'CENA';
+  }
+
+  return serviceTabs.find((service) => service !== 'BALINESA') ?? serviceTabs[0] ?? 'CENA';
+}
+
+function normalizeUserRole(role: unknown) {
+  return String(role ?? '').trim().toUpperCase();
+}
+
+interface ManagedClientOption {
+  client_id: string;
+  rest_name: string;
+  sheet_id?: string;
+  is_demo?: boolean;
+}
+
+function mapManagedClient(row: Record<string, unknown>): ManagedClientOption {
+  return {
+    client_id: pickSupabaseValue(row, ['client_id', 'CLIENT_ID']),
+    rest_name: pickSupabaseValue(row, ['rest_name', 'REST_NAME', 'rest_nombre', 'restaurantName', 'restaurant_name']),
+    sheet_id: pickSupabaseValue(row, ['sheet_id', 'SHEET_ID', 'googleSheetId']),
+    is_demo: toSupabaseBoolean(row.is_demo ?? row.IS_DEMO),
+  };
+}
+
 function timeToMinutes(time: unknown) {
   const rawTime = String(time ?? '').trim();
   const match = rawTime.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
@@ -337,7 +385,7 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
   });
 }
 
-async function loadSupabaseClientConfig(userId: string) {
+async function loadSupabaseClientConfig(userId: string, selectedClientId?: string) {
   console.log('[LOGIN][SUPABASE] user id', userId);
   const profileResult = await supabase
     .from('PROFILES')
@@ -360,9 +408,34 @@ async function loadSupabaseClientConfig(userId: string) {
     throw new Error('PROFILE_INACTIVE');
   }
 
-  const clientId = pickSupabaseValue(profile, ['client_id', 'CLIENT_ID']).trim();
-  if (!clientId) {
+  const profileClientId = pickSupabaseValue(profile, ['client_id', 'CLIENT_ID']).trim();
+  if (!profileClientId) {
     throw new Error('CLIENT_ID_NOT_FOUND');
+  }
+
+  const profileRole = normalizeUserRole(pickSupabaseValue(profile, ['role', 'ROLE']));
+  let availableClients: ManagedClientOption[] = [];
+  let clientId = profileClientId;
+
+  if (profileRole === 'SUPER_ADMIN') {
+    const clientsResult = await supabase
+      .from('CLIENTES')
+      .select('*')
+      .eq('status', 'ACTIVE');
+
+    if (clientsResult.error) {
+      console.warn('[LOGIN][SUPABASE] clients list warning', clientsResult.error);
+    } else {
+      availableClients = ((clientsResult.data ?? []) as Array<Record<string, unknown>>)
+        .map(mapManagedClient)
+        .filter((client) => client.client_id);
+
+      const requestedClient = selectedClientId
+        ? availableClients.find((client) => client.client_id === selectedClientId)
+        : null;
+      const defaultClient = availableClients.find((client) => client.client_id !== 'COSTABOTS_CORE') ?? availableClients[0];
+      clientId = requestedClient?.client_id ?? defaultClient?.client_id ?? profileClientId;
+    }
   }
 
   const clientResult = await supabase
@@ -426,6 +499,13 @@ async function loadSupabaseClientConfig(userId: string) {
   const restaurantLogo = pickSupabaseValue(client, ['logo_url', 'LOGO_URL', 'logo_restaurante', 'restaurantLogoUrl']);
   const primaryColor = pickSupabaseValue(client, ['primary_color', 'PRIMARY_COLOR', 'color', 'primaryColor']);
   const sheetId = pickSupabaseValue(client, ['sheet_id', 'SHEET_ID', 'googleSheetId']);
+  const selectedClient = mapManagedClient(client);
+  console.log('[SUPER_ADMIN][CLIENT_CONTEXT]', {
+    authProfileClientId: profileClientId,
+    selectedClientId: selectedClient.client_id,
+    effectiveClientId: clientId,
+    role: profileRole,
+  });
 
   const config = normalizeClientConfig({
     success: true,
@@ -443,7 +523,13 @@ async function loadSupabaseClientConfig(userId: string) {
     primaryColor,
     sheet_id: sheetId,
     googleSheetId: sheetId,
-    role: pickSupabaseValue(profile, ['role', 'ROLE']),
+    role: profileRole,
+    profile_client_id: profileClientId,
+    authProfileClientId: profileClientId,
+    selectedClient,
+    selectedClientId: selectedClient.client_id,
+    effectiveClientId: clientId,
+    availableClients,
     IS_DEMO: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
     is_demo: toSupabaseBoolean(client.is_demo ?? client.IS_DEMO),
     settings: operationalSettings,
@@ -540,7 +626,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [settingsMessage, setSettingsMessage] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
-  const [selectedTodayService, setSelectedTodayService] = useState<BookingService>('CENA');
+  const selectedTodayServiceWasManualRef = useRef(false);
+  const [selectedTodayService, setSelectedTodayService] = useState<BookingService>(() => {
+    const initialServices = getTodayTabServices(normalizeEnabledServices(settings.servicesEnabled));
+    return getInitialTodayService(initialServices);
+  });
 
   function updateSettings(action: SetStateAction<ManagerSettings>) {
     setSettings((current) => {
@@ -552,10 +642,27 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   const enabledServices = useMemo(() => normalizeEnabledServices(settings.servicesEnabled), [settings.servicesEnabled]);
   const todayTabServices = useMemo(() => getTodayTabServices(enabledServices), [enabledServices]);
+  const activeUserRole = useMemo(() => normalizeUserRole(clientConfig?.role), [clientConfig?.role]);
+  const isSuperAdmin = activeUserRole === 'SUPER_ADMIN';
+  const availableManagedClients = useMemo(
+    () => (Array.isArray(clientConfig?.availableClients) ? (clientConfig.availableClients as ManagedClientOption[]) : []),
+    [clientConfig?.availableClients],
+  );
+
+  function handleTodayServiceChange(service: BookingService) {
+    selectedTodayServiceWasManualRef.current = true;
+    setSelectedTodayService(service);
+  }
 
   useEffect(() => {
+    if (!selectedTodayServiceWasManualRef.current) {
+      setSelectedTodayService(getInitialTodayService(todayTabServices));
+      return;
+    }
+
     if (!todayTabServices.includes(selectedTodayService)) {
-      setSelectedTodayService(todayTabServices[0] ?? 'CENA');
+      selectedTodayServiceWasManualRef.current = false;
+      setSelectedTodayService(getInitialTodayService(todayTabServices));
     }
   }, [selectedTodayService, todayTabServices]);
 
@@ -598,6 +705,20 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   useEffect(() => {
     isLoadingReservationsRef.current = isLoadingReservations;
   }, [isLoadingReservations]);
+
+  useEffect(() => {
+    document.body.classList.remove('role-superadmin', 'role-manager');
+
+    if (!clientConfig) {
+      return;
+    }
+
+    document.body.classList.add(isSuperAdmin ? 'role-superadmin' : 'role-manager');
+
+    return () => {
+      document.body.classList.remove('role-superadmin', 'role-manager');
+    };
+  }, [clientConfig, isSuperAdmin]);
 
   useEffect(() => {
     if (!clientConfig) {
@@ -847,6 +968,66 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     onLogoutComplete?.();
   }
 
+  function resetManagerDataForClientChange(origin: string) {
+    clearSettingsStorage();
+    clearDateBookingStatusStorage();
+    setAllReservations([]);
+    setRestaurantTables([]);
+    console.log('[RESOURCES][SET]', origin, []);
+    setReservableResources([]);
+    setFeedbacks([]);
+    setFeedbacksLoaded(false);
+    setHasLoadedReservations(false);
+    setHasLoadedTables(false);
+    setOperationalSettingsLoaded(false);
+    setDateBookingStatus({});
+    setSettingsMessage('');
+    setTablesSyncMessage('');
+    setResourcesSyncMessage('');
+    setLastUpdatedAt('');
+    setReservationToCancel(null);
+    selectedTodayServiceWasManualRef.current = false;
+    setSelectedTodayService(getInitialTodayService(getTodayTabServices(normalizeEnabledServices(settings.servicesEnabled))));
+  }
+
+  async function handleManagedClientChange(nextClientId: string) {
+    if (!isSuperAdmin || !nextClientId || nextClientId === clientConfig?.client_id) {
+      return;
+    }
+
+    try {
+      console.log('[SUPER_ADMIN][CLIENT_SWITCH]', {
+        profileClientId: clientConfig?.authProfileClientId ?? clientConfig?.profile_client_id,
+        selectedClientId: nextClientId,
+        previousEffectiveClientId: clientConfig?.effectiveClientId ?? clientConfig?.client_id,
+      });
+      setLastSync('Cambiando cliente...');
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user?.id;
+
+      if (!userId) {
+        setLastSync('Sesion Supabase no disponible');
+        return;
+      }
+
+      const nextConfig = await loadSupabaseClientConfig(userId, nextClientId);
+      console.log('[SUPER_ADMIN][CLIENT_SWITCH_READY]', {
+        profileClientId: nextConfig.authProfileClientId ?? nextConfig.profile_client_id,
+        selectedClientId: nextConfig.selectedClientId ?? nextConfig.client_id,
+        effectiveClientId: nextConfig.effectiveClientId ?? nextConfig.client_id,
+      });
+      sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(nextConfig));
+      sessionStorage.setItem(LOGIN_FLAG_KEY, 'true');
+      resetManagerDataForClientChange('superadmin client switch reset');
+      setClientConfig(nextConfig);
+      setSettings(() => populateAdminFromClientConfig(loadSettingsFromStorage(), nextConfig));
+      setLastSync(`Cliente activo: ${nextConfig.rest_nombre}`);
+    } catch (error) {
+      console.error('[SUPER_ADMIN] client switch error', error);
+      setLastSync('No se pudo cambiar de cliente');
+    }
+  }
+
   function getReservationSyncId(reservation: Reservation) {
     return reservation.idReserva || reservation.id;
   }
@@ -909,11 +1090,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const reservationsWebhook = clientConfig?.auth_provider === 'supabase' && demoReservationListWebhook ? demoReservationListWebhook : getClientWebhook('webhook_get_reservas');
     const sheetId = getClientSheetId();
     const isDemo = isSupabaseDemoRoute();
+    const shouldUseManagerApiReservations = USE_MANAGER_API && Boolean(clientConfig);
 
     setIsLoadingReservations(true);
 
     try {
-      if (isDemo) {
+      if (shouldUseManagerApiReservations) {
         try {
           const nextReservations = await loadReservationsFromManagerApi();
           setAllReservations(nextReservations);
@@ -922,7 +1104,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           setLastSync('Datos actualizados correctamente');
           return;
         } catch (error) {
-          console.warn('[DEMO][MANAGER_API] reservations fallback Make', error);
+          console.warn('[MANAGER_API] reservations.list failed', error);
+          setAllReservations([]);
+          setHasLoadedReservations(true);
+          setLastSync('No se pudieron cargar las reservas con manager-api');
+          return;
         }
       }
 
@@ -946,7 +1132,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           throw new Error(`No se pudieron cargar las reservas demo (${response.status})`);
         }
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(responseText) as Record<string, unknown>;
+        } catch {
+          throw new Error(`RESERVATION_LIST no devolvio JSON valido: ${responseText.slice(0, 80)}`);
+        }
         console.log('[DEMO] RESERVATION_LIST response', data);
         const rows = data.reservations ?? data.reservas ?? data.data ?? data.rows ?? [];
         setAllReservations(Array.isArray(rows) ? normalizeDemoReservations(rows as Array<Record<string, unknown>>) : []);
@@ -991,6 +1183,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       } catch (error) {
         const fallbackCode = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
         console.warn('[MANAGER_API][TABLES] tables.list failed', fallbackCode, error);
+        setRestaurantTables([]);
+        setHasLoadedTables(true);
+        setTablesSyncMessage('No se pudieron cargar mesas con manager-api');
+        setIsLoadingTables(false);
+        return [];
       }
     }
 
@@ -1075,7 +1272,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavia.');
           return nextFeedbacks;
         } catch (error) {
-          console.warn('[DEMO][MANAGER_API] feedbacks fallback Make', error);
+          console.warn('[MANAGER_API] feedbacks.list failed', error);
+          setFeedbacks([]);
+          setFeedbacksLoaded(true);
+          setFeedbacksMessage('No se pudieron cargar los feedbacks con manager-api');
+          return [];
         }
       }
 
@@ -1112,7 +1313,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setIsLoadingFeedbacks(false);
       return nextFeedbacks;
     } catch (error) {
-      console.warn('[DEMO][MANAGER_API] feedbacks fallback Make', error);
+      console.warn('[MANAGER_API] feedbacks.list preload failed', error);
+      setFeedbacks([]);
+      setFeedbacksLoaded(true);
+      setFeedbacksMessage('No se pudieron cargar los feedbacks con manager-api');
+      console.log('[DEMO][BOOT] feedbacks preloaded X', 0);
+      setIsLoadingFeedbacks(false);
+      return [];
     }
 
     const feedbacksWebhook = getClientWebhook('webhook_feedbacks') || settings.webhookFeedbacks;
@@ -1190,7 +1397,18 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         });
         return true;
       } catch (error) {
-        console.warn('[DEMO][MANAGER_API] capacity fallback Make', error);
+        console.warn('[MANAGER_API] capacity.list failed', error);
+        setSettings((current) => {
+          const mergedSource = baseSettings ?? current;
+          const nextSettings = {
+            ...mergedSource,
+            slotCapacity: buildVisibleSlotCapacity(mergedSource),
+          };
+          saveSettingsToStorage(nextSettings);
+          return nextSettings;
+        });
+        setSettingsMessage('No se pudo cargar CAPACIDAD con manager-api. Usando defaults seguros.');
+        return false;
       }
     }
 
@@ -1269,8 +1487,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setIsLoadingOperationalSettings(false);
         return;
       } catch (error) {
-        console.warn('[DEMO][MANAGER_API] settings fallback Make', error);
+        console.warn('[MANAGER_API] settings.get failed', error);
+        setSettingsMessage('No se pudieron cargar SETTINGS con manager-api.');
+        setOperationalSettingsLoaded(true);
         setIsLoadingOperationalSettings(false);
+        return;
       }
     }
 
@@ -1481,10 +1702,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         settingsSavedByManagerApi = true;
         setSettingsMessage('SETTINGS guardados correctamente');
       } catch (error) {
-        console.warn('[DEMO][SETTINGS] fallback Make', error);
-        if (!settingsWebhook.trim()) {
-          setSettingsMessage('Webhook SETTINGS no configurado');
-        }
+        console.warn('[MANAGER_API] settings.save failed', error);
+        setSettingsMessage('No se pudieron guardar SETTINGS con manager-api');
+        return 'error';
       }
     }
 
@@ -1529,7 +1749,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setLastSync('Sincronizado correctamente');
         return 'success';
       } catch (error) {
-        console.warn('[DEMO][CAPACITY] fallback Make', error);
+        console.warn('[MANAGER_API] capacity.save failed', error);
+        setLastSync('No se pudo guardar capacidad con manager-api');
+        return 'error';
       }
     }
 
@@ -1569,7 +1791,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setLastSync('Sincronizado correctamente');
         return;
       } catch (error) {
-        console.warn('[DEMO][FULLYBOOKED] fallback Make', error);
+        console.warn('[MANAGER_API] fullybooked.set failed', error);
+        setLastSync('No se pudo sincronizar fully booked con manager-api');
+        return;
       }
     }
 
@@ -1616,7 +1840,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         await loadReservations();
         return;
       } catch (error) {
-        console.warn('[DEMO][WALKIN] fallback Make', error);
+        console.warn('[MANAGER_API] walkin.create failed', error);
+        setLastSync('No se pudo crear walk-in con manager-api');
+        return;
       }
     }
 
@@ -1694,7 +1920,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         await loadReservations();
         return;
       } catch (error) {
-        console.warn('[DEMO][RESERVATION] create fallback Make', error);
+        console.warn('[MANAGER_API] reservation.create failed', error);
+        setLastSync('No se pudo crear la reserva con manager-api');
+        return;
       }
     }
 
@@ -1772,7 +2000,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           setLastSync('Sincronizado correctamente');
           return;
         } catch (error) {
-          console.warn('[DEMO][RESERVATION] arrive fallback Make', error);
+          console.warn('[MANAGER_API] reservation.arrive failed', error);
+          setLastSync('No se pudo guardar llegada con manager-api');
+          return;
         }
       }
 
@@ -1795,7 +2025,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setLastSync('Sincronizado correctamente');
         return;
       } catch (error) {
-        console.warn('[DEMO][RESERVATION] assign table fallback Make', error);
+        console.warn('[MANAGER_API] reservation.assignTable failed', error);
+        setLastSync('No se pudo asignar mesa con manager-api');
+        return;
       }
     }
 
@@ -1833,7 +2065,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         }
         return;
       } catch (error) {
-        console.warn('[DEMO][RESERVATION] cancel fallback Make', error);
+        console.warn('[MANAGER_API] reservation.cancel failed', error);
+        setLastSync('No se pudo cancelar con manager-api');
+        return;
       }
     }
 
@@ -1921,6 +2155,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
           isDemoMode={isSupabaseDemoRoute()}
+          isSuperAdmin={isSuperAdmin}
           clientId={clientConfig?.client_id ?? ''}
           lastUpdatedAt={lastUpdatedAt}
           onRefreshTables={async () => {
@@ -1955,10 +2190,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         closingTime={settings.closingTime}
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
+        allReservations={allReservations}
         reservableResources={reservableResources}
         serviceTabs={todayTabServices}
         selectedService={selectedTodayService}
-        onServiceChange={setSelectedTodayService}
+        onServiceChange={handleTodayServiceChange}
         tableOptions={activeTableOptions}
         hasLoadedTables={hasLoadedTables}
         isLoadingTables={isLoadingTables}
@@ -1988,6 +2224,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       activePage={activePage}
       restaurantName={settings.restaurantName}
       restaurantLogoUrl={settings.restaurantLogoUrl}
+      isSuperAdmin={isSuperAdmin}
+      activeClientId={clientConfig.client_id ?? ''}
+      managedClients={availableManagedClients}
+      onClientChange={(clientId) => void handleManagedClientChange(clientId)}
       onNavigate={setActivePage}
       onLogout={handleLogout}
     >

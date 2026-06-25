@@ -1,5 +1,5 @@
 import type { BookingService, ManagerSettings, Weekday } from '../types';
-import { supabase } from '../lib/supabaseClient';
+import { invokeManagerApi } from './managerApiClient';
 
 type SettingsRow = Record<string, unknown>;
 type SettingsValueMap = Record<string, unknown>;
@@ -277,26 +277,9 @@ export async function loadOperationalSettings(webhookUrl: string): Promise<Setti
 }
 
 export async function loadOperationalSettingsFromManagerApi(): Promise<SettingsValueMap | SettingsRow[]> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
-  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
   console.log('[DEMO][MANAGER_API] calling settings.get');
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: { action: 'settings.get' },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
-
-  if (error) {
-    console.error('[DEMO][MANAGER_API] settings.get error', error);
-    throw error;
-  }
+  const data = await invokeManagerApi<SettingsResponse & { code?: string; message?: string }>({ action: 'settings.get' });
 
   const response = data as SettingsResponse & { code?: string; message?: string };
 
@@ -340,28 +323,15 @@ export async function saveOperationalSettings(webhookUrl: string, settings: Mana
 }
 
 export async function saveOperationalSettingsWithManagerApi(settings: ManagerSettings) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
   const settingsPayload = buildOperationalSettingsPayload(settings).reduce<Record<string, string>>((items, item) => {
     items[item.variable] = item.value;
     return items;
   }, {});
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: {
-      action: 'settings.save',
-      settings: settingsPayload,
-    },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
+  const data = await invokeManagerApi<SettingsResponse & { code?: string; message?: string }>({
+    action: 'settings.save',
+    settings: settingsPayload,
   });
-
-  if (error) {
-    throw error;
-  }
 
   const response = data as SettingsResponse & { code?: string; message?: string };
   if (!response?.ok) {

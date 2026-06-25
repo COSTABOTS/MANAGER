@@ -4,6 +4,7 @@ import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '
 import { isActiveReservation, isCanceledReservation } from '../utils/reservationStatus';
 
 type ReservationFilter = 'today' | 'tomorrow' | 'week' | 'all';
+type ServiceFilter = 'all' | 'cena' | 'balinesa' | 'desayuno' | 'almuerzo' | 'walkin';
 
 interface ReservationsProps {
   reservations: Reservation[];
@@ -23,6 +24,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all');
   const [showPastReservations, setShowPastReservations] = useState(false);
   const today = getLocalDateString(new Date());
   const tomorrow = addDays(today, 1);
@@ -31,27 +33,29 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
   const filteredReservations = useMemo(() => {
     return reservations
       .filter((reservation) => {
-        const search = `${reservation.name} ${reservation.room} ${reservation.phone ?? ''} ${reservation.specialRequest} ${reservation.status}`.toLowerCase();
+        const service = getReservationService(reservation);
+        const search = `${reservation.name} ${reservation.room} ${reservation.phone ?? ''} ${reservation.specialRequest} ${reservation.status} ${service}`.toLowerCase();
         const matchesQuery = search.includes(query.toLowerCase());
         const reservationDate = normalizeDateForCompare(reservation.date);
         const matchesDate = date ? reservationDate === date : true;
+        const matchesService = matchesServiceFilter(reservation, serviceFilter);
 
         if (filter === 'today') {
-          return matchesQuery && matchesDate && reservationDate === today;
+          return matchesQuery && matchesDate && matchesService && reservationDate === today;
         }
 
         if (filter === 'tomorrow') {
-          return matchesQuery && matchesDate && reservationDate === tomorrow;
+          return matchesQuery && matchesDate && matchesService && reservationDate === tomorrow;
         }
 
         if (filter === 'week') {
-          return matchesQuery && matchesDate && reservationDate >= today && reservationDate <= weekEnd;
+          return matchesQuery && matchesDate && matchesService && reservationDate >= today && reservationDate <= weekEnd;
         }
 
-        return matchesQuery && matchesDate;
+        return matchesQuery && matchesDate && matchesService;
       })
       .sort((a, b) => `${normalizeDateForCompare(a.date)} ${a.time}`.localeCompare(`${normalizeDateForCompare(b.date)} ${b.time}`));
-  }, [date, filter, query, reservations, today, tomorrow, weekEnd]);
+  }, [date, filter, query, reservations, serviceFilter, today, tomorrow, weekEnd]);
 
   const upcomingReservations = useMemo(
     () => filteredReservations.filter((reservation) => !isPastReservation(reservation, today)),
@@ -80,6 +84,17 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
         <label>
           Filtro fecha
           <input value={date} onChange={(event) => setDate(event.target.value)} type="date" />
+        </label>
+        <label>
+          Servicio
+          <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value as ServiceFilter)}>
+            <option value="all">Todos</option>
+            <option value="cena">Cena / Restaurante</option>
+            <option value="balinesa">Balinesas</option>
+            <option value="desayuno">Desayuno</option>
+            <option value="almuerzo">Almuerzo</option>
+            <option value="walkin">Walk-in</option>
+          </select>
         </label>
         <div className="segmented-control" aria-label="Filtro rapido">
           {[
@@ -192,6 +207,19 @@ function getReservationService(reservation: Reservation): BookingService {
   }
 
   return 'CENA';
+}
+
+function matchesServiceFilter(reservation: Reservation, filter: ServiceFilter) {
+  if (filter === 'all') {
+    return true;
+  }
+
+  if (filter === 'walkin') {
+    return reservation.source === 'WALKIN';
+  }
+
+  const service = getReservationService(reservation).toLowerCase();
+  return service === filter;
 }
 
 function getReservationRowClassName(isCanceled: boolean, isPast: boolean, service: BookingService) {

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import type { ReservableResource } from '../types';
+import { invokeManagerApi } from './managerApiClient';
 
 type ResourceAction = 'create' | 'update' | 'delete';
 type ResourceRow = Record<string, unknown>;
@@ -24,32 +25,6 @@ interface DirectResourcesPayload {
 interface SaveResourcePayload {
   action: ResourceAction;
   resource: ReservableResource;
-}
-
-async function getManagerApiSession() {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-
-    if (session?.access_token) {
-      const { error: userError } = await supabase.auth.getUser(session.access_token);
-      if (!userError) {
-        return session;
-      }
-
-      console.warn('[DEMO][RESOURCES] stored token invalid, refreshing session', userError.message);
-      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
-      if (!refreshError && refreshedData.session?.access_token) {
-        return refreshedData.session;
-      }
-
-      console.warn('[DEMO][RESOURCES] refresh session failed', refreshError?.message);
-    }
-
-    await new Promise((resolve) => window.setTimeout(resolve, 150));
-  }
-
-  throw new Error('SUPABASE_SESSION_MISSING');
 }
 
 function unwrapValue(value: unknown) {
@@ -141,7 +116,8 @@ function normalizeResourceFromSheet(row: ResourceRow): ReservableResource | null
 }
 
 export async function loadResourcesWithManagerApi({ sheetId, clientId, clientConfig }: DirectResourcesPayload = {}): Promise<ReservableResource[]> {
-  const session = await getManagerApiSession();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
   console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
   console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
   console.log('[DEMO][MANAGER_API] calling resources.list');
@@ -149,26 +125,14 @@ export async function loadResourcesWithManagerApi({ sheetId, clientId, clientCon
   console.log('[DEMO][RECURSOS] client_id:', clientId ?? '');
   console.log('[DEMO][RECURSOS] sheet_id:', sheetId ?? '');
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: { action: 'resources.list' },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
+  const data = await invokeManagerApi<ResourcesResponse>({ action: 'resources.list' });
   console.log('[DEMO][MANAGER_API] data:', data);
-  console.log('[DEMO][MANAGER_API] error:', error);
+  console.log('[DEMO][MANAGER_API] error:', null);
   console.log('[DEMO][MANAGER_API] raw data:', data);
-  console.log('[DEMO][MANAGER_API] raw error:', error);
+  console.log('[DEMO][MANAGER_API] raw error:', null);
   console.log('[DEMO][MANAGER_API] ok:', (data as { ok?: boolean } | null)?.ok);
   console.log('[DEMO][MANAGER_API] resources:', (data as { resources?: unknown[] } | null)?.resources);
   console.log('[DEMO][MANAGER_API] resources length:', (data as { resources?: unknown[] } | null)?.resources?.length);
-
-  if (error) {
-    console.error('[DEMO][MANAGER_API] full error:', JSON.stringify(error, null, 2));
-    throw error;
-  }
 
   const response = data as ResourcesResponse;
   if (!response?.ok) {
@@ -192,7 +156,10 @@ export async function loadResourcesWithManagerApi({ sheetId, clientId, clientCon
 }
 
 export async function saveResourceWithManagerApi(payload: SaveResourcePayload) {
-  const session = await getManagerApiSession();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
+  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
   const resource = payload.resource;
   const managerAction =
     payload.action === 'create'
@@ -220,18 +187,7 @@ export async function saveResourceWithManagerApi(payload: SaveResourcePayload) {
     console.log('[DEMO][RESOURCES] update payload', requestBody);
   }
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: requestBody,
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
-
-  if (error) {
-    throw error;
-  }
+  const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string }>(requestBody);
 
   const response = data as { ok?: boolean; code?: string; message?: string };
   if (!response?.ok) {

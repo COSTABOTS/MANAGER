@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient';
+import { invokeManagerApi } from './managerApiClient';
 
 type CapacityRow = Record<string, unknown>;
 type SlotCapacity = Record<string, number>;
@@ -114,26 +114,9 @@ export async function loadCapacitySettings(webhookUrl: string) {
 }
 
 export async function loadCapacityFromManagerApi() {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  console.log('[DEMO][MANAGER_API] session exists', Boolean(session));
-  console.log('[DEMO][MANAGER_API] token exists', Boolean(session?.access_token));
   console.log('[DEMO][MANAGER_API] calling capacity.list');
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: { action: 'capacity.list' },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
-
-  if (error) {
-    console.error('[DEMO][MANAGER_API] capacity.list error', error);
-    throw error;
-  }
+  const data = await invokeManagerApi<CapacityResponse & { ok?: boolean; code?: string; message?: string }>({ action: 'capacity.list' });
 
   const response = data as CapacityResponse & { ok?: boolean; code?: string; message?: string };
 
@@ -148,24 +131,10 @@ export async function loadCapacityFromManagerApi() {
 }
 
 export async function saveCapacityWithManagerApi(capacity: CapacitySaveSlot[]) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: {
-      action: 'capacity.save',
-      capacity,
-    },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
+  const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string; rows?: number }>({
+    action: 'capacity.save',
+    capacity,
   });
-
-  if (error) {
-    throw error;
-  }
 
   const response = data as { ok?: boolean; code?: string; message?: string; rows?: number };
   if (!response?.ok) {

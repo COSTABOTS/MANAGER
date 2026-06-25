@@ -1,7 +1,7 @@
 import { mockReservations } from '../mock';
-import { supabase } from '../lib/supabaseClient';
 import type { DateBookingStatusValue, Reservation } from '../types';
 import { createReservationId } from '../utils/reservationId';
+import { invokeManagerApi } from './managerApiClient';
 
 export async function getReservations(): Promise<Reservation[]> {
   return mockReservations;
@@ -42,24 +42,10 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
 }
 
 async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'reservation.cancel' | 'walkin.create', payload: Record<string, unknown>) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: {
-      action,
-      ...payload,
-    },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
+  const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string }>({
+    action,
+    ...payload,
   });
-
-  if (error) {
-    throw error;
-  }
 
   const response = data as { ok?: boolean; code?: string; message?: string };
   if (!response?.ok) {

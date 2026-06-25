@@ -86,6 +86,23 @@ export interface ExternalClientConfig {
   webhook_feedbacks?: string;
   webhook_leer_feedbacks?: string;
   webhooks?: ClientWebhooks;
+  availableClients?: Array<{
+    client_id: string;
+    rest_name: string;
+    sheet_id?: string;
+    is_demo?: boolean;
+  }>;
+  selectedClient?: {
+    client_id: string;
+    rest_name: string;
+    sheet_id?: string;
+    is_demo?: boolean;
+  };
+  profile_client_id?: string;
+  authProfileClientId?: string;
+  selectedClientId?: string;
+  effectiveClientId?: string;
+  role?: string;
   [key: string]: unknown;
 }
 

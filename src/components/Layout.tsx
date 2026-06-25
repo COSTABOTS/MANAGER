@@ -19,11 +19,26 @@ interface LayoutProps {
   children: ReactNode;
   restaurantName: string;
   restaurantLogoUrl: string;
+  isSuperAdmin?: boolean;
+  activeClientId?: string;
+  managedClients?: Array<{ client_id: string; rest_name: string }>;
+  onClientChange?: (clientId: string) => void;
   onNavigate: (page: PageKey) => void;
   onLogout: () => void;
 }
 
-export function Layout({ activePage, children, restaurantName, restaurantLogoUrl, onNavigate, onLogout }: LayoutProps) {
+export function Layout({
+  activePage,
+  children,
+  restaurantName,
+  restaurantLogoUrl,
+  isSuperAdmin = false,
+  activeClientId = '',
+  managedClients = [],
+  onClientChange,
+  onNavigate,
+  onLogout,
+}: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -80,6 +95,18 @@ export function Layout({ activePage, children, restaurantName, restaurantLogoUrl
                 <strong>{restaurantName}</strong>
               </div>
             </div>
+            {isSuperAdmin && managedClients.length > 0 && (
+              <label className="superadmin-client-selector">
+                <span>Cliente activo</span>
+                <select value={activeClientId} onChange={(event) => onClientChange?.(event.target.value)}>
+                  {managedClients.map((client) => (
+                    <option key={client.client_id} value={client.client_id}>
+                      {client.rest_name || client.client_id} · {client.client_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <button className="icon-button" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu">
             <X size={22} />

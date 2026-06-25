@@ -1,5 +1,6 @@
 import type { RestaurantTable, RestaurantTableType } from '../types';
 import { supabase } from '../lib/supabaseClient';
+import { invokeManagerApi } from './managerApiClient';
 
 type TableRow = Record<string, unknown>;
 
@@ -345,26 +346,14 @@ export async function loadTablesFromSupabaseEdge({ sheetId, clientId, clientConf
   console.log('[DEMO][MESAS] client_id:', clientId ?? '');
   console.log('[DEMO][MESAS] sheet_id:', sheetId ?? '');
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: { action: 'tables.list' },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
+  const data = await invokeManagerApi<TablesResponse & { ok?: boolean; source?: string; code?: string; message?: string }>({ action: 'tables.list' });
   console.log('[DEMO][MANAGER_API] data:', data);
-  console.log('[DEMO][MANAGER_API] error:', error);
+  console.log('[DEMO][MANAGER_API] error:', null);
   console.log('[DEMO][MANAGER_API] raw data:', data);
-  console.log('[DEMO][MANAGER_API] raw error:', error);
+  console.log('[DEMO][MANAGER_API] raw error:', null);
   console.log('[DEMO][MANAGER_API] ok:', (data as { ok?: boolean } | null)?.ok);
   console.log('[DEMO][MANAGER_API] tables:', (data as { tables?: unknown[] } | null)?.tables);
   console.log('[DEMO][MANAGER_API] tables length:', (data as { tables?: unknown[] } | null)?.tables?.length);
-
-  if (error) {
-    console.error('[DEMO][MANAGER_API] full error:', JSON.stringify(error, null, 2));
-    throw error;
-  }
 
   const response = data as TablesResponse & { ok?: boolean; source?: string; code?: string; message?: string };
   if (!response?.ok) {
@@ -450,18 +439,7 @@ export async function saveRestaurantTableWithManagerApi(payload: SaveTablePayloa
     console.log('[DEMO][TABLES] update payload', requestBody);
   }
 
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: requestBody,
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
-
-  if (error) {
-    throw error;
-  }
+  const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string }>(requestBody);
 
   const response = data as { ok?: boolean; code?: string; message?: string };
   if (!response?.ok) {

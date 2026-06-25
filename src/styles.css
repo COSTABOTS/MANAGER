@@ -32,6 +32,10 @@ body {
     var(--page);
 }
 
+body.role-manager .solo-superadmin {
+  display: none !important;
+}
+
 .login-shell {
   display: grid;
   min-height: 100dvh;
@@ -106,6 +110,33 @@ body {
   color: var(--blue-deep);
   background: transparent;
   transform: translateY(-50%);
+}
+
+.superadmin-client-selector {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f9fc;
+}
+
+.superadmin-client-selector span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.superadmin-client-selector select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #fff;
+  font-weight: 900;
 }
 
 .menu-button {
@@ -994,7 +1025,7 @@ button:disabled {
 
 .toolbar-card {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.5fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   align-items: end;
   gap: 14px;
   margin: 18px 0;
@@ -1232,6 +1263,26 @@ button:disabled {
 
 .balinese-resource-card button {
   align-self: end;
+}
+
+.balinese-secondary-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.balinese-other-day-button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid rgba(53, 95, 157, 0.42);
+  color: var(--blue-deep);
+  background: #edf4ff;
+  box-shadow: 0 8px 18px rgba(53, 95, 157, 0.12);
+}
+
+.balinese-other-day-button:hover:not(:disabled) {
+  border-color: var(--blue-deep);
+  background: #e2ecfb;
 }
 
 .table-manager-item.is-inactive {

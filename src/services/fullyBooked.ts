@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient';
+import { invokeManagerApi } from './managerApiClient';
 
 interface FullyBookedResponse {
   ok?: boolean;
@@ -8,24 +8,10 @@ interface FullyBookedResponse {
 }
 
 async function callFullyBooked(action: 'fullybooked.get' | 'fullybooked.set', payload: Record<string, unknown>) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: {
-      action,
-      ...payload,
-    },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
+  const data = await invokeManagerApi<FullyBookedResponse>({
+    action,
+    ...payload,
   });
-
-  if (error) {
-    throw error;
-  }
 
   const response = data as FullyBookedResponse;
   if (!response?.ok) {

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient';
+import { invokeManagerApi } from './managerApiClient';
 
 type FeedbackRow = Record<string, unknown>;
 
@@ -134,21 +134,7 @@ export async function loadFeedbacks(webhookUrl: string, sheetId?: string): Promi
 }
 
 export async function loadFeedbacksFromManagerApi(): Promise<Feedback[]> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData.session;
-
-  const { data, error } = await supabase.functions.invoke('manager-api', {
-    body: { action: 'feedbacks.list' },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
-  });
-
-  if (error) {
-    throw error;
-  }
+  const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string; feedbacks?: FeedbackRow[] }>({ action: 'feedbacks.list' });
 
   const response = data as { ok?: boolean; code?: string; message?: string; feedbacks?: FeedbackRow[] };
   if (!response?.ok) {

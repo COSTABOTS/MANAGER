@@ -61,7 +61,14 @@ function jsonResponse(request: Request, body: unknown, status = 200) {
 }
 
 function errorResponse(request: Request, code: string, message: string, status = 400, debug: Record<string, unknown> = {}) {
-  return jsonResponse(request, { ok: false, code, message, debug }, status);
+  return jsonResponse(request, {
+    ok: false,
+    error: message,
+    code,
+    message,
+    context: debug,
+    debug,
+  }, status);
 }
 
 function createDebug(): ManagerApiDebug {
@@ -172,6 +179,23 @@ function normalizeBoolean(value: unknown) {
 
 function toSheetString(value: unknown) {
   return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function pickRecordValue(row: Record<string, unknown> | null | undefined, keys: string[]) {
+  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedEntries = Object.entries(row ?? {}).reduce<Record<string, unknown>>((items, [key, value]) => {
+    items[normalizeKey(key)] = value;
+    return items;
+  }, {});
+
+  for (const key of keys) {
+    const value = row?.[key] ?? row?.[key.toLowerCase()] ?? row?.[key.toUpperCase()] ?? normalizedEntries[normalizeKey(key)];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+
+  return '';
 }
 
 function toSheetNumber(value: unknown) {
@@ -760,7 +784,9 @@ function columnLetter(index: number) {
   return column;
 }
 
-async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) {
+async function resolveOperationalContext(request: Request, body: Record<string, unknown>, debug: ManagerApiDebug) {
+  const action = body.action ?? 'tables.list';
+  const requestedClientId = body.effective_client_id ?? body.effectiveClientId ?? body.client_id;
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -813,37 +839,157 @@ async function getAuthedClientContext(request: Request, debug: ManagerApiDebug) 
     };
   }
   debug.profileFound = true;
-  debug.clientId = String(profile.client_id).trim();
+  const profileClientId = String(profile.client_id).trim();
+  const profileRole = String(profile.role ?? '').trim().toUpperCase();
+  const selectedClientId = String(requestedClientId ?? '').trim();
+  console.log('[MANAGER_API][AUTH_CONTEXT]', {
+    user_id: userData.user.id,
+    profile_user_id: userData.user.id,
+    profile_role: profileRole,
+    profile_client_id: profileClientId,
+    requested_client_id: selectedClientId,
+  });
+  if (profileRole === 'SUPER_ADMIN' && !selectedClientId) {
+    return {
+      error: errorResponse(request, 'SUPER_ADMIN_CLIENT_REQUIRED', 'SUPER_ADMIN debe enviar client_id operativo', 200, {
+        ...debug,
+        profileClientId,
+        role: profileRole,
+      }),
+    };
+  }
+  const targetClientId = profileRole === 'SUPER_ADMIN' && selectedClientId ? selectedClientId : profileClientId;
+  console.log('[MANAGER_API][CLIENT_CONTEXT]', {
+    profileClientId,
+    selectedClientId,
+    effectiveClientId: targetClientId,
+    role: profileRole,
+  });
+  console.log('[MANAGER_API][TARGET_CLIENT]', {
+    requested_client_id: selectedClientId,
+    targetClientId,
+    isSuperAdmin: profileRole === 'SUPER_ADMIN',
+  });
+  debug.clientId = targetClientId;
 
-  const { data: client, error: clientError } = await dbClient
+  const { data: clientSummary, error: clientSummaryError } = await dbClient
     .from('CLIENTES')
     .select('client_id, sheet_id, rest_name, status')
-    .eq('client_id', String(profile.client_id).trim())
+    .eq('client_id', targetClientId)
     .eq('status', 'ACTIVE')
     .maybeSingle();
+  const { data: client, error: clientError } = await dbClient
+    .from('CLIENTES')
+    .select('*')
+    .eq('client_id', targetClientId)
+    .maybeSingle();
+  console.log('CLIENT_DEBUG', {
+    targetClientId,
+    selectedClientId,
+    profileClientId,
+    profileRole,
+    clientFound: !!client,
+    clientError: clientError?.message,
+    sheetId: client?.sheet_id,
+    sheetIdType: typeof client?.sheet_id,
+    sheetIdLength: typeof client?.sheet_id === 'string' ? client.sheet_id.length : undefined,
+    rawClient: JSON.stringify(client),
+  });
+  const clientStatus = toSheetString(pickRecordValue(client as Record<string, unknown> | null, ['status', 'STATUS']));
+  const isClientActive = !clientStatus || clientStatus.toUpperCase() === 'ACTIVE';
 
-  if (clientError || !client) {
+  if (clientError || !client || !isClientActive) {
+    const { data: diagnosticByClientId, error: diagnosticByClientIdError } = await dbClient
+      .from('CLIENTES')
+      .select('*')
+      .eq('client_id', targetClientId);
+    const { data: diagnosticFirstClients, error: diagnosticFirstClientsError } = await dbClient
+      .from('CLIENTES')
+      .select('client_id, rest_name, status')
+      .limit(10);
+
     return {
-      error: errorResponse(request, 'CLIENT_NOT_FOUND', 'Cliente no encontrado', 404, {
+      error: errorResponse(request, 'CLIENT_NOT_FOUND', 'Cliente no encontrado', 200, {
         ...debug,
-        client_id: profile.client_id,
+        targetClientId,
+        clientSummary,
+        clientSummaryError: clientSummaryError?.message,
+        clientStatus,
+        isClientActive,
+        diagnosticByClientId,
+        diagnosticByClientIdError: diagnosticByClientIdError?.message,
+        diagnosticFirstClients,
+        diagnosticFirstClientsError: diagnosticFirstClientsError?.message,
+        client_id: targetClientId,
         supabase_error: clientError?.message,
       }),
     };
   }
   debug.clientFound = true;
-  debug.hasSheetId = Boolean(client.sheet_id);
+  const resolvedClient = {
+    ...(clientSummary as Record<string, unknown> | null ?? {}),
+    ...(client as Record<string, unknown>),
+  };
+  const resolvedSheetId = toSheetString(pickRecordValue(resolvedClient, [
+    'sheet_id',
+    'sheetId',
+    'SHEET_ID',
+    'googleSheetId',
+    'google_sheet_id',
+    'GOOGLE_SHEET_ID',
+  ]));
 
-  if (!client.sheet_id) {
-    return { error: errorResponse(request, 'SHEET_ID_NOT_FOUND', 'Sheet ID no encontrado', 404, debug) };
+  debug.hasSheetId = Boolean(resolvedSheetId);
+  console.log('[MANAGER_API][SHEET_ID_DIAGNOSTIC]', {
+    action,
+    profileRole,
+    profileClientId,
+    selectedClientId,
+    targetClientId,
+    clientLoaded: pickRecordValue(resolvedClient, ['client_id', 'CLIENT_ID']),
+    sheetId: pickRecordValue(resolvedClient, ['sheet_id', 'sheetId', 'SHEET_ID']),
+    resolvedSheetId,
+    clientSummary,
+    clientSummaryError: clientSummaryError?.message,
+  });
+  console.log('[MANAGER_API][CLIENT_LOADED]', {
+    client_id: pickRecordValue(resolvedClient, ['client_id', 'CLIENT_ID']),
+    rest_name: pickRecordValue(resolvedClient, ['rest_name', 'REST_NAME']),
+    status: pickRecordValue(resolvedClient, ['status', 'STATUS']),
+    sheet_id: resolvedSheetId,
+  });
+
+  if (!resolvedSheetId) {
+    const sheetDebug = {
+      ...debug,
+      action,
+      effectiveClientId: targetClientId,
+      requestedClientId,
+      selectedClientId,
+      targetClientId,
+      profileClientId,
+      profileRole,
+      clientLoaded: resolvedClient,
+      clientFound: !!client,
+      sheetId: client?.sheet_id,
+      sheetIdType: typeof client?.sheet_id,
+      sheetIdLength: typeof client?.sheet_id === 'string' ? client.sheet_id.length : undefined,
+      rawClient: client,
+      sheet_id: pickRecordValue(resolvedClient, ['sheet_id', 'sheetId', 'SHEET_ID']),
+      contextSheetId: resolvedSheetId,
+      clientSummary,
+      clientSummaryError: clientSummaryError?.message,
+    };
+    console.log('[SHEET DEBUG]', sheetDebug);
+    return { error: errorResponse(request, 'SHEET_ID_NOT_FOUND', 'Sheet ID no encontrado', 200, sheetDebug) };
   }
 
   return {
     user: userData.user,
     profile,
-    client,
-    clientId: String(client.client_id),
-    sheetId: String(client.sheet_id),
+    client: resolvedClient,
+    clientId: targetClientId,
+    sheetId: resolvedSheetId,
   };
 }
 
@@ -1864,8 +2010,13 @@ Deno.serve(async (request) => {
     const body = await request.json().catch(() => ({})) as { action?: ManagerAction | string };
     const action = body.action ?? 'tables.list';
     console.log(`[MANAGER_API] action=${action}`);
+    console.log('[MANAGER_API][REQUEST]', {
+      action,
+      requested_client_id: body.client_id,
+      requested_effective_client_id: body.effective_client_id ?? body.effectiveClientId,
+    });
 
-    const context = await getAuthedClientContext(request, debug);
+    const context = await resolveOperationalContext(request, body as Record<string, unknown>, debug);
     if ('error' in context) {
       return context.error;
     }

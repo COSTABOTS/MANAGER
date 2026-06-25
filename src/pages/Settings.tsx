@@ -13,6 +13,7 @@ interface SettingsProps {
   isLoadingSettings: boolean;
   settingsMessage: string;
   isDemoMode?: boolean;
+  isSuperAdmin?: boolean;
   clientId?: string;
   lastUpdatedAt?: string;
   onRefreshTables: () => Promise<void>;
@@ -92,6 +93,7 @@ export function Settings({
   isLoadingSettings,
   settingsMessage,
   isDemoMode = false,
+  isSuperAdmin = false,
   clientId = '',
   lastUpdatedAt = '',
   onRefreshTables,
@@ -113,6 +115,12 @@ export function Settings({
   const [tableToDelete, setTableToDelete] = useState<RestaurantTable | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
+
+  useEffect(() => {
+    if (!isSuperAdmin && activeSettingsTab === 'advanced') {
+      setActiveSettingsTab('general');
+    }
+  }, [activeSettingsTab, isSuperAdmin]);
 
   useEffect(() => {
     setDraftSettings(settings);
@@ -451,7 +459,7 @@ export function Settings({
             { key: 'tables' as const, label: 'Mesas' },
             { key: 'resources' as const, label: 'Recursos' },
             { key: 'advanced' as const, label: 'Avanzado' },
-          ].map((tab) => (
+          ].filter((tab) => isSuperAdmin || tab.key !== 'advanced').map((tab) => (
             <button
               key={tab.key}
               className={activeSettingsTab === tab.key ? 'is-active' : undefined}
@@ -623,8 +631,8 @@ export function Settings({
 
         {userRole === 'admin' && (!isDemoMode || activeSettingsTab === 'advanced' || activeSettingsTab === 'tables' || activeSettingsTab === 'resources') && (
           <article className="settings-card admin-card">
-            {(!isDemoMode || activeSettingsTab === 'advanced') && (
-              <>
+            {isSuperAdmin && (!isDemoMode || activeSettingsTab === 'advanced') && (
+              <div className="solo-superadmin">
             <div className="section-title compact">
               <div>
                 <p className="eyebrow">Solo admin</p>
@@ -699,7 +707,7 @@ export function Settings({
               webhookFields
             )}
             <SwitchRow label="Licencia activa" checked={draftSettings.licenseActive} onChange={(value) => updateDraft('licenseActive', value)} />
-              </>
+              </div>
             )}
 
             {(!isDemoMode || activeSettingsTab === 'tables') && (
