@@ -89,6 +89,8 @@ export interface ExternalClientConfig {
   availableClients?: Array<{
     client_id: string;
     rest_name: string;
+    logo_url?: string;
+    primary_color?: string;
     sheet_id?: string;
     is_demo?: boolean;
     status?: string;
@@ -98,6 +100,8 @@ export interface ExternalClientConfig {
   selectedClient?: {
     client_id: string;
     rest_name: string;
+    logo_url?: string;
+    primary_color?: string;
     sheet_id?: string;
     is_demo?: boolean;
     status?: string;

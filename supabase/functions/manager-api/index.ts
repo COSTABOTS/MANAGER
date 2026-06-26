@@ -22,6 +22,7 @@ type ManagerAction =
   | 'reservation.assignTable'
   | 'reservation.cancel'
   | 'walkin.create'
+  | 'clients.list'
   | 'client.license.update';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
@@ -859,7 +860,8 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     profile_client_id: profileClientId,
     requested_client_id: selectedClientId,
   });
-  if (profileRole === 'SUPER_ADMIN' && !selectedClientId) {
+  const actionCanUseProfileClient = action === 'clients.list';
+  if (profileRole === 'SUPER_ADMIN' && !selectedClientId && !actionCanUseProfileClient) {
     return {
       error: errorResponse(request, 'SUPER_ADMIN_CLIENT_REQUIRED', 'SUPER_ADMIN debe enviar client_id operativo', 200, {
         ...debug,
@@ -982,7 +984,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheet_id: resolvedSheetId,
   });
 
-  const actionRequiresSheetId = action !== 'client.license.update';
+  const actionRequiresSheetId = action !== 'client.license.update' && action !== 'clients.list';
   if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
@@ -1101,6 +1103,43 @@ async function updateClientLicense(
       plan: normalizeLicensePlan((data as Record<string, unknown>).plan),
       expires_at: toSheetString((data as Record<string, unknown>).expires_at),
     },
+  });
+}
+
+async function listClients(request: Request, context: { dbClient: ReturnType<typeof createClient>; role: string }) {
+  if (context.role !== 'SUPER_ADMIN') {
+    return errorResponse(request, 'FORBIDDEN', 'Solo SUPER_ADMIN puede listar clientes', 403, {
+      action: 'clients.list',
+      role: context.role,
+    });
+  }
+
+  const { data, error } = await context.dbClient
+    .from('CLIENTES')
+    .select('client_id, rest_name, logo_url, primary_color, sheet_id, status, plan, expires_at, is_demo')
+    .order('rest_name', { ascending: true });
+
+  if (error) {
+    return errorResponse(request, 'CLIENTS_LIST_FAILED', error.message, 200, {
+      action: 'clients.list',
+      supabase_error: error.message,
+    });
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'clients.list',
+    clients: (data ?? []).map((client: Record<string, unknown>) => ({
+      client_id: toSheetString(client.client_id),
+      rest_name: toSheetString(client.rest_name),
+      logo_url: toSheetString(client.logo_url),
+      primary_color: toSheetString(client.primary_color),
+      sheet_id: toSheetString(client.sheet_id),
+      status: normalizeLicenseStatus(client.status),
+      plan: normalizeLicensePlan(client.plan),
+      expires_at: toSheetString(client.expires_at),
+      is_demo: Boolean(client.is_demo),
+    })),
   });
 }
 
@@ -2173,6 +2212,9 @@ Deno.serve(async (request) => {
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+
+      case 'clients.list':
+        return await listClients(request, context);
 
       case 'client.license.update':
         return await updateClientLicense(request, context, body as Record<string, unknown>);

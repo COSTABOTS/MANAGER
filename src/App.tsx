@@ -39,6 +39,7 @@ import { requireNameOrRoom, requireWebhookFields } from './services/webhookValid
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
 import { saveClientLicenseWithManagerApi } from './services/clientLicense';
+import { loadManagedClientsWithManagerApi } from './services/clients';
 import type { BookingService, BookingStatus, ClientLicense, ClientLicensePlan, ClientLicenseStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
@@ -127,6 +128,8 @@ function normalizeUserRole(role: unknown) {
 interface ManagedClientOption {
   client_id: string;
   rest_name: string;
+  logo_url?: string;
+  primary_color?: string;
   sheet_id?: string;
   is_demo?: boolean;
   status?: string;
@@ -138,6 +141,8 @@ function mapManagedClient(row: Record<string, unknown>): ManagedClientOption {
   return {
     client_id: pickSupabaseValue(row, ['client_id', 'CLIENT_ID']),
     rest_name: pickSupabaseValue(row, ['rest_name', 'REST_NAME', 'rest_nombre', 'restaurantName', 'restaurant_name']),
+    logo_url: pickSupabaseValue(row, ['logo_url', 'LOGO_URL', 'logo_restaurante', 'restaurantLogoUrl']),
+    primary_color: pickSupabaseValue(row, ['primary_color', 'PRIMARY_COLOR', 'color', 'primaryColor']),
     sheet_id: pickSupabaseValue(row, ['sheet_id', 'SHEET_ID', 'googleSheetId']),
     is_demo: toSupabaseBoolean(row.is_demo ?? row.IS_DEMO),
     status: pickSupabaseValue(row, ['status', 'STATUS']) || 'ACTIVE',
@@ -453,38 +458,50 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
   const profileRole = normalizeUserRole(pickSupabaseValue(profile, ['role', 'ROLE']));
   let availableClients: ManagedClientOption[] = [];
   let clientId = profileClientId;
+  let clientFromManagedList: ManagedClientOption | null = null;
 
   if (profileRole === 'SUPER_ADMIN') {
-    const clientsResult = await supabase
-      .from('CLIENTES')
-      .select('*');
-
-    if (clientsResult.error) {
-      console.warn('[LOGIN][SUPABASE] clients list warning', clientsResult.error);
-    } else {
-      availableClients = ((clientsResult.data ?? []) as Array<Record<string, unknown>>)
-        .map(mapManagedClient)
+    try {
+      availableClients = (await loadManagedClientsWithManagerApi())
+        .map((client) => mapManagedClient(client as unknown as Record<string, unknown>))
         .filter((client) => client.client_id);
+    } catch (managerApiError) {
+      console.warn('[LOGIN][SUPABASE] manager-api clients.list warning', managerApiError);
+      const clientsResult = await supabase
+        .from('CLIENTES')
+        .select('*');
 
-      const requestedClient = selectedClientId
-        ? availableClients.find((client) => client.client_id === selectedClientId)
-        : null;
-      const defaultClient = availableClients.find((client) => client.client_id !== 'COSTABOTS_CORE') ?? availableClients[0];
-      clientId = requestedClient?.client_id ?? defaultClient?.client_id ?? profileClientId;
+      if (clientsResult.error) {
+        console.warn('[LOGIN][SUPABASE] clients list warning', clientsResult.error);
+      } else {
+        availableClients = ((clientsResult.data ?? []) as Array<Record<string, unknown>>)
+          .map(mapManagedClient)
+          .filter((client) => client.client_id);
+      }
     }
+
+    const requestedClient = selectedClientId
+      ? availableClients.find((client) => client.client_id === selectedClientId)
+      : null;
+    const defaultClient = availableClients.find((client) => client.client_id !== 'COSTABOTS_CORE') ?? availableClients[0];
+    clientFromManagedList = requestedClient ?? defaultClient ?? null;
+    clientId = clientFromManagedList?.client_id ?? profileClientId;
   }
 
-  const clientResult = await supabase
-    .from('CLIENTES')
-    .select('*')
-    .eq('client_id', clientId)
-    .maybeSingle();
+  let client: Record<string, unknown> | null = clientFromManagedList as unknown as Record<string, unknown> | null;
+  if (!client) {
+    const clientResult = await supabase
+      .from('CLIENTES')
+      .select('*')
+      .eq('client_id', clientId)
+      .maybeSingle();
 
-  if (clientResult.error) {
-    throw new Error(`CLIENT_ERROR: ${clientResult.error.message}`);
+    if (clientResult.error) {
+      throw new Error(`CLIENT_ERROR: ${clientResult.error.message}`);
+    }
+
+    client = clientResult.data as Record<string, unknown> | null;
   }
-
-  const client = clientResult.data as Record<string, unknown> | null;
   if (!client) {
     throw new Error('CLIENT_NOT_FOUND');
   }
