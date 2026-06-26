@@ -23,7 +23,8 @@ type ManagerAction =
   | 'reservation.cancel'
   | 'walkin.create'
   | 'clients.list'
-  | 'client.license.update';
+  | 'client.license.update'
+  | 'client.branding.update';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -971,7 +972,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheet_id: resolvedSheetId,
   });
 
-  const actionRequiresSheetId = action !== 'client.license.update' && action !== 'clients.list';
+  const actionRequiresSheetId = action !== 'client.license.update' && action !== 'client.branding.update' && action !== 'clients.list';
   if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
@@ -1114,6 +1115,58 @@ async function updateClientLicense(
       plan: normalizeLicensePlan(updatedClient.plan),
       expires_at: toSheetString(updatedClient.expires_at),
     },
+  });
+}
+
+async function updateClientBranding(
+  request: Request,
+  context: {
+    dbClient: ReturnType<typeof createClient>;
+    clientId: string;
+    role: string;
+  },
+  body: Record<string, unknown>,
+) {
+  if (context.role !== 'SUPER_ADMIN') {
+    return errorResponse(request, 'FORBIDDEN', 'Solo SUPER_ADMIN puede actualizar branding', 403, {
+      action: 'client.branding.update',
+      clientId: context.clientId,
+      role: context.role,
+    });
+  }
+
+  const branding = (body.branding && typeof body.branding === 'object' ? body.branding : body) as Record<string, unknown>;
+  const primaryColor = toSheetString(branding.primary_color ?? branding.primaryColor);
+
+  if (!/^#[0-9a-f]{6}$/i.test(primaryColor)) {
+    return errorResponse(request, 'INVALID_PRIMARY_COLOR', 'primary_color no es un HEX valido', 200, {
+      action: 'client.branding.update',
+      clientId: context.clientId,
+      primaryColor,
+    });
+  }
+
+  const { data, error } = await context.dbClient
+    .from('CLIENTES')
+    .update({ primary_color: primaryColor })
+    .eq('client_id', context.clientId)
+    .select('client_id, rest_name, primary_color, logo_url, sheet_id, status, plan, expires_at, is_demo')
+    .single();
+
+  if (error || !data) {
+    return errorResponse(request, 'CLIENT_BRANDING_UPDATE_FAILED', error?.message || 'No se pudo actualizar primary_color', 200, {
+      action: 'client.branding.update',
+      clientId: context.clientId,
+      primaryColor,
+      updateError: error?.message,
+    });
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'client.branding.update',
+    client_id: context.clientId,
+    client: data,
   });
 }
 
@@ -2229,6 +2282,9 @@ Deno.serve(async (request) => {
 
       case 'client.license.update':
         return await updateClientLicense(request, context, body as Record<string, unknown>);
+
+      case 'client.branding.update':
+        return await updateClientBranding(request, context, body as Record<string, unknown>);
 
       default:
         return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 400, { ...debug, action });

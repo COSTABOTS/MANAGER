@@ -13,6 +13,10 @@
   --blue: #4f83dc;
   --blue-deep: #355f9d;
   --blue-soft: #dce8fb;
+  --client-primary-color: #3b63a3;
+  --client-primary-dark: #2a4776;
+  --client-primary-soft: rgba(59, 99, 163, 0.16);
+  --client-primary-border: rgba(59, 99, 163, 0.34);
   --pink: #ee00d8;
   --green: #14864b;
   --red: #a92323;
@@ -28,6 +32,8 @@ body {
   min-width: 320px;
   color: var(--ink);
   background:
+    radial-gradient(circle at 14% -10%, var(--client-primary-soft) 0, rgba(255, 255, 255, 0) 410px),
+    radial-gradient(circle at 86% 0, var(--client-primary-soft) 0, rgba(255, 255, 255, 0) 360px),
     linear-gradient(180deg, #f7f9fc 0, var(--page) 320px),
     var(--page);
 }
@@ -1330,7 +1336,7 @@ button:disabled {
 .balinese-other-day-button {
   min-height: 46px;
   padding: 0 18px;
-  border: 1px solid rgba(53, 95, 157, 0.42);
+  border: 1px solid rgba(46, 78, 126, 0.24);
   color: var(--blue-deep);
   background: #edf4ff;
   box-shadow: 0 8px 18px rgba(53, 95, 157, 0.12);

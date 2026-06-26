@@ -39,6 +39,7 @@ import { requireNameOrRoom, requireWebhookFields } from './services/webhookValid
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
 import { saveClientLicenseWithManagerApi } from './services/clientLicense';
+import { saveClientPrimaryColorWithManagerApi } from './services/clientBranding';
 import { loadManagedClientsWithManagerApi } from './services/clients';
 import type { BookingService, BookingStatus, ClientLicense, ClientLicensePlan, ClientLicenseStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
@@ -55,6 +56,7 @@ const DEMO_PASSWORD = 'Demo2026';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
 const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'];
 const TIMED_SERVICE_ORDER: Array<'DESAYUNO' | 'ALMUERZO' | 'CENA'> = ['DESAYUNO', 'ALMUERZO', 'CENA'];
+const CLIENT_PRIMARY_FALLBACK = '#3b63a3';
 const DEFAULT_SERVICE_HOURS: ManagerSettings['serviceHours'] = {
   DESAYUNO: { start: '08:00', end: '10:30' },
   ALMUERZO: { start: '12:00', end: '16:00' },
@@ -123,6 +125,48 @@ function getInitialTodayService(serviceTabs: BookingService[]): BookingService {
 
 function normalizeUserRole(role: unknown) {
   return String(role ?? '').trim().toUpperCase();
+}
+
+function normalizeHexColor(value: unknown) {
+  const rawColor = String(value ?? '').trim();
+  const match = rawColor.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+
+  if (!match) {
+    return CLIENT_PRIMARY_FALLBACK;
+  }
+
+  const hex = match[1].length === 3
+    ? match[1].split('').map((char) => `${char}${char}`).join('')
+    : match[1];
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
+  if (luminance > 0.82) {
+    return CLIENT_PRIMARY_FALLBACK;
+  }
+
+  return `#${hex.toLowerCase()}`;
+}
+
+function mixColor(hexColor: string, ratio: number) {
+  const hex = normalizeHexColor(hexColor).slice(1);
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+
+  return `#${clamp(red * ratio).toString(16).padStart(2, '0')}${clamp(green * ratio).toString(16).padStart(2, '0')}${clamp(blue * ratio).toString(16).padStart(2, '0')}`;
+}
+
+function hexToRgb(hexColor: string) {
+  const hex = normalizeHexColor(hexColor).slice(1);
+  return {
+    red: Number.parseInt(hex.slice(0, 2), 16),
+    green: Number.parseInt(hex.slice(2, 4), 16),
+    blue: Number.parseInt(hex.slice(4, 6), 16),
+  };
 }
 
 interface ManagedClientOption {
@@ -706,6 +750,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     () => (Array.isArray(clientConfig?.availableClients) ? (clientConfig.availableClients as ManagedClientOption[]) : []),
     [clientConfig?.availableClients],
   );
+
+  useEffect(() => {
+    const clientColor = normalizeHexColor(clientConfig?.primary_color ?? clientConfig?.primaryColor ?? settings.primaryColor);
+    const clientColorDark = mixColor(clientColor, 0.72);
+    const rgb = hexToRgb(clientColor);
+    document.documentElement.style.setProperty('--client-primary-color', clientColor);
+    document.documentElement.style.setProperty('--client-primary-dark', clientColorDark);
+    document.documentElement.style.setProperty('--client-primary-soft', `rgba(${rgb.red}, ${rgb.green}, ${rgb.blue}, 0.16)`);
+    document.documentElement.style.setProperty('--client-primary-border', `rgba(${rgb.red}, ${rgb.green}, ${rgb.blue}, 0.34)`);
+  }, [clientConfig?.primary_color, clientConfig?.primaryColor, settings.primaryColor]);
 
   function handleTodayServiceChange(service: BookingService) {
     selectedTodayServiceWasManualRef.current = true;
@@ -1712,6 +1766,69 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     await syncResource('delete', resource);
   }
 
+  function applyClientPrimaryColor(primaryColor: string, updatedClient?: ManagedClientOption) {
+    setClientConfig((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const targetClientId = updatedClient?.client_id || current.selectedClientId || current.client_id;
+      const nextSelectedClient = current.selectedClient
+        ? {
+            ...current.selectedClient,
+            ...(updatedClient ?? {}),
+            primary_color: primaryColor,
+          }
+        : current.selectedClient;
+      const nextAvailableClients = Array.isArray(current.availableClients)
+        ? current.availableClients.map((client) =>
+            client.client_id === targetClientId
+              ? {
+                  ...client,
+                  ...(updatedClient ?? {}),
+                  primary_color: primaryColor,
+                }
+              : client,
+          )
+        : current.availableClients;
+
+      const nextConfig = normalizeClientConfig({
+        ...current,
+        color: primaryColor,
+        primary_color: primaryColor,
+        primaryColor,
+        selectedClient: nextSelectedClient,
+        availableClients: nextAvailableClients,
+      });
+      sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(nextConfig));
+      return nextConfig;
+    });
+  }
+
+  async function syncClientPrimaryColor(nextSettings: ManagerSettings) {
+    if (!isSuperAdmin) {
+      return true;
+    }
+
+    const nextColor = normalizeHexColor(nextSettings.primaryColor);
+    const currentColor = normalizeHexColor(clientConfig?.primary_color ?? clientConfig?.primaryColor);
+
+    if (nextColor === currentColor) {
+      return true;
+    }
+
+    try {
+      const result = await saveClientPrimaryColorWithManagerApi(nextColor);
+      applyClientPrimaryColor(nextColor, mapManagedClient(result.client as unknown as Record<string, unknown>));
+      setSettingsMessage('Color principal guardado en CLIENTES');
+      return true;
+    } catch (error) {
+      console.error('[BRANDING] primary_color save error', error);
+      setSettingsMessage('No se pudo guardar el color principal en CLIENTES');
+      return false;
+    }
+  }
+
   async function syncValidatedWebhook(
     webhookUrl: string,
     payload: Record<string, unknown>,
@@ -1745,18 +1862,27 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
-    updateSettings(nextSettings);
-    const capacitySlots = generateTimeSlots(nextSettings.openingTime, nextSettings.closingTime, nextSettings.bookingInterval);
-    const capacityPayload = buildCapacityPayload(nextSettings.restaurantName, nextSettings.slotCapacity, capacitySlots);
+    const settingsToSave = {
+      ...nextSettings,
+      primaryColor: normalizeHexColor(nextSettings.primaryColor),
+    };
+    updateSettings(settingsToSave);
+    const capacitySlots = generateTimeSlots(settingsToSave.openingTime, settingsToSave.closingTime, settingsToSave.bookingInterval);
+    const capacityPayload = buildCapacityPayload(settingsToSave.restaurantName, settingsToSave.slotCapacity, capacitySlots);
     const settingsWebhook = getOperationalSettingsWebhook();
     const capacityWebhook = getCapacitySaveWebhook();
     console.log('SAVE CAPACITY webhook URL:', capacityWebhook);
     setLastSync('Configuracion guardada correctamente');
     let settingsSavedByManagerApi = false;
 
+    const primaryColorSaved = await syncClientPrimaryColor(settingsToSave);
+    if (!primaryColorSaved) {
+      return 'error';
+    }
+
     if (isSupabaseDemoRoute()) {
       try {
-        await saveOperationalSettingsWithManagerApi(nextSettings);
+        await saveOperationalSettingsWithManagerApi(settingsToSave);
         settingsSavedByManagerApi = true;
         setSettingsMessage('SETTINGS guardados correctamente');
       } catch (error) {
@@ -1773,7 +1899,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       }
 
       try {
-        await saveOperationalSettings(settingsWebhook, nextSettings);
+        await saveOperationalSettings(settingsWebhook, settingsToSave);
         setSettingsMessage('SETTINGS guardados correctamente');
       } catch (error) {
         console.error('error al guardar SETTINGS', error);
@@ -1783,7 +1909,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       }
     } else if (!settingsSavedByManagerApi && settingsWebhook.trim()) {
       try {
-        await saveOperationalSettings(settingsWebhook, nextSettings);
+        await saveOperationalSettings(settingsWebhook, settingsToSave);
         setSettingsMessage('SETTINGS guardados correctamente');
       } catch (error) {
         console.error('error al guardar SETTINGS', error);
