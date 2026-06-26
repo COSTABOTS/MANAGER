@@ -937,19 +937,6 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
       }),
     };
   }
-  if (profileRole !== 'SUPER_ADMIN' && isLicenseInactive) {
-    return {
-      error: errorResponse(request, 'LICENSE_INACTIVE', 'Licencia COSTABOTS inactiva', 200, {
-        ...debug,
-        targetClientId,
-        profileRole,
-        profileClientId,
-        clientStatus,
-        clientPlan,
-        clientExpiresAt,
-      }),
-    };
-  }
   debug.clientFound = true;
   const resolvedClient = {
     ...(clientSummary as Record<string, unknown> | null ?? {}),
