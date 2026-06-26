@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { jsPDF } from 'jspdf';
-import { RESTAURANT_LOGO } from '../config/branding';
+import type { Reservation } from '../types';
 import type { Feedback } from '../services/feedbacks';
-import type { BookingSource, Reservation } from '../types';
-import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
+import { getLocalDateString, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation, isCanceledReservation } from '../utils/reservationStatus';
 
 type ReportPeriod = '7d' | '30d' | 'month';
@@ -17,200 +16,302 @@ interface ReportsProps {
   restaurantName: string;
 }
 
-interface PeriodRange {
-  start: string;
-  end: string;
-  previousStart: string;
-  previousEnd: string;
+interface DonutSegment {
+  label: string;
+  value: number;
+  color: string;
 }
 
-const PERIOD_OPTIONS: Array<{ key: ReportPeriod; label: string }> = [
-  { key: '7d', label: 'Ultimos 7 dias' },
-  { key: '30d', label: 'Ultimos 30 dias' },
-  { key: 'month', label: 'Este mes' },
-];
-
-const TICKET_STORAGE_KEY = 'manager_reports_average_ticket';
 const DEFAULT_AVERAGE_TICKET = 35;
-const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
-const ORIGIN_LABELS: Record<OriginKey, string> = {
-  bot: 'BOT',
-  manual: 'MANUAL',
-  walkin: 'WALK-IN',
+const TICKET_STORAGE_KEY = 'costabots_average_ticket';
+const REPORT_COLORS = {
+  blue: '#355f9d',
+  blueSoft: '#78a6e8',
+  green: '#1f9d62',
+  red: '#d6453d',
+  amber: '#d8a511',
+  turquoise: '#22a6b3',
+  slate: '#667085',
+  breakfast: '#f4b6aa',
+  lunch: '#f0d789',
+  dinner: '#355f9d',
+  balinese: '#22a6b3',
+  unknown: '#98a2b3',
 };
 
-function addDays(date: string, days: number) {
-  const baseDate = new Date(`${date}T12:00:00`);
-  baseDate.setDate(baseDate.getDate() + days);
-  return baseDate.toISOString().slice(0, 10);
+const SERVICE_LABELS: Record<string, string> = {
+  DESAYUNO: 'Desayuno',
+  ALMUERZO: 'Almuerzo',
+  CENA: 'Cena',
+  BALINESA: 'Balinesas',
+  UNCLASSIFIED: 'Sin clasificar',
+};
+
+const SERVICE_COLORS: Record<string, string> = {
+  DESAYUNO: REPORT_COLORS.breakfast,
+  ALMUERZO: REPORT_COLORS.lunch,
+  CENA: REPORT_COLORS.dinner,
+  BALINESA: REPORT_COLORS.balinese,
+  UNCLASSIFIED: REPORT_COLORS.unknown,
+};
+
+function safeNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
-function getMonthStart(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function getMonthEnd(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().slice(0, 10);
-}
-
-function getPeriodRange(period: ReportPeriod): PeriodRange {
-  const today = getLocalDateString(new Date());
-  const currentDate = new Date(`${today}T12:00:00`);
-
-  if (period === 'month') {
-    const previousMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1, 12);
-
-    return {
-      start: getMonthStart(currentDate),
-      end: today,
-      previousStart: getMonthStart(previousMonth),
-      previousEnd: getMonthEnd(previousMonth),
-    };
+function percentage(value: number, total: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
+    return 0;
   }
 
-  const days = period === '7d' ? 7 : 30;
+  return Math.round((value / total) * 100);
+}
+
+const percent = percentage;
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(safeNumber(value));
+}
+
+function formatDuration(minutes: number) {
+  const safeMinutes = Math.max(0, Math.round(safeNumber(minutes)));
+  const hours = Math.floor(safeMinutes / 60);
+  const rest = safeMinutes % 60;
+
+  if (hours > 0 && rest > 0) {
+    return `${hours} h ${rest} min`;
+  }
+
+  if (hours > 0) {
+    return `${hours} h`;
+  }
+
+  return `${rest} min`;
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function formatDisplayDate(value: string) {
+  const normalized = normalizeDateForCompare(value);
+  if (!normalized) {
+    return value || '-';
+  }
+
+  const [year, month, day] = normalized.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function parseComparableDate(value: string) {
+  const normalized = normalizeDateForCompare(value);
+  return normalized || '0000-00-00';
+}
+
+function getPeriodRange(period: ReportPeriod) {
+  const today = getLocalDateString(new Date());
+  const endDate = new Date(`${today}T12:00:00`);
+  const startDate = new Date(endDate);
+
+  if (period === '7d') {
+    startDate.setDate(endDate.getDate() - 6);
+  } else if (period === '30d') {
+    startDate.setDate(endDate.getDate() - 29);
+  } else {
+    startDate.setDate(1);
+  }
+
+  const days = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1);
+  const previousEnd = new Date(startDate);
+  previousEnd.setDate(startDate.getDate() - 1);
+  const previousStart = new Date(previousEnd);
+
+  if (period === 'month') {
+    previousStart.setDate(1);
+  } else {
+    previousStart.setDate(previousEnd.getDate() - days + 1);
+  }
 
   return {
-    start: addDays(today, -(days - 1)),
-    end: today,
-    previousStart: addDays(today, -(days * 2 - 1)),
-    previousEnd: addDays(today, -days),
+    start: startDate.toISOString().slice(0, 10),
+    end: endDate.toISOString().slice(0, 10),
+    previousStart: previousStart.toISOString().slice(0, 10),
+    previousEnd: previousEnd.toISOString().slice(0, 10),
   };
 }
 
-function getDatesInRange(start: string, end: string) {
-  const dates: string[] = [];
-  let cursor = start;
+function getOriginKey(source: unknown): OriginKey {
+  const value = normalizeText(source);
 
-  while (cursor <= end) {
-    dates.push(cursor);
-    cursor = addDays(cursor, 1);
-  }
-
-  return dates;
-}
-
-function getOriginKey(source: BookingSource): OriginKey {
-  if (source === 'WALKIN') {
+  if (value.includes('walk')) {
     return 'walkin';
   }
 
-  if (source === 'MANUAL') {
+  if (value.includes('manual')) {
     return 'manual';
   }
 
   return 'bot';
 }
 
-function getLanguageKey(language = '') {
-  const normalized = language.trim().toUpperCase();
+function getLanguageKey(language: unknown) {
+  const value = normalizeText(language);
 
-  if (['ES', 'ESP', 'ESPANOL', 'SPANISH'].includes(normalized)) {
-    return 'spanish';
+  if (value.startsWith('en') || value.includes('ingles') || value.includes('english')) {
+    return 'english';
   }
 
-  if (['EN', 'ENG', 'INGLES', 'ENGLISH'].includes(normalized)) {
-    return 'english';
+  if (value.startsWith('es') || value.includes('spanish') || value.includes('espanol')) {
+    return 'spanish';
   }
 
   return 'unknown';
 }
 
-function percentage(value: number, total: number) {
-  return total > 0 ? Math.round((value / total) * 100) : 0;
-}
+function detectService(reservation: Reservation) {
+  const directService = normalizeText(reservation.service);
 
-function getDeltaPercent(current: number, previous: number) {
-  if (previous === 0) {
-    return current > 0 ? 100 : 0;
+  if (directService.includes('desayuno') || directService.includes('breakfast')) {
+    return 'DESAYUNO';
   }
 
-  return Math.round(((current - previous) / previous) * 100);
-}
-
-function getDeltaTone(delta: number) {
-  if (delta > 0) {
-    return 'is-up';
+  if (directService.includes('almuerzo') || directService.includes('comida') || directService.includes('lunch')) {
+    return 'ALMUERZO';
   }
 
-  if (delta < 0) {
-    return 'is-down';
+  if (directService.includes('balinesa') || directService.includes('balinese') || directService.includes('bali')) {
+    return 'BALINESA';
   }
 
-  return 'is-flat';
-}
-
-function getCancellationTone(rate: number) {
-  if (rate < 10) {
-    return 'is-good';
+  if (directService.includes('cena') || directService.includes('dinner')) {
+    return 'CENA';
   }
 
-  if (rate <= 20) {
-    return 'is-warning';
+  const searchable = normalizeText([
+    reservation.specialRequest,
+    reservation.source,
+    reservation.balinesePackage,
+    reservation.resource,
+  ].join(' '));
+
+  if (searchable.includes('balinesa') || searchable.includes('balinese') || searchable.includes('bali bed') || searchable.includes('day bed') || searchable.includes('hamaca')) {
+    return 'BALINESA';
   }
 
-  return 'is-danger';
+  if (searchable.includes('desayuno') || searchable.includes('breakfast')) {
+    return 'DESAYUNO';
+  }
+
+  if (searchable.includes('almuerzo') || searchable.includes('comida') || searchable.includes('lunch')) {
+    return 'ALMUERZO';
+  }
+
+  if (searchable.includes('cena') || searchable.includes('dinner')) {
+    return 'CENA';
+  }
+
+  return 'CENA';
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat('es-ES', {
-    maximumFractionDigits: 0,
-    style: 'currency',
-    currency: 'EUR',
-  }).format(value);
+function getBalineseResource(reservation: Reservation) {
+  const value = String(reservation.resource || reservation.table || reservation.specialRequest || '').toUpperCase();
+  const direct = value.match(/\bB(?:ALINESA)?[_\s-]?([12])\b/);
+
+  if (direct) {
+    return `B${direct[1]}`;
+  }
+
+  return value.includes('BALINESA 1') ? 'B1' : value.includes('BALINESA 2') ? 'B2' : '-';
 }
 
-function getPeriodLabel(period: ReportPeriod) {
-  return PERIOD_OPTIONS.find((option) => option.key === period)?.label ?? period;
-}
+function getServiceStats(reservations: Reservation[], averageTicket: number) {
+  const rows = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA', 'UNCLASSIFIED'].map((key) => ({
+    key,
+    label: SERVICE_LABELS[key],
+    reservations: 0,
+    pax: 0,
+    revenue: 0,
+    color: SERVICE_COLORS[key],
+  }));
+  const rowMap = new Map(rows.map((row) => [row.key, row]));
+  const balineseResources: Record<string, number> = {};
 
-async function loadImageAsDataUrl(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = image.naturalWidth;
-        canvas.height = image.naturalHeight;
-        const context = canvas.getContext('2d');
-        if (!context) {
-          reject(new Error('No canvas context'));
-          return;
-        }
-        context.drawImage(image, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      } catch (error) {
-        reject(error);
+  reservations.forEach((reservation) => {
+    const service = detectService(reservation);
+    const row = rowMap.get(service) ?? rowMap.get('UNCLASSIFIED');
+
+    if (!row) {
+      return;
+    }
+
+    row.reservations += 1;
+    row.pax += safeNumber(reservation.pax);
+    row.revenue += safeNumber(reservation.pax) * averageTicket;
+
+    if (service === 'BALINESA') {
+      const resource = getBalineseResource(reservation);
+      if (resource !== '-') {
+        balineseResources[resource] = (balineseResources[resource] ?? 0) + 1;
       }
-    };
-    image.onerror = () => reject(new Error('No se pudo cargar el logo'));
-    image.src = url;
+    }
   });
+
+  const visibleRows = rows.filter((row) => row.reservations > 0 || row.key !== 'UNCLASSIFIED');
+  const totalReservations = visibleRows.reduce((total, row) => total + row.reservations, 0);
+  const totalPax = visibleRows.reduce((total, row) => total + row.pax, 0);
+  const totalRevenue = visibleRows.reduce((total, row) => total + row.revenue, 0);
+  const dominantByReservations = [...visibleRows].sort((a, b) => b.reservations - a.reservations)[0];
+  const dominantByPax = [...visibleRows].sort((a, b) => b.pax - a.pax)[0];
+  const balinese = rowMap.get('BALINESA') ?? rows[3];
+  const mostUsedBalinese = Object.entries(balineseResources).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+
+  return {
+    rows: visibleRows,
+    totalReservations,
+    totalPax,
+    totalRevenue,
+    dominantByReservations,
+    dominantByPax,
+    balinese,
+    mostUsedBalinese,
+  };
 }
 
-function getTopEntry(counts: Record<string, number>) {
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  return entries[0] ? { label: entries[0][0], count: entries[0][1] } : { label: '-', count: 0 };
-}
+function buildDailyChartData(reservations: Reservation[], range: { start: string; end: string }, mode: 'reservations' | 'pax') {
+  const days: string[] = [];
+  const cursor = new Date(`${range.start}T12:00:00`);
+  const end = new Date(`${range.end}T12:00:00`);
 
-function buildDailyChartData(reservations: Reservation[], range: PeriodRange, mode: 'reservations' | 'pax') {
-  return getDatesInRange(range.start, range.end).map((date) => {
-    const dayReservations = reservations.filter((reservation) => normalizeDateForCompare(reservation.date) === date);
+  while (cursor <= end) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days.map((date) => {
+    const dayReservations = reservations.filter((reservation) => parseComparableDate(reservation.date) === date);
+    const [, month, day] = date.split('-');
     return {
-      label: formatDisplayDate(date).slice(0, 5),
-      value: mode === 'pax' ? dayReservations.reduce((total, reservation) => total + reservation.pax, 0) : dayReservations.length,
+      label: `${day}/${month}`,
+      value: mode === 'pax' ? dayReservations.reduce((total, reservation) => total + safeNumber(reservation.pax), 0) : dayReservations.length,
     };
   });
 }
 
 function buildHourChartData(reservations: Reservation[]) {
   const counts = reservations.reduce<Record<string, number>>((items, reservation) => {
-    if (!reservation.time) {
-      return items;
+    if (reservation.time) {
+      items[reservation.time] = (items[reservation.time] ?? 0) + 1;
     }
 
-    items[reservation.time] = (items[reservation.time] ?? 0) + 1;
     return items;
   }, {});
 
@@ -220,32 +321,20 @@ function buildHourChartData(reservations: Reservation[]) {
     .map(([label, value]) => ({ label, value }));
 }
 
-function getMostDemandedDay(reservations: Reservation[]) {
-  const counts = reservations.reduce<Record<string, number>>((items, reservation) => {
-    const date = normalizeDateForCompare(reservation.date);
-
-    if (!date) {
-      return items;
-    }
-
-    const dayName = DAY_NAMES[new Date(`${date}T12:00:00`).getDay()];
-    items[dayName] = (items[dayName] ?? 0) + 1;
-    return items;
-  }, {});
-
-  return getTopEntry(counts);
+function getTopEntry(items: Record<string, number>) {
+  return Object.entries(items).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
 }
 
 function buildReportStats(reservations: Reservation[], range: { start: string; end: string }) {
   const periodReservations = reservations.filter((reservation) => {
-    const date = normalizeDateForCompare(reservation.date);
+    const date = parseComparableDate(reservation.date);
     return date >= range.start && date <= range.end;
   });
   const activeReservations = periodReservations.filter(isActiveReservation);
   const canceledReservations = periodReservations.filter(isCanceledReservation);
-  const totalPax = activeReservations.reduce((total, reservation) => total + reservation.pax, 0);
   const botReservations = activeReservations.filter((reservation) => getOriginKey(reservation.source) === 'bot');
-  const botPax = botReservations.reduce((total, reservation) => total + reservation.pax, 0);
+  const botPax = botReservations.reduce((total, reservation) => total + safeNumber(reservation.pax), 0);
+  const totalPax = activeReservations.reduce((total, reservation) => total + safeNumber(reservation.pax), 0);
   const originCounts = activeReservations.reduce<Record<OriginKey, number>>(
     (items, reservation) => {
       items[getOriginKey(reservation.source)] += 1;
@@ -274,6 +363,10 @@ function buildReportStats(reservations: Reservation[], range: { start: string; e
     averagePax: activeReservations.length > 0 ? totalPax / activeReservations.length : 0,
     botReservations: botReservations.length,
     botPax,
+    manualReservations: activeReservations.filter((reservation) => getOriginKey(reservation.source) === 'manual').length,
+    walkInReservations: activeReservations.filter((reservation) => getOriginKey(reservation.source) === 'walkin').length,
+    arrivedReservations: activeReservations.filter((reservation) => reservation.arrived).length,
+    assignedTables: activeReservations.filter((reservation) => String(reservation.table ?? '').trim()).length,
     originCounts,
     languageCounts,
     topTime: getTopEntry(
@@ -284,8 +377,24 @@ function buildReportStats(reservations: Reservation[], range: { start: string; e
         return items;
       }, {}),
     ),
-    topDay: getMostDemandedDay(activeReservations),
+    topDay: getTopEntry(
+      activeReservations.reduce<Record<string, number>>((items, reservation) => {
+        const date = parseComparableDate(reservation.date);
+        if (date) {
+          items[formatDisplayDate(date)] = (items[formatDisplayDate(date)] ?? 0) + 1;
+        }
+        return items;
+      }, {}),
+    ),
   };
+}
+
+function getDeltaPercent(current: number, previous: number) {
+  if (previous <= 0) {
+    return current > 0 ? 100 : 0;
+  }
+
+  return Math.round(((current - previous) / previous) * 100);
 }
 
 export function Reports({ reservations, feedbacks, restaurantLogoUrl, restaurantName }: ReportsProps) {
@@ -301,445 +410,524 @@ export function Reports({ reservations, feedbacks, restaurantLogoUrl, restaurant
     () => buildReportStats(reservations, { start: range.previousStart, end: range.previousEnd }),
     [range.previousEnd, range.previousStart, reservations],
   );
-  const originTotal = stats.confirmedReservations;
-  const languageTotal = stats.languageCounts.spanish + stats.languageCounts.english;
+  const serviceStats = useMemo(() => getServiceStats(stats.activeReservations, averageTicket), [averageTicket, stats.activeReservations]);
   const estimatedRevenue = stats.totalPax * averageTicket;
   const estimatedBotRevenue = stats.botPax * averageTicket;
   const botRevenueWeight = percentage(estimatedBotRevenue, estimatedRevenue);
   const dailyReservations = buildDailyChartData(stats.activeReservations, range, 'reservations');
   const dailyPax = buildDailyChartData(stats.activeReservations, range, 'pax');
-  const originChart = (Object.keys(stats.originCounts) as OriginKey[]).map((key) => ({
-    label: ORIGIN_LABELS[key],
-    value: stats.originCounts[key],
-    percent: percentage(stats.originCounts[key], originTotal),
-  }));
   const hourChart = buildHourChartData(stats.activeReservations);
-  const maxHourValue = Math.max(...hourChart.map((hour) => hour.value), 1);
-  const validFeedbacks = feedbacks.filter((feedback) => feedback.rating > 0);
-  const averageRating = validFeedbacks.length > 0
-    ? validFeedbacks.reduce((total, feedback) => total + feedback.rating, 0) / validFeedbacks.length
-    : 0;
-  const negativeFeedbacks = feedbacks
-    .filter((feedback) => feedback.rating > 0 && feedback.rating <= 2)
-    .slice()
-    .sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date))
-    .slice(0, 5);
+  const originTotal = stats.confirmedReservations;
+  const languageTotal = stats.languageCounts.spanish + stats.languageCounts.english;
+  void feedbacks;
+  const servicePaxTotal = serviceStats.totalPax > 0 ? serviceStats.totalPax : serviceStats.totalReservations;
+  const servicePaxDonut = serviceStats.rows.map((service) => ({
+    label: service.label,
+    value: serviceStats.totalPax > 0 ? service.pax : service.reservations,
+    color: service.color,
+  }));
+  const servicePaxLegend = serviceStats.rows.map((service) => ({
+    label: service.label,
+    value: service.pax,
+    color: service.color,
+  }));
+  const dominantServicePaxPercent = percentage(
+    serviceStats.totalPax > 0 ? serviceStats.dominantByPax?.pax ?? 0 : serviceStats.dominantByPax?.reservations ?? 0,
+    servicePaxTotal,
+  );
+  const originDonut = [
+    { label: 'BOT', value: stats.originCounts.bot, color: REPORT_COLORS.blue },
+    { label: 'MANUAL', value: stats.originCounts.manual, color: REPORT_COLORS.amber },
+    { label: 'WALK-IN', value: stats.originCounts.walkin, color: REPORT_COLORS.green },
+  ];
+  const languageDonut = [
+    { label: 'Español', value: stats.languageCounts.spanish, color: REPORT_COLORS.blue },
+    { label: 'Inglés', value: stats.languageCounts.english, color: REPORT_COLORS.turquoise },
+  ];
+  const statusDonut = [
+    { label: 'Confirmadas', value: stats.confirmedReservations, color: REPORT_COLORS.green },
+    { label: 'Canceladas', value: stats.canceledCount, color: REPORT_COLORS.red },
+  ];
+  const botRevenueDonut = [
+    { label: 'BOT', value: estimatedBotRevenue, color: REPORT_COLORS.blue },
+    { label: 'Resto', value: Math.max(0, estimatedRevenue - estimatedBotRevenue), color: '#d7e1f0' },
+  ];
 
-  function updateAverageTicket(value: number) {
-    const nextValue = Number.isFinite(value) && value > 0 ? value : DEFAULT_AVERAGE_TICKET;
-    setAverageTicket(nextValue);
-    localStorage.setItem(TICKET_STORAGE_KEY, String(nextValue));
+  function handleAverageTicketChange(value: string) {
+    const nextValue = Number(value);
+
+    if (Number.isFinite(nextValue) && nextValue >= 0) {
+      setAverageTicket(nextValue);
+      localStorage.setItem(TICKET_STORAGE_KEY, String(nextValue));
+    }
   }
 
   async function exportPdf() {
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const margin = 16;
-    let cursorY = 18;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 44;
+    const fullWidth = pageWidth - margin * 2;
+    const gap = 16;
+    const periodRangeLabel = `${formatDisplayDate(range.start)} - ${formatDisplayDate(range.end)}`;
+    const periodLabel = period === '7d' ? 'Ultimos 7 dias' : period === '30d' ? 'Ultimos 30 dias' : 'Este mes';
+    const kpiWidth = (fullWidth - gap * 3) / 4;
+    const halfWidth = (fullWidth - gap) / 2;
+    const thirdWidth = (fullWidth - gap * 2) / 3;
 
-    const logoUrl = restaurantLogoUrl || RESTAURANT_LOGO;
-    if (logoUrl) {
+    function rgb(hex: string) {
+      const value = hex.replace('#', '');
+      return [
+        parseInt(value.slice(0, 2), 16),
+        parseInt(value.slice(2, 4), 16),
+        parseInt(value.slice(4, 6), 16),
+      ] as [number, number, number];
+    }
+
+    function fill(hex: string) {
+      const [red, green, blue] = rgb(hex);
+      doc.setFillColor(red, green, blue);
+    }
+
+    function stroke(hex: string) {
+      const [red, green, blue] = rgb(hex);
+      doc.setDrawColor(red, green, blue);
+    }
+
+    function textColor(hex: string) {
+      const [red, green, blue] = rgb(hex);
+      doc.setTextColor(red, green, blue);
+    }
+
+    async function loadLogoDataUrl(url: string) {
+      if (!url.trim()) {
+        return '';
+      }
+
       try {
-        const logoDataUrl = await loadImageAsDataUrl(logoUrl);
-        doc.addImage(logoDataUrl, 'PNG', margin, cursorY - 4, 22, 22);
+        const response = await fetch(url);
+        if (!response.ok) {
+          return '';
+        }
+
+        const blob = await response.blob();
+        return await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(blob);
+        });
       } catch {
-        // If the remote logo cannot be rendered because of CORS, the report still downloads.
+        return '';
       }
     }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text('Safari Manager - Informe', logoUrl ? margin + 28 : margin, cursorY + 4);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text(`Periodo: ${getPeriodLabel(period)} (${formatDisplayDate(range.start)} - ${formatDisplayDate(range.end)})`, logoUrl ? margin + 28 : margin, cursorY + 11);
-    cursorY += 34;
-
-    const writeSection = (title: string) => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.text(title, margin, cursorY);
-      cursorY += 8;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-    };
-
-    const writeLine = (label: string, value: string | number) => {
-      doc.text(`${label}: ${value}`, margin, cursorY);
-      cursorY += 6;
-    };
-
-    writeSection('KPIs principales');
-    writeLine('Reservas totales', stats.totalReservations);
-    writeLine('Confirmadas', stats.confirmedReservations);
-    writeLine('Canceladas', stats.canceledCount);
-    writeLine('Tasa de cancelacion', `${stats.cancellationRate}%`);
-    writeLine('PAX totales', stats.totalPax);
-    writeLine('PAX media por reserva', stats.averagePax.toFixed(1));
-    cursorY += 4;
-
-    writeSection('Impacto economico');
-    writeLine('Ticket medio estimado', formatMoney(averageTicket));
-    writeLine('Ingresos estimados', formatMoney(estimatedRevenue));
-    writeLine('Ingresos estimados via BOT', formatMoney(estimatedBotRevenue));
-    writeLine('Peso del BOT sobre el total', `${botRevenueWeight}%`);
-    cursorY += 4;
-
-    writeSection('Origen reservas');
-    originChart.forEach((origin) => writeLine(origin.label, `${origin.value} (${origin.percent}%)`));
-    cursorY += 4;
-
-    writeSection('Valoracion media');
-    writeLine('Feedbacks recibidos', feedbacks.length);
-    writeLine('Valoracion media', averageRating > 0 ? averageRating.toFixed(1) : 'Sin datos');
-    cursorY += 4;
-
-    writeSection('Ultimos comentarios negativos');
-    if (negativeFeedbacks.length === 0) {
-      writeLine('Comentarios', 'No hay comentarios negativos');
-    } else {
-      negativeFeedbacks.forEach((feedback) => {
-        const text = `${feedback.date || '-'} · ${feedback.client || 'Cliente'} · ${feedback.rating}/5 · ${feedback.comment || '-'}`;
-        const lines = doc.splitTextToSize(text, 175);
-        doc.text(lines, margin, cursorY);
-        cursorY += lines.length * 5 + 3;
-        if (cursorY > 280) {
-          doc.addPage();
-          cursorY = 18;
-        }
-      });
+    function drawCard(x: number, y: number, width: number, height: number, radius = 16) {
+      stroke('#e5eaf2');
+      fill('#ffffff');
+      doc.roundedRect(x, y, width, height, radius, radius, 'FD');
     }
 
-    doc.save(`Safari_Informe_${getLocalDateString(new Date())}.pdf`);
-  }
+    function sectionTitle(title: string, x: number, y: number) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      textColor('#667085');
+      doc.text(title.toUpperCase(), x, y);
+      textColor('#172033');
+    }
 
-  async function exportExecutivePdf() {
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const margin = 16;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    let cursorY = 18;
+    const logoDataUrl = await loadLogoDataUrl(restaurantLogoUrl);
 
-    const colors = {
-      ink: [28, 39, 58] as const,
-      muted: [93, 105, 126] as const,
-      line: [220, 226, 235] as const,
-      soft: [247, 249, 252] as const,
-      blue: [79, 127, 209] as const,
-      green: [51, 143, 96] as const,
-      red: [194, 73, 73] as const,
-      redSoft: [255, 239, 239] as const,
-      amber: [214, 161, 38] as const,
-    };
-
-    const setText = (color: readonly [number, number, number]) => doc.setTextColor(color[0], color[1], color[2]);
-    const setFill = (color: readonly [number, number, number]) => doc.setFillColor(color[0], color[1], color[2]);
-    const setDraw = (color: readonly [number, number, number]) => doc.setDrawColor(color[0], color[1], color[2]);
-
-    const addFooter = () => {
-      setText(colors.muted);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.text('Generado por COSTABOTS Manager', margin, pageHeight - 10);
-      doc.text(String(doc.getNumberOfPages()), pageWidth - margin, pageHeight - 10, { align: 'right' });
-    };
-
-    const ensureSpace = (height: number) => {
-      if (cursorY + height <= pageHeight - 18) {
+    function drawLogo(x: number, y: number, size: number) {
+      fill('#ffffff');
+      stroke('#e5eaf2');
+      doc.roundedRect(x, y, size, size, 14, 14, 'FD');
+      if (logoDataUrl) {
+        doc.addImage(logoDataUrl, x + 7, y + 7, size - 14, size - 14);
         return;
       }
 
-      addFooter();
-      doc.addPage();
-      cursorY = 18;
-    };
-
-    const nextPage = () => {
-      addFooter();
-      doc.addPage();
-      cursorY = 18;
-    };
-
-    const ensureSection = (height: number) => {
-      ensureSpace(height);
-    };
-
-    const sectionTitle = (title: string) => {
-      ensureSpace(14);
-      setText(colors.ink);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.text(title, margin, cursorY);
-      cursorY += 8;
-    };
+      doc.setFontSize(22);
+      textColor(REPORT_COLORS.blue);
+      doc.text((restaurantName || 'R').slice(0, 1).toUpperCase(), x + size / 2, y + size / 2 + 8, { align: 'center' });
+      textColor('#172033');
+    }
 
-    const drawCard = (
-      x: number,
-      y: number,
-      width: number,
-      height: number,
-      label: string,
-      value: string | number,
-      accent: readonly [number, number, number],
-      detail?: string,
-    ) => {
-      setFill(colors.soft);
-      setDraw(colors.line);
-      doc.roundedRect(x, y, width, height, 2, 2, 'FD');
-      setFill(accent);
-      doc.roundedRect(x, y, 3, height, 1.5, 1.5, 'F');
-      setText(colors.muted);
+    function executiveKpi(x: number, y: number, label: string, value: string | number, accent: string) {
+      drawCard(x, y, kpiWidth, 96, 18);
+      fill(accent);
+      doc.roundedRect(x + 14, y + 14, 26, 5, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      textColor('#667085');
+      doc.text(label.toUpperCase(), x + 14, y + 36, { maxWidth: kpiWidth - 28 });
+      doc.setFontSize(25);
+      textColor('#172033');
+      doc.text(String(value), x + 14, y + 70, { maxWidth: kpiWidth - 28 });
+    }
+
+    function miniMetric(x: number, y: number, width: number, label: string, value: string | number) {
+      fill('#f8fbff');
+      stroke('#edf1f7');
+      doc.roundedRect(x, y, width, 52, 12, 12, 'FD');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
-      doc.text(label.toUpperCase(), x + 6, y + 7);
-      setText(colors.ink);
+      textColor('#667085');
+      doc.text(label.toUpperCase(), x + 12, y + 18, { maxWidth: width - 24 });
       doc.setFontSize(14);
-      doc.text(String(value), x + 6, y + 16);
-      if (detail) {
-        setText(colors.muted);
+      textColor('#172033');
+      doc.text(String(value), x + 12, y + 38, { maxWidth: width - 24 });
+    }
+
+    function drawDonut(segments: DonutSegment[], x: number, y: number, radius: number, centerText: string, centerSubtext?: string) {
+      const total = segments.reduce((sum, segment) => sum + safeNumber(segment.value), 0);
+      let startAngle = -90;
+
+      if (total <= 0) {
+        fill('#edf2f7');
+        doc.circle(x, y, radius, 'F');
+      } else {
+        segments.forEach((segment) => {
+          const value = safeNumber(segment.value);
+          if (value <= 0) {
+            return;
+          }
+
+          const angle = (value / total) * 360;
+          const points: Array<[number, number]> = [[x, y]];
+          const steps = Math.max(6, Math.ceil(angle / 7));
+
+          for (let index = 0; index <= steps; index += 1) {
+            const pointAngle = ((startAngle + (angle * index) / steps) * Math.PI) / 180;
+            points.push([x + Math.cos(pointAngle) * radius, y + Math.sin(pointAngle) * radius]);
+          }
+
+          fill(segment.color);
+          for (let index = 1; index < points.length - 1; index += 1) {
+            doc.triangle(x, y, points[index][0], points[index][1], points[index + 1][0], points[index + 1][1], 'F');
+          }
+          startAngle += angle;
+        });
+      }
+
+      fill('#ffffff');
+      doc.circle(x, y, radius * 0.58, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(radius > 50 ? 14 : 12);
+      textColor('#172033');
+      doc.text(centerText, x, y - 1, { align: 'center', maxWidth: radius * 1.35 });
+      if (centerSubtext) {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.text(detail, x + 6, y + 23);
+        textColor('#667085');
+        doc.text(centerSubtext, x, y + 14, { align: 'center' });
       }
-    };
-
-    const drawBar = (label: string, valueText: string, percent: number, color: readonly [number, number, number]) => {
-      ensureSpace(9);
-      setText(colors.ink);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text(label, margin, cursorY);
-      setText(colors.muted);
-      doc.text(valueText, pageWidth - margin, cursorY, { align: 'right' });
-      setFill([232, 237, 245]);
-      doc.roundedRect(margin + 34, cursorY - 3.5, 95, 4, 2, 2, 'F');
-      setFill(color);
-      doc.roundedRect(margin + 34, cursorY - 3.5, Math.max(2, Math.min(95, (percent / 100) * 95)), 4, 2, 2, 'F');
-      cursorY += 8;
-    };
-
-    const generatedAt = new Intl.DateTimeFormat('es-ES', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(new Date());
-    const logoUrl = restaurantLogoUrl || RESTAURANT_LOGO;
-
-    if (logoUrl) {
-      try {
-        const logoDataUrl = await loadImageAsDataUrl(logoUrl);
-        doc.addImage(logoDataUrl, 'PNG', margin, cursorY - 3, 24, 24);
-      } catch {
-        // The PDF must still be generated if a remote logo fails.
-      }
+      textColor('#172033');
     }
 
-    setFill([95, 104, 120]);
-    doc.roundedRect(pageWidth - margin - 42, cursorY - 2, 42, 10, 2, 2, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('COSTABOTS MANAGER', pageWidth - margin - 21, cursorY + 4.3, { align: 'center' });
+    function legend(items: Array<{ label: string; value: string | number; color: string }>, x: number, y: number, width: number, rowHeight = 17) {
+      doc.setFontSize(8.5);
+      items.forEach((item, index) => {
+        const rowY = y + index * rowHeight;
+        fill(item.color);
+        doc.circle(x + 4, rowY - 3, 4, 'F');
+        doc.setFont('helvetica', 'bold');
+        textColor('#172033');
+        doc.text(item.label, x + 14, rowY, { maxWidth: width * 0.58 });
+        doc.setFont('helvetica', 'normal');
+        textColor('#667085');
+        doc.text(String(item.value), x + width, rowY, { align: 'right' });
+      });
+      textColor('#172033');
+    }
 
-    setText(colors.ink);
+    function barChart(data: Array<{ label: string; value: number }>, x: number, y: number, width: number, height: number, color = REPORT_COLORS.blue) {
+      const max = Math.max(1, ...data.map((item) => item.value));
+      const barGap = 6;
+      const barWidth = Math.max(7, (width - barGap * Math.max(0, data.length - 1)) / Math.max(1, data.length));
+
+      data.forEach((item, index) => {
+        const barHeight = Math.max(4, (safeNumber(item.value) / max) * height);
+        const barX = x + index * (barWidth + barGap);
+        const barY = y + height - barHeight;
+        fill('#edf2f7');
+        doc.roundedRect(barX, y, barWidth, height, 4, 4, 'F');
+        fill(color);
+        doc.roundedRect(barX, barY, barWidth, barHeight, 4, 4, 'F');
+        if (data.length <= 10) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6.5);
+          textColor('#98a2b3');
+          doc.text(item.label, barX + barWidth / 2, y + height + 12, { align: 'center', maxWidth: barWidth + 8 });
+        }
+      });
+      textColor('#172033');
+    }
+
+    function footer(page: number) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      textColor('#98a2b3');
+      doc.text('COSTABOTS Manager', margin, pageHeight - 26);
+      doc.text(periodRangeLabel, pageWidth / 2, pageHeight - 26, { align: 'center' });
+      doc.text(`${page}/2`, pageWidth - margin, pageHeight - 26, { align: 'right' });
+      textColor('#172033');
+    }
+
+    const generatedAt = new Date().toLocaleString('es-ES');
+    const botSentence = `El BOT gestiono el ${botRevenueWeight}% del impacto estimado y genero ${formatMoney(estimatedBotRevenue)}.`;
+    const executiveMessage = `Durante este periodo el restaurante recibio ${stats.totalReservations} reservas para un total de ${stats.totalPax} clientes. El servicio mas demandado fue ${serviceStats.dominantByReservations?.label ?? 'sin datos'}. ${botSentence}`;
+    fill('#f7f9fc');
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    drawLogo(margin, 38, 58);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(21);
-    doc.text('Informe de actividad', logoUrl ? margin + 30 : margin, cursorY + 4);
-    setText(colors.muted);
+    doc.setFontSize(13);
+    textColor('#667085');
+    doc.text((restaurantName || 'Restaurante').toUpperCase(), margin + 76, 58);
+    doc.setFontSize(30);
+    textColor('#172033');
+    doc.text('INFORME EJECUTIVO', margin + 76, 88);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`${restaurantName} · ${getPeriodLabel(period)} · ${formatDisplayDate(range.start)} - ${formatDisplayDate(range.end)}`, logoUrl ? margin + 30 : margin, cursorY + 12);
-    doc.setFontSize(8.5);
-    doc.text(`Generado: ${generatedAt}`, logoUrl ? margin + 30 : margin, cursorY + 18);
-    cursorY += 34;
+    textColor('#667085');
+    doc.text(periodRangeLabel, margin + 76, 108);
+    doc.text(`Generado: ${generatedAt}`, pageWidth - margin, 34, { align: 'right' });
+    doc.text('Generado por COSTABOTS', pageWidth - margin, 50, { align: 'right' });
 
-    ensureSection(78);
-    sectionTitle('KPIs principales');
-    const cardGap = 5;
-    const cardWidth = (pageWidth - margin * 2 - cardGap * 2) / 3;
-    drawCard(margin, cursorY, cardWidth, 26, 'Reservas totales', stats.totalReservations, colors.blue);
-    drawCard(margin + cardWidth + cardGap, cursorY, cardWidth, 26, 'Confirmadas', stats.confirmedReservations, colors.green);
-    drawCard(margin + (cardWidth + cardGap) * 2, cursorY, cardWidth, 26, 'Canceladas', stats.canceledCount, colors.red);
-    cursorY += 31;
-    drawCard(margin, cursorY, cardWidth, 26, 'Tasa cancelacion', `${stats.cancellationRate}%`, stats.cancellationRate > 20 ? colors.red : stats.cancellationRate >= 10 ? colors.amber : colors.green);
-    drawCard(margin + cardWidth + cardGap, cursorY, cardWidth, 26, 'PAX totales', stats.totalPax, colors.blue);
-    drawCard(margin + (cardWidth + cardGap) * 2, cursorY, cardWidth, 26, 'PAX media', stats.averagePax.toFixed(1), colors.blue);
-    cursorY += 35;
+    let y = 148;
+    sectionTitle('Resumen ejecutivo', margin, y);
+    y += 18;
+    executiveKpi(margin, y, 'Reservas', stats.totalReservations, REPORT_COLORS.blue);
+    executiveKpi(margin + (kpiWidth + gap), y, 'PAX', stats.totalPax, REPORT_COLORS.green);
+    executiveKpi(margin + (kpiWidth + gap) * 2, y, 'Ingresos estimados', formatMoney(estimatedRevenue), REPORT_COLORS.amber);
+    executiveKpi(margin + (kpiWidth + gap) * 3, y, 'Peso del BOT', `${botRevenueWeight}%`, REPORT_COLORS.blue);
 
-    ensureSection(64);
-    sectionTitle('Impacto economico estimado');
-    setFill([246, 249, 255]);
-    setDraw([204, 216, 239]);
-    doc.roundedRect(margin, cursorY, pageWidth - margin * 2, 36, 3, 3, 'FD');
-    drawCard(margin + 5, cursorY + 6, 41, 22, 'Ticket medio', formatMoney(averageTicket), colors.blue);
-    drawCard(margin + 50, cursorY + 6, 45, 22, 'Ingresos', formatMoney(estimatedRevenue), colors.green);
-    drawCard(margin + 99, cursorY + 6, 45, 22, 'Via BOT', formatMoney(estimatedBotRevenue), colors.blue);
-    drawCard(margin + 148, cursorY + 6, 30, 22, 'Peso BOT', `${botRevenueWeight}%`, colors.blue);
-    cursorY += 43;
-    drawBar('BOT vs total', `${botRevenueWeight}%`, botRevenueWeight, colors.blue);
-    cursorY += 4;
+    y += 126;
+    drawCard(margin, y, fullWidth, 92, 18);
+    sectionTitle('Resumen del negocio', margin + 18, y + 24);
+    const businessWidth = (fullWidth - 68) / 4;
+    miniMetric(margin + 18, y + 38, businessWidth, 'Servicio lider', serviceStats.dominantByReservations?.label ?? '-');
+    miniMetric(margin + 30 + businessWidth, y + 38, businessWidth, 'Hora fuerte', stats.topTime);
+    miniMetric(margin + 42 + businessWidth * 2, y + 38, businessWidth, 'Dia fuerte', stats.topDay);
+    miniMetric(margin + 54 + businessWidth * 3, y + 38, businessWidth, 'Ticket medio', formatMoney(averageTicket));
 
-    ensureSection(38);
-    sectionTitle('Origen de reservas');
-    originChart.forEach((origin) => {
-      const color = origin.label === 'BOT' ? colors.blue : origin.label === 'MANUAL' ? colors.amber : colors.green;
-      drawBar(origin.label, `${origin.value} · ${origin.percent}%`, origin.percent, color);
-    });
-    cursorY += 4;
+    y += 126;
+    sectionTitle('Evolucion', margin, y);
+    y += 18;
+    drawCard(margin, y, halfWidth, 150, 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    textColor('#172033');
+    doc.text('Reservas por dia', margin + 18, y + 28);
+    barChart(dailyReservations, margin + 20, y + 58, halfWidth - 40, 62, REPORT_COLORS.blue);
 
-    nextPage();
+    drawCard(margin + halfWidth + gap, y, halfWidth, 150, 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('PAX por dia', margin + halfWidth + gap + 18, y + 28);
+    barChart(dailyPax, margin + halfWidth + gap + 20, y + 58, halfWidth - 40, 62, REPORT_COLORS.green);
 
-    ensureSection(80);
-    sectionTitle('Valoracion de clientes');
-    const ratingDistribution = [5, 4, 3, 2, 1].map((rating) => {
-      const count = validFeedbacks.filter((feedback) => feedback.rating === rating).length;
-      return { rating, count, percent: percentage(count, validFeedbacks.length) };
-    });
-    drawCard(margin, cursorY, cardWidth, 24, 'Feedbacks recibidos', feedbacks.length, colors.blue);
-    drawCard(margin + cardWidth + cardGap, cursorY, cardWidth, 24, 'Valoracion media', averageRating > 0 ? `${averageRating.toFixed(1)} / 5` : 'Sin datos', colors.amber);
-    cursorY += 31;
-    ratingDistribution.forEach((item) => {
-      drawBar(`${item.rating} estrellas`, `${item.count}`, item.percent, item.rating <= 2 ? colors.red : colors.amber);
-    });
-    cursorY += 4;
+    y += 182;
+    drawCard(margin, y, fullWidth, 94, 18);
+    sectionTitle('Mensaje automatico', margin + 18, y + 24);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    textColor('#344054');
+    doc.text(executiveMessage, margin + 18, y + 50, { maxWidth: fullWidth - 36, lineHeightFactor: 1.35 });
+    footer(1);
 
-    ensureSection(negativeFeedbacks.length === 0 ? 22 : 12 + negativeFeedbacks.length * 24);
-    sectionTitle('Alertas de clientes');
-    if (negativeFeedbacks.length === 0) {
-      setText(colors.muted);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text('No hay comentarios negativos', margin, cursorY);
-      cursorY += 7;
-    } else {
-      negativeFeedbacks.forEach((feedback) => {
-        ensureSpace(24);
-        setFill(colors.redSoft);
-        setDraw([246, 199, 199]);
-        doc.roundedRect(margin, cursorY, pageWidth - margin * 2, 20, 2, 2, 'FD');
-        setText(colors.red);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.text(`${feedback.date || '-'} · ${feedback.client || 'Cliente'} · ${feedback.rating}/5`, margin + 4, cursorY + 6);
-        setText(colors.ink);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.8);
-        const lines = doc.splitTextToSize(`"${feedback.comment || '-'}"`, pageWidth - margin * 2 - 8);
-        doc.text(lines.slice(0, 2), margin + 4, cursorY + 13);
-        cursorY += 24;
-      });
+    doc.addPage();
+    fill('#f7f9fc');
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    y = 44;
+    sectionTitle('Servicios', margin, y);
+    y += 18;
+    drawCard(margin, y, fullWidth, 198, 20);
+    drawDonut(servicePaxDonut, margin + 118, y + 108, 74, serviceStats.dominantByPax?.label ?? 'Sin datos', 'PAX');
+    legend(
+      serviceStats.rows.map((service) => ({
+        label: service.label,
+        value: `${service.pax} pax · ${formatMoney(service.revenue)}`,
+        color: service.color,
+      })),
+      margin + 230,
+      y + 74,
+      250,
+      22,
+    );
+
+    y += 230;
+    drawCard(margin, y, halfWidth, 150, 18);
+    sectionTitle('BOT', margin + 18, y + 24);
+    drawDonut(botRevenueDonut, margin + 78, y + 88, 44, `${botRevenueWeight}%`, 'Peso BOT');
+    miniMetric(margin + 140, y + 42, 92, 'Reservas BOT', stats.botReservations);
+    miniMetric(margin + 242, y + 42, 110, 'Ingresos BOT', formatMoney(estimatedBotRevenue));
+    miniMetric(margin + 140, y + 96, 92, 'Tiempo', formatDuration(stats.botReservations * 3));
+    legend(originDonut.map((item) => ({ label: item.label, value: item.value, color: item.color })), margin + 242, y + 108, 110, 14);
+
+    drawCard(margin + halfWidth + gap, y, halfWidth, 150, 18);
+    sectionTitle('Operativa', margin + halfWidth + gap + 18, y + 24);
+    const opX = margin + halfWidth + gap + 18;
+    const opWidth = (halfWidth - 48) / 3;
+    miniMetric(opX, y + 42, opWidth, 'Walk-ins', stats.walkInReservations);
+    miniMetric(opX + opWidth + 6, y + 42, opWidth, 'Manual', stats.manualReservations);
+    miniMetric(opX + (opWidth + 6) * 2, y + 42, opWidth, 'Llegadas', stats.arrivedReservations);
+    miniMetric(opX, y + 96, opWidth, 'Cancel.', stats.canceledCount);
+    miniMetric(opX + opWidth + 6, y + 96, opWidth, 'Mesas', stats.assignedTables);
+    miniMetric(opX + (opWidth + 6) * 2, y + 96, opWidth, 'Full', '-');
+
+    y += 182;
+    if (languageTotal > 0) {
+      drawCard(margin, y, halfWidth, 132, 18);
+      sectionTitle('Idiomas', margin + 18, y + 24);
+      drawDonut(languageDonut, margin + 78, y + 78, 40, `${languageTotal}`, 'Total');
+      legend(languageDonut.map((item) => ({ label: item.label, value: item.value, color: item.color })), margin + 140, y + 72, 130);
     }
+    footer(2);
 
-    addFooter();
-    const safeRestaurantName = (restaurantName || 'Safari').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '');
-    doc.save(`${safeRestaurantName}_Informe_${getLocalDateString(new Date())}.pdf`);
+    doc.save(`${(restaurantName || 'Restaurante').replace(/\s+/g, '_')}_Informe_${getLocalDateString(new Date())}.pdf`);
   }
 
   return (
     <main className="app-shell">
-      <PageHeader eyebrow="Estadisticas" title="INFORMES" />
-
-      <section className="toolbar-card reports-toolbar">
-        <label>
-          Periodo
-          <div className="segmented-control" aria-label="Periodo informes">
-            {PERIOD_OPTIONS.map((option) => (
-              <button
-                key={option.key}
-                className={period === option.key ? 'is-active' : ''}
-                type="button"
-                onClick={() => setPeriod(option.key)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </label>
-        <div className="report-range">
-          <span>Desde {formatDisplayDate(range.start)}</span>
-          <strong>Hasta {formatDisplayDate(range.end)}</strong>
+      <section className="reports-toolbar">
+        <div>
+          <p className="eyebrow">Analitica ejecutiva</p>
+          <h1>INFORMES</h1>
         </div>
-        <button className="secondary-button" type="button" onClick={() => void exportExecutivePdf()}>
-          Exportar PDF
-        </button>
+        <div className="report-range">
+          <strong>Periodo</strong>
+          <select value={period} onChange={(event) => setPeriod(event.target.value as ReportPeriod)}>
+            <option value="7d">Ultimos 7 dias</option>
+            <option value="30d">Ultimos 30 dias</option>
+            <option value="month">Este mes</option>
+          </select>
+          <button type="button" onClick={exportPdf}>Exportar PDF</button>
+        </div>
       </section>
 
-      <section className="reports-executive-grid">
+      <section className="reports-kpi-strip">
+        <KpiCard label="Reservas" value={stats.totalReservations} delta={getDeltaPercent(stats.totalReservations, previousStats.totalReservations)} accent="accent-blue" />
+        <KpiCard label="PAX / Clientes" value={stats.totalPax} delta={getDeltaPercent(stats.totalPax, previousStats.totalPax)} accent="accent-green" />
+        <KpiCard label="Ingresos estimados" value={formatMoney(estimatedRevenue)} accent="accent-amber" />
+        <KpiCard label="Peso del BOT" value={`${botRevenueWeight}%`} detail={formatMoney(estimatedBotRevenue)} accent="accent-blue" />
+      </section>
+
+      <section className="reports-grid">
         <ReportCard title="Reservas">
-          <Metric label="Reservas totales" value={stats.totalReservations} delta={getDeltaPercent(stats.totalReservations, previousStats.totalReservations)} featured />
-          <div className="report-inline-metrics">
-            <Metric label="Confirmadas" value={stats.confirmedReservations} compact />
-            <Metric label="Canceladas" value={stats.canceledCount} delta={getDeltaPercent(stats.canceledCount, previousStats.canceledCount)} compact />
+          <div className="report-card-split">
+            <DonutChart centerText={`${stats.cancellationRate}%`} centerSubtext="Cancelacion" segments={statusDonut} />
+            <LegendList data={statusDonut.map((item) => ({ ...item, percent: percentage(item.value, stats.totalReservations) }))} />
           </div>
-          <Metric label="Tasa de cancelacion" value={`${stats.cancellationRate}%`} tone={getCancellationTone(stats.cancellationRate)} compact />
           <VerticalBars data={dailyReservations} compact />
         </ReportCard>
 
         <ReportCard title="PAX / Clientes">
-          <Metric label="PAX totales" value={stats.totalPax} delta={getDeltaPercent(stats.totalPax, previousStats.totalPax)} featured />
           <Metric label="PAX media por reserva" value={stats.averagePax.toFixed(1)} compact />
           <VerticalBars data={dailyPax} compact />
         </ReportCard>
+      </section>
 
-        <ReportCard title="Origen de reservas">
-          <Metric label="Reservas BOT" value={stats.botReservations} delta={getDeltaPercent(stats.botReservations, previousStats.botReservations)} compact />
-          <HorizontalBars data={originChart} highlightLabel="BOT" />
+      <section className="reports-focus-grid">
+        <ReportCard title="Servicios">
+          <div className="services-dashboard-layout">
+            <div className="services-donut-panel">
+              <DonutChart
+                centerText={`${dominantServicePaxPercent}%`}
+                centerSubtext="PAX"
+                segments={servicePaxDonut}
+              />
+              <ServiceLegendList data={servicePaxLegend} mode="pax" />
+            </div>
+            <div className="services-summary-layout">
+              <div className="services-mini-kpis">
+                <StatCard label="Servicio lider" value={serviceStats.dominantByReservations?.label ?? '-'} />
+                <StatCard label="Ingresos servicios" value={formatMoney(serviceStats.totalRevenue)} />
+                <StatCard label="Balinesas" value={serviceStats.balinese.reservations} />
+                <StatCard label="Ticket medio" value={formatMoney(averageTicket)} />
+              </div>
+              {serviceStats.balinese.reservations > 0 && (
+                <div className="balinese-service-strip">
+                  <strong>Balinesas</strong>
+                  <span>
+                    {serviceStats.balinese.reservations} reservas · {serviceStats.balinese.pax} pax · {formatMoney(serviceStats.balinese.revenue)} · mas usada {serviceStats.mostUsedBalinese}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </ReportCard>
 
-        <ReportCard title="Impacto estimado">
-          <label className="report-ticket-input">
-            Ticket medio estimado
-            <input min="1" type="number" value={averageTicket} onChange={(event) => updateAverageTicket(Number(event.target.value))} />
-          </label>
-          <Metric label="Ingresos estimados" value={formatMoney(estimatedRevenue)} featured />
-          <Metric label="Ingresos estimados via BOT" value={formatMoney(estimatedBotRevenue)} compact />
-          <Metric label="Peso del BOT sobre el total" value={`${botRevenueWeight}%`} compact />
-          <HorizontalBars data={[{ label: 'BOT', value: estimatedBotRevenue, percent: botRevenueWeight }]} highlightLabel="BOT" />
+        <ReportCard title="BOT">
+          <div className="bot-dashboard-layout">
+            <DonutChart centerText={`${botRevenueWeight}%`} centerSubtext="BOT" segments={botRevenueDonut} />
+            <div className="bot-compact-grid">
+              <StatCard label="Reservas BOT" value={stats.botReservations} />
+              <StatCard label="Ingresos BOT" value={formatMoney(estimatedBotRevenue)} />
+              <StatCard label="Tiempo" value={formatDuration(stats.botReservations * 3)} />
+            </div>
+            <LegendList data={originDonut.map((item) => ({ ...item, percent: percentage(item.value, originTotal) }))} />
+          </div>
         </ReportCard>
+      </section>
 
+      <section className="reports-final-grid">
         <ReportCard title="Actividad">
           <div className="report-inline-metrics">
-            <Metric label="Hora mas demandada" value={stats.topTime.label} detail={`${stats.topTime.count} reservas`} compact />
-            <Metric label="Dia mas demandado" value={stats.topDay.label} detail={`${stats.topDay.count} reservas`} compact />
+            <Metric label="Hora mas demandada" value={stats.topTime} compact />
+            <Metric label="Dia mas demandado" value={stats.topDay} compact />
           </div>
-          <HorizontalBars data={hourChart.map((item) => ({ ...item, percent: percentage(item.value, maxHourValue) }))} />
+          <HorizontalBars data={hourChart} />
+        </ReportCard>
+
+        <ReportCard title="Operativa">
+          <div className="operation-grid">
+            <StatCard label="Reservas manuales" value={stats.manualReservations} />
+            <StatCard label="Walk-ins" value={stats.walkInReservations} />
+            <StatCard label="Llegadas registradas" value={stats.arrivedReservations} />
+            <StatCard label="Mesas asignadas" value={stats.assignedTables} />
+            <StatCard label="Cancelaciones" value={stats.canceledCount} tone="is-danger" />
+            <StatCard label="Fully booked activados" value="-" />
+          </div>
         </ReportCard>
 
         <ReportCard title="Idiomas">
-          <div className="report-inline-metrics">
-            <Metric label="Espanol" value={stats.languageCounts.spanish} detail={`${percentage(stats.languageCounts.spanish, languageTotal)}%`} compact />
-            <Metric label="Ingles" value={stats.languageCounts.english} detail={`${percentage(stats.languageCounts.english, languageTotal)}%`} compact />
+          <div className="report-card-split">
+            <DonutChart centerText={`${languageTotal}`} centerSubtext="Feedback" segments={languageDonut} />
+            <LegendList data={languageDonut.map((item) => ({ ...item, percent: percentage(item.value, languageTotal) }))} />
           </div>
-          <HorizontalBars
-            data={[
-              { label: 'Espanol', value: stats.languageCounts.spanish, percent: percentage(stats.languageCounts.spanish, languageTotal) },
-              { label: 'Ingles', value: stats.languageCounts.english, percent: percentage(stats.languageCounts.english, languageTotal) },
-            ]}
-          />
         </ReportCard>
       </section>
     </main>
   );
 }
 
-function ReportCard({ title, children }: { title: string; children: ReactNode }) {
+function ReportCard({ title, children, wide = false }: { title: string; children: ReactNode; wide?: boolean }) {
   return (
-    <article className="report-card">
+    <article className={`report-card ${wide ? 'is-wide' : ''}`}>
       <p className="eyebrow">{title}</p>
-      <div className="report-metrics">{children}</div>
+      {children}
     </article>
   );
 }
 
-function Metric({
-  label,
-  value,
-  detail,
-  delta,
-  tone,
-  compact = false,
-  featured = false,
-}: {
+function KpiCard({ label, value, detail, delta, accent }: { label: string; value: string | number; detail?: string; delta?: number; accent?: string }) {
+  return (
+    <article className={`report-kpi-card ${accent ?? ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {typeof delta === 'number' ? <small className={`report-delta ${delta >= 0 ? 'is-up' : 'is-down'}`}>{delta >= 0 ? '+' : ''}{delta}% vs periodo anterior</small> : null}
+      {detail ? <small>{detail}</small> : null}
+    </article>
+  );
+}
+
+function Metric({ label, value, detail, delta, tone, compact = false, featured = false }: {
   label: string;
-  value: number | string;
+  value: string | number;
   detail?: string;
   delta?: number;
   tone?: string;
@@ -752,25 +940,108 @@ function Metric({
     <div className={className}>
       <span>{label}</span>
       <strong>{value}</strong>
-      {delta !== undefined && (
-        <small className={`report-delta ${getDeltaTone(delta)}`}>
-          {delta > 0 ? 'UP' : delta < 0 ? 'DOWN' : 'IGUAL'} {Math.abs(delta)}% vs periodo anterior
-        </small>
-      )}
-      {detail && <small>{detail}</small>}
+      {typeof delta === 'number' ? <small className={`report-delta ${delta >= 0 ? 'is-up' : 'is-down'}`}>{delta >= 0 ? '+' : ''}{delta}%</small> : null}
+      {detail ? <small>{detail}</small> : null}
     </div>
   );
 }
 
+function StatCard({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
+  return (
+    <div className={`report-stat-card ${tone ?? ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function DonutChart({
+  segments,
+  centerText,
+  centerSubtext,
+  mini = false,
+}: {
+  segments: DonutSegment[];
+  centerText: string;
+  centerSubtext?: string;
+  mini?: boolean;
+}) {
+  const total = segments.reduce((sum, item) => sum + safeNumber(item.value), 0);
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
+  return (
+    <div className={`donut-chart ${mini ? 'is-mini' : ''}`}>
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle className="donut-ring" cx="60" cy="60" r={radius} />
+        {total <= 0 ? (
+          <circle className="donut-empty" cx="60" cy="60" r={radius} />
+        ) : (
+          segments.map((segment) => {
+            const length = (safeNumber(segment.value) / total) * circumference;
+            const dash = `${length} ${circumference - length}`;
+            const circle = (
+              <circle
+                className="donut-segment"
+                cx="60"
+                cy="60"
+                key={segment.label}
+                r={radius}
+                stroke={segment.color}
+                strokeDasharray={dash}
+                strokeDashoffset={-offset}
+              />
+            );
+            offset += length;
+            return circle;
+          })
+        )}
+      </svg>
+      <div className="donut-center">
+        <strong>{centerText}</strong>
+        {centerSubtext ? <span>{centerSubtext}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function LegendList({ data }: { data: Array<{ label: string; value: number; percent: number; color: string }> }) {
+  return (
+    <div className="donut-legend">
+      {data.map((item) => (
+        <div className="donut-legend-item" key={item.label}>
+          <span style={{ background: item.color }} />
+          <strong>{item.label}</strong>
+          <small>{item.value} · {item.percent}%</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ServiceLegendList({ data, mode = 'reservas' }: { data: Array<{ label: string; value: number; color: string }>; mode?: 'reservas' | 'pax' }) {
+  return (
+    <div className="donut-legend services-legend">
+      {data.map((item) => (
+        <div className="donut-legend-item service-legend-item" key={item.label}>
+          <span style={{ background: item.color }} />
+          <strong>{item.label}</strong>
+          <small>{item.value} {mode}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
 function VerticalBars({ data, compact = false }: { data: Array<{ label: string; value: number }>; compact?: boolean }) {
-  const maxValue = Math.max(...data.map((item) => item.value), 1);
+  const max = Math.max(1, ...data.map((item) => item.value));
 
   return (
     <div className={`vertical-chart ${compact ? 'is-compact' : ''}`}>
       {data.map((item) => (
         <div className="vertical-bar-item" key={item.label}>
           <div className="vertical-bar-track">
-            <span style={{ height: `${(item.value / maxValue) * 100}%` }} />
+            <span style={{ height: `${Math.max(4, (item.value / max) * 100)}%` }} />
           </div>
           <strong>{item.value}</strong>
           <small>{item.label}</small>
@@ -780,56 +1051,23 @@ function VerticalBars({ data, compact = false }: { data: Array<{ label: string; 
   );
 }
 
-function HorizontalBars({
-  data,
-  highlightLabel,
-}: {
-  data: Array<{ label: string; value: number; percent?: number }>;
-  highlightLabel?: string;
-}) {
-  const maxValue = Math.max(...data.map((item) => item.value), 1);
+function HorizontalBars({ data }: { data: Array<{ label: string; value: number }> }) {
+  const max = Math.max(1, ...data.map((item) => item.value));
 
   return (
     <div className="horizontal-chart">
-      {data.length === 0 ? (
-        <p className="muted-cell">Sin datos</p>
-      ) : (
-        data.map((item) => {
-          const width = item.percent ?? percentage(item.value, maxValue);
-          const isHighlighted = highlightLabel === item.label;
-
-          return (
-            <div className={`horizontal-bar-item ${isHighlighted ? 'is-highlighted' : ''}`} key={item.label}>
-              <div>
-                <strong>{item.label}</strong>
-                <span>
-                  {item.value}
-                  {item.percent !== undefined ? ` · ${item.percent}%` : ''}
-                </span>
-              </div>
-              <div className="horizontal-bar-track">
-                <span style={{ width: `${width}%` }} />
-              </div>
-            </div>
-          );
-        })
-      )}
+      {data.length === 0 ? <p className="empty-state">Sin datos suficientes.</p> : null}
+      {data.map((item) => (
+        <div className="horizontal-bar-item" key={item.label}>
+          <div>
+            <strong>{item.label}</strong>
+            <small>{item.value}</small>
+          </div>
+          <div className="horizontal-bar-track">
+            <span style={{ width: `${(item.value / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
     </div>
-  );
-}
-
-function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <section className="top-bar">
-      <div className="brand-lockup">
-        <div className="logo-mark" aria-hidden="true">
-          S
-        </div>
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
-        </div>
-      </div>
-    </section>
   );
 }

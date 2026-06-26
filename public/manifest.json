@@ -1,7 +1,7 @@
 {
-  "name": "Safari Manager",
+  "name": "COSTABOTS Manager",
   "short_name": "Manager",
-  "description": "Panel operativo para la gestion diaria de reservas Safari.",
+  "description": "Panel operativo COSTABOTS para la gestion diaria de reservas.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

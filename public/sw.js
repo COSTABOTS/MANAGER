@@ -1,4 +1,4 @@
-const CACHE_NAME = 'safari-manager-v27';
+const CACHE_NAME = 'costabots-manager-v28';
 const IS_LOCAL_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 const APP_SHELL = [
   '/',
