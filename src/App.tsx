@@ -1840,21 +1840,20 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     try {
-      const savedLicense = await saveClientLicenseWithManagerApi(nextLicense);
-      const normalizedLicense: ClientLicense = {
-        status: normalizeClientLicenseStatus(savedLicense.status),
-        plan: normalizeClientLicensePlan(savedLicense.plan),
-        expiresAt: savedLicense.expiresAt ?? '',
-      };
+      const result = await saveClientLicenseWithManagerApi(nextLicense);
+      const updatedClient = mapManagedClient(result.client as unknown as Record<string, unknown>);
+      const normalizedLicense = result.license;
 
       setClientConfig((current) => {
         if (!current) {
           return current;
         }
 
+        const targetClientId = updatedClient.client_id || current.selectedClientId || current.client_id;
         const nextSelectedClient = current.selectedClient
           ? {
               ...current.selectedClient,
+              ...updatedClient,
               status: normalizedLicense.status,
               plan: normalizedLicense.plan,
               expires_at: normalizedLicense.expiresAt,
@@ -1862,9 +1861,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           : current.selectedClient;
         const nextAvailableClients = Array.isArray(current.availableClients)
           ? current.availableClients.map((client) =>
-              client.client_id === (current.selectedClientId ?? current.client_id)
+              client.client_id === targetClientId
                 ? {
                     ...client,
+                    ...updatedClient,
                     status: normalizedLicense.status,
                     plan: normalizedLicense.plan,
                     expires_at: normalizedLicense.expiresAt,

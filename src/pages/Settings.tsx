@@ -403,7 +403,7 @@ export function Settings({
   }
 
   async function handleSaveClientLicense() {
-    if (!onClientLicenseSave) {
+    if (!onClientLicenseSave || licenseSaveState === 'saving') {
       return;
     }
 

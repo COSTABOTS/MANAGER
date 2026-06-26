@@ -1018,6 +1018,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     clientId: targetClientId,
     sheetId: resolvedSheetId,
     role: profileRole,
+    serviceRoleAvailable: Boolean(supabaseServiceRoleKey),
     license: {
       status: clientStatus,
       plan: clientPlan,
@@ -1054,11 +1055,20 @@ async function updateClientLicense(
     dbClient: ReturnType<typeof createClient>;
     clientId: string;
     role: string;
+    serviceRoleAvailable?: boolean;
   },
   body: Record<string, unknown>,
 ) {
   if (context.role !== 'SUPER_ADMIN') {
     return errorResponse(request, 'FORBIDDEN', 'Solo SUPER_ADMIN puede actualizar licencias', 403, {
+      action: 'client.license.update',
+      clientId: context.clientId,
+      role: context.role,
+    });
+  }
+
+  if (!context.serviceRoleAvailable) {
+    return errorResponse(request, 'SUPABASE_SERVICE_ROLE_MISSING', 'SUPABASE_SERVICE_ROLE_KEY no disponible para actualizar licencia', 500, {
       action: 'client.license.update',
       clientId: context.clientId,
       role: context.role,
@@ -1072,36 +1082,50 @@ async function updateClientLicense(
   const expiresAt = rawExpiresAt === undefined || rawExpiresAt === null || toSheetString(rawExpiresAt) === ''
     ? null
     : toSheetString(rawExpiresAt);
+  const payload = {
+    status,
+    plan,
+    expires_at: expiresAt,
+  };
+
+  console.log('[CLIENT_LICENSE_UPDATE]', {
+    targetClientId: context.clientId,
+    payload,
+  });
 
   const { data, error } = await context.dbClient
     .from('CLIENTES')
-    .update({
-      status,
-      plan,
-      expires_at: expiresAt,
-    })
+    .update(payload)
     .eq('client_id', context.clientId)
-    .select('client_id, status, plan, expires_at')
-    .maybeSingle();
+    .select('client_id, rest_name, status, plan, expires_at, sheet_id')
+    .single();
+
+  console.log('[CLIENT_LICENSE_UPDATE_RESULT]', {
+    targetClientId: context.clientId,
+    updatedClient: data,
+    updateError: error,
+  });
 
   if (error || !data) {
-    return errorResponse(request, 'LICENSE_UPDATE_FAILED', error?.message || 'No se pudo actualizar la licencia', 200, {
+    return errorResponse(request, 'CLIENT_UPDATE_FAILED', error?.message || 'No se actualizo ninguna fila en CLIENTES', 200, {
       action: 'client.license.update',
       clientId: context.clientId,
-      status,
-      plan,
-      expires_at: expiresAt,
+      targetClientId: context.clientId,
+      payload,
+      updateError: error?.message,
     });
   }
 
+  const updatedClient = data as Record<string, unknown>;
   return jsonResponse(request, {
     ok: true,
     action: 'client.license.update',
     client_id: context.clientId,
+    client: updatedClient,
     license: {
-      status: normalizeLicenseStatus((data as Record<string, unknown>).status),
-      plan: normalizeLicensePlan((data as Record<string, unknown>).plan),
-      expires_at: toSheetString((data as Record<string, unknown>).expires_at),
+      status: normalizeLicenseStatus(updatedClient.status),
+      plan: normalizeLicensePlan(updatedClient.plan),
+      expires_at: toSheetString(updatedClient.expires_at),
     },
   });
 }
