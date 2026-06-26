@@ -550,6 +550,12 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
   const licenseStatus = normalizeClientLicenseStatus(pickSupabaseValue(client, ['status', 'STATUS']));
   const licensePlan = normalizeClientLicensePlan(pickSupabaseValue(client, ['plan', 'PLAN']));
   const licenseExpiresAt = pickSupabaseValue(client, ['expires_at', 'EXPIRES_AT', 'expiresAt']);
+  if (profileRole !== 'SUPER_ADMIN' && licenseStatus === 'SUSPENDED') {
+    throw new Error('LICENSE_SUSPENDED');
+  }
+  if (profileRole !== 'SUPER_ADMIN' && licenseStatus === 'EXPIRED') {
+    throw new Error('LICENSE_EXPIRED');
+  }
   const selectedClient = mapManagedClient(client);
   console.log('[SUPER_ADMIN][CLIENT_CONTEXT]', {
     authProfileClientId: profileClientId,
@@ -998,10 +1004,19 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.log('Cliente cargado:', config.rest_nombre);
       console.log('Admin cargado desde configuraciÃ³n cliente:', config.rest_nombre);
     } catch (error) {
-      console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".', error);
+      console.warn('[Login debug] Punto de error: catch ejecutado.', error);
       clearLoginSession();
       setClientConfig(null);
-      setLoginError('Usuario o contraseÃ±a incorrectos');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage === 'LICENSE_SUSPENDED') {
+        setLoginError('Licencia suspendida. Contacta con COSTABOTS para reactivar el acceso.');
+      } else if (errorMessage === 'LICENSE_EXPIRED') {
+        setLoginError('Licencia expirada. Contacta con COSTABOTS para renovar el acceso.');
+      } else if (errorMessage === 'PROFILE_INACTIVE') {
+        setLoginError('Usuario inactivo. Contacta con COSTABOTS.');
+      } else {
+        setLoginError('Usuario o contraseÃ±a incorrectos');
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -2492,8 +2507,14 @@ function DemoAuthGate() {
           client = clientData as Record<string, unknown> | null;
           if (!client) {
             console.warn('[DEMO] Client not found, entering demo with fallback config');
-          } else if (pickSupabaseValue(client, ['status']).toUpperCase() !== 'ACTIVE') {
-            console.warn('[DEMO] Client inactive, entering demo with fallback config:', pickSupabaseValue(client, ['status']));
+          } else {
+            const demoLicenseStatus = normalizeClientLicenseStatus(pickSupabaseValue(client, ['status', 'STATUS']));
+            if (normalizeUserRole(role) !== 'SUPER_ADMIN' && demoLicenseStatus === 'SUSPENDED') {
+              throw new Error('LICENSE_SUSPENDED');
+            }
+            if (normalizeUserRole(role) !== 'SUPER_ADMIN' && demoLicenseStatus === 'EXPIRED') {
+              throw new Error('LICENSE_EXPIRED');
+            }
           }
         }
       } catch (clientLoadError) {
@@ -2643,7 +2664,14 @@ function DemoAuthGate() {
       setIsAuthenticated(true);
     } catch (loginError) {
       console.error('[DEMO] Login error:', loginError);
-      setError('Credenciales incorrectas');
+      const message = loginError instanceof Error ? loginError.message : String(loginError);
+      if (message === 'LICENSE_SUSPENDED') {
+        setError('Licencia suspendida. Contacta con COSTABOTS para reactivar el acceso.');
+      } else if (message === 'LICENSE_EXPIRED') {
+        setError('Licencia expirada. Contacta con COSTABOTS para renovar el acceso.');
+      } else {
+        setError('Credenciales incorrectas');
+      }
     } finally {
       setIsLoading(false);
     }
