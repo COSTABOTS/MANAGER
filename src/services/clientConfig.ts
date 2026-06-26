@@ -91,18 +91,30 @@ export interface ExternalClientConfig {
     rest_name: string;
     sheet_id?: string;
     is_demo?: boolean;
+    status?: string;
+    plan?: string;
+    expires_at?: string;
   }>;
   selectedClient?: {
     client_id: string;
     rest_name: string;
     sheet_id?: string;
     is_demo?: boolean;
+    status?: string;
+    plan?: string;
+    expires_at?: string;
   };
   profile_client_id?: string;
   authProfileClientId?: string;
   selectedClientId?: string;
   effectiveClientId?: string;
   role?: string;
+  status?: string;
+  plan?: string;
+  expires_at?: string;
+  licenseStatus?: string;
+  licensePlan?: string;
+  licenseExpiresAt?: string;
   [key: string]: unknown;
 }
 

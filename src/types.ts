@@ -90,6 +90,15 @@ export interface ReservableResource {
   order?: number;
 }
 
+export type ClientLicenseStatus = 'ACTIVE' | 'TRIAL' | 'SUSPENDED' | 'EXPIRED';
+export type ClientLicensePlan = 'DEMO' | 'PRO';
+
+export interface ClientLicense {
+  status: ClientLicenseStatus;
+  plan: ClientLicensePlan;
+  expiresAt: string;
+}
+
 export interface ManagerSettings {
   totalCapacity: number;
   slotCapacity: Record<string, number>;

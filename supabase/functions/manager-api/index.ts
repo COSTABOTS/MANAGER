@@ -21,7 +21,8 @@ type ManagerAction =
   | 'reservation.arrive'
   | 'reservation.assignTable'
   | 'reservation.cancel'
-  | 'walkin.create';
+  | 'walkin.create'
+  | 'client.license.update';
 type SheetRow = Record<string, string | number | boolean>;
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
@@ -784,6 +785,15 @@ function columnLetter(index: number) {
   return column;
 }
 
+function normalizeLicenseStatus(value: unknown) {
+  const status = toSheetString(value).toUpperCase();
+  return ['ACTIVE', 'TRIAL', 'SUSPENDED', 'EXPIRED'].includes(status) ? status : 'ACTIVE';
+}
+
+function normalizeLicensePlan(value: unknown) {
+  return toSheetString(value).toUpperCase() === 'PRO' ? 'PRO' : 'DEMO';
+}
+
 async function resolveOperationalContext(request: Request, body: Record<string, unknown>, debug: ManagerApiDebug) {
   const action = body.action ?? 'tables.list';
   const requestedClientId = body.effective_client_id ?? body.effectiveClientId ?? body.client_id;
@@ -874,9 +884,8 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
 
   const { data: clientSummary, error: clientSummaryError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, sheet_id, rest_name, status')
+    .select('*')
     .eq('client_id', targetClientId)
-    .eq('status', 'ACTIVE')
     .maybeSingle();
   const { data: client, error: clientError } = await dbClient
     .from('CLIENTES')
@@ -895,10 +904,12 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheetIdLength: typeof client?.sheet_id === 'string' ? client.sheet_id.length : undefined,
     rawClient: JSON.stringify(client),
   });
-  const clientStatus = toSheetString(pickRecordValue(client as Record<string, unknown> | null, ['status', 'STATUS']));
-  const isClientActive = !clientStatus || clientStatus.toUpperCase() === 'ACTIVE';
+  const clientStatus = normalizeLicenseStatus(pickRecordValue(client as Record<string, unknown> | null, ['status', 'STATUS']));
+  const clientPlan = normalizeLicensePlan(pickRecordValue(client as Record<string, unknown> | null, ['plan', 'PLAN']));
+  const clientExpiresAt = toSheetString(pickRecordValue(client as Record<string, unknown> | null, ['expires_at', 'EXPIRES_AT', 'expiresAt']));
+  const isLicenseInactive = clientStatus === 'SUSPENDED' || clientStatus === 'EXPIRED';
 
-  if (clientError || !client || !isClientActive) {
+  if (clientError || !client) {
     const { data: diagnosticByClientId, error: diagnosticByClientIdError } = await dbClient
       .from('CLIENTES')
       .select('*')
@@ -915,13 +926,25 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
         clientSummary,
         clientSummaryError: clientSummaryError?.message,
         clientStatus,
-        isClientActive,
         diagnosticByClientId,
         diagnosticByClientIdError: diagnosticByClientIdError?.message,
         diagnosticFirstClients,
         diagnosticFirstClientsError: diagnosticFirstClientsError?.message,
         client_id: targetClientId,
         supabase_error: clientError?.message,
+      }),
+    };
+  }
+  if (profileRole !== 'SUPER_ADMIN' && isLicenseInactive) {
+    return {
+      error: errorResponse(request, 'LICENSE_INACTIVE', 'Licencia COSTABOTS inactiva', 200, {
+        ...debug,
+        targetClientId,
+        profileRole,
+        profileClientId,
+        clientStatus,
+        clientPlan,
+        clientExpiresAt,
       }),
     };
   }
@@ -959,7 +982,8 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheet_id: resolvedSheetId,
   });
 
-  if (!resolvedSheetId) {
+  const actionRequiresSheetId = action !== 'client.license.update';
+  if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
       action,
@@ -988,8 +1012,15 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     user: userData.user,
     profile,
     client: resolvedClient,
+    dbClient,
     clientId: targetClientId,
     sheetId: resolvedSheetId,
+    role: profileRole,
+    license: {
+      status: clientStatus,
+      plan: clientPlan,
+      expires_at: clientExpiresAt,
+    },
   };
 }
 
@@ -1012,6 +1043,64 @@ async function listTables(request: Request, clientId: string, sheetId: string, d
     action: 'tables.list',
     client_id: clientId,
     tables,
+  });
+}
+
+async function updateClientLicense(
+  request: Request,
+  context: {
+    dbClient: ReturnType<typeof createClient>;
+    clientId: string;
+    role: string;
+  },
+  body: Record<string, unknown>,
+) {
+  if (context.role !== 'SUPER_ADMIN') {
+    return errorResponse(request, 'FORBIDDEN', 'Solo SUPER_ADMIN puede actualizar licencias', 403, {
+      action: 'client.license.update',
+      clientId: context.clientId,
+      role: context.role,
+    });
+  }
+
+  const license = (body.license && typeof body.license === 'object' ? body.license : body) as Record<string, unknown>;
+  const status = normalizeLicenseStatus(license.status);
+  const plan = normalizeLicensePlan(license.plan);
+  const rawExpiresAt = license.expires_at ?? license.expiresAt;
+  const expiresAt = rawExpiresAt === undefined || rawExpiresAt === null || toSheetString(rawExpiresAt) === ''
+    ? null
+    : toSheetString(rawExpiresAt);
+
+  const { data, error } = await context.dbClient
+    .from('CLIENTES')
+    .update({
+      status,
+      plan,
+      expires_at: expiresAt,
+    })
+    .eq('client_id', context.clientId)
+    .select('client_id, status, plan, expires_at')
+    .maybeSingle();
+
+  if (error || !data) {
+    return errorResponse(request, 'LICENSE_UPDATE_FAILED', error?.message || 'No se pudo actualizar la licencia', 200, {
+      action: 'client.license.update',
+      clientId: context.clientId,
+      status,
+      plan,
+      expires_at: expiresAt,
+    });
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'client.license.update',
+    client_id: context.clientId,
+    license: {
+      status: normalizeLicenseStatus((data as Record<string, unknown>).status),
+      plan: normalizeLicensePlan((data as Record<string, unknown>).plan),
+      expires_at: toSheetString((data as Record<string, unknown>).expires_at),
+    },
   });
 }
 
@@ -2084,6 +2173,9 @@ Deno.serve(async (request) => {
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+
+      case 'client.license.update':
+        return await updateClientLicense(request, context, body as Record<string, unknown>);
 
       default:
         return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 400, { ...debug, action });

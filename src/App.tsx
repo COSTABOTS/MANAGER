@@ -38,7 +38,8 @@ import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
-import type { BookingService, BookingStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
+import { saveClientLicenseWithManagerApi } from './services/clientLicense';
+import type { BookingService, BookingStatus, ClientLicense, ClientLicensePlan, ClientLicenseStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
@@ -128,6 +129,9 @@ interface ManagedClientOption {
   rest_name: string;
   sheet_id?: string;
   is_demo?: boolean;
+  status?: string;
+  plan?: string;
+  expires_at?: string;
 }
 
 function mapManagedClient(row: Record<string, unknown>): ManagedClientOption {
@@ -136,7 +140,40 @@ function mapManagedClient(row: Record<string, unknown>): ManagedClientOption {
     rest_name: pickSupabaseValue(row, ['rest_name', 'REST_NAME', 'rest_nombre', 'restaurantName', 'restaurant_name']),
     sheet_id: pickSupabaseValue(row, ['sheet_id', 'SHEET_ID', 'googleSheetId']),
     is_demo: toSupabaseBoolean(row.is_demo ?? row.IS_DEMO),
+    status: pickSupabaseValue(row, ['status', 'STATUS']) || 'ACTIVE',
+    plan: pickSupabaseValue(row, ['plan', 'PLAN']) || 'DEMO',
+    expires_at: pickSupabaseValue(row, ['expires_at', 'EXPIRES_AT', 'expiresAt']),
   };
+}
+
+function normalizeClientLicenseStatus(value: unknown): ClientLicenseStatus {
+  const status = String(value ?? '').trim().toUpperCase();
+  return status === 'TRIAL' || status === 'SUSPENDED' || status === 'EXPIRED' ? status : 'ACTIVE';
+}
+
+function normalizeClientLicensePlan(value: unknown): ClientLicensePlan {
+  const plan = String(value ?? '').trim().toUpperCase();
+  return plan === 'PRO' ? 'PRO' : 'DEMO';
+}
+
+function getClientLicenseFromConfig(config: ExternalClientConfig | null): ClientLicense {
+  const selectedClient = config?.selectedClient as Record<string, unknown> | undefined;
+  return {
+    status: normalizeClientLicenseStatus(config?.licenseStatus ?? config?.status ?? selectedClient?.status),
+    plan: normalizeClientLicensePlan(config?.licensePlan ?? config?.plan ?? selectedClient?.plan),
+    expiresAt: pickSupabaseValue(
+      {
+        expires_at: config?.expires_at,
+        licenseExpiresAt: config?.licenseExpiresAt,
+        selectedExpiresAt: selectedClient?.expires_at,
+      },
+      ['licenseExpiresAt', 'expires_at', 'selectedExpiresAt'],
+    ),
+  };
+}
+
+function isInactiveClientLicense(license: ClientLicense) {
+  return license.status === 'SUSPENDED' || license.status === 'EXPIRED';
 }
 
 function timeToMinutes(time: unknown) {
@@ -420,8 +457,7 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
   if (profileRole === 'SUPER_ADMIN') {
     const clientsResult = await supabase
       .from('CLIENTES')
-      .select('*')
-      .eq('status', 'ACTIVE');
+      .select('*');
 
     if (clientsResult.error) {
       console.warn('[LOGIN][SUPABASE] clients list warning', clientsResult.error);
@@ -453,11 +489,6 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
     throw new Error('CLIENT_NOT_FOUND');
   }
   console.log('[LOGIN][SUPABASE] client found', client);
-
-  const clientStatus = pickSupabaseValue(client, ['status', 'STATUS']).toUpperCase();
-  if (clientStatus && clientStatus !== 'ACTIVE') {
-    throw new Error('CLIENT_INACTIVE');
-  }
 
   const webhooksResult = await supabase.from('WEBHOOKS').select('*');
   if (webhooksResult.error) {
@@ -499,6 +530,9 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
   const restaurantLogo = pickSupabaseValue(client, ['logo_url', 'LOGO_URL', 'logo_restaurante', 'restaurantLogoUrl']);
   const primaryColor = pickSupabaseValue(client, ['primary_color', 'PRIMARY_COLOR', 'color', 'primaryColor']);
   const sheetId = pickSupabaseValue(client, ['sheet_id', 'SHEET_ID', 'googleSheetId']);
+  const licenseStatus = normalizeClientLicenseStatus(pickSupabaseValue(client, ['status', 'STATUS']));
+  const licensePlan = normalizeClientLicensePlan(pickSupabaseValue(client, ['plan', 'PLAN']));
+  const licenseExpiresAt = pickSupabaseValue(client, ['expires_at', 'EXPIRES_AT', 'expiresAt']);
   const selectedClient = mapManagedClient(client);
   console.log('[SUPER_ADMIN][CLIENT_CONTEXT]', {
     authProfileClientId: profileClientId,
@@ -524,6 +558,12 @@ async function loadSupabaseClientConfig(userId: string, selectedClientId?: strin
     sheet_id: sheetId,
     googleSheetId: sheetId,
     role: profileRole,
+    status: licenseStatus,
+    plan: licensePlan,
+    expires_at: licenseExpiresAt,
+    licenseStatus,
+    licensePlan,
+    licenseExpiresAt,
     profile_client_id: profileClientId,
     authProfileClientId: profileClientId,
     selectedClient,
@@ -644,6 +684,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const todayTabServices = useMemo(() => getTodayTabServices(enabledServices), [enabledServices]);
   const activeUserRole = useMemo(() => normalizeUserRole(clientConfig?.role), [clientConfig?.role]);
   const isSuperAdmin = activeUserRole === 'SUPER_ADMIN';
+  const clientLicense = useMemo(() => getClientLicenseFromConfig(clientConfig), [clientConfig]);
   const availableManagedClients = useMemo(
     () => (Array.isArray(clientConfig?.availableClients) ? (clientConfig.availableClients as ManagedClientOption[]) : []),
     [clientConfig?.availableClients],
@@ -1774,6 +1815,72 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setLastSync('Configuracion guardada localmente, pero no sincronizada');
     return 'error';
   }
+
+  async function handleClientLicenseSave(nextLicense: ClientLicense): Promise<'success' | 'error'> {
+    if (!isSuperAdmin) {
+      setSettingsMessage('Solo SUPER_ADMIN puede cambiar la licencia');
+      return 'error';
+    }
+
+    try {
+      const savedLicense = await saveClientLicenseWithManagerApi(nextLicense);
+      const normalizedLicense: ClientLicense = {
+        status: normalizeClientLicenseStatus(savedLicense.status),
+        plan: normalizeClientLicensePlan(savedLicense.plan),
+        expiresAt: savedLicense.expiresAt ?? '',
+      };
+
+      setClientConfig((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const nextSelectedClient = current.selectedClient
+          ? {
+              ...current.selectedClient,
+              status: normalizedLicense.status,
+              plan: normalizedLicense.plan,
+              expires_at: normalizedLicense.expiresAt,
+            }
+          : current.selectedClient;
+        const nextAvailableClients = Array.isArray(current.availableClients)
+          ? current.availableClients.map((client) =>
+              client.client_id === (current.selectedClientId ?? current.client_id)
+                ? {
+                    ...client,
+                    status: normalizedLicense.status,
+                    plan: normalizedLicense.plan,
+                    expires_at: normalizedLicense.expiresAt,
+                  }
+                : client,
+            )
+          : current.availableClients;
+
+        const nextConfig = normalizeClientConfig({
+          ...current,
+          status: normalizedLicense.status,
+          plan: normalizedLicense.plan,
+          expires_at: normalizedLicense.expiresAt,
+          licenseStatus: normalizedLicense.status,
+          licensePlan: normalizedLicense.plan,
+          licenseExpiresAt: normalizedLicense.expiresAt,
+          selectedClient: nextSelectedClient,
+          availableClients: nextAvailableClients,
+        });
+        sessionStorage.setItem(CLIENT_CONFIG_KEY, JSON.stringify(nextConfig));
+        return nextConfig;
+      });
+
+      setSettingsMessage('Licencia COSTABOTS guardada correctamente');
+      setLastSync('Licencia actualizada');
+      return 'success';
+    } catch (error) {
+      console.error('[LICENSE] save error', error);
+      setSettingsMessage('No se pudo guardar la licencia COSTABOTS');
+      return 'error';
+    }
+  }
+
   async function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
     setDateBookingStatus((current) => {
       const nextStatus = {
@@ -2157,6 +2264,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isDemoMode={isSupabaseDemoRoute()}
           isSuperAdmin={isSuperAdmin}
           clientId={clientConfig?.client_id ?? ''}
+          clientLicense={clientLicense}
           lastUpdatedAt={lastUpdatedAt}
           onRefreshTables={async () => {
             await loadTables();
@@ -2172,6 +2280,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           onUpdateResource={handleUpdateResource}
           onDeleteResource={handleDeleteResource}
           onSettingsSave={handleSettingsSave}
+          onClientLicenseSave={handleClientLicenseSave}
         />
       );
     }
@@ -2217,6 +2326,24 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   if (!clientConfig) {
     return <LoginScreen error={loginError} isLoading={isLoggingIn} onLogin={handleLogin} />;
+  }
+
+  if (!isSuperAdmin && isInactiveClientLicense(clientLicense)) {
+    return (
+      <div className="license-blocked-screen">
+        <div className="license-blocked-card">
+          <BrandLogo fallbackUrl={settings.restaurantLogoUrl || DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt={settings.restaurantName} variant="restaurant" />
+          <p className="eyebrow">Licencia COSTABOTS</p>
+          <h1>Cliente {clientLicense.status === 'EXPIRED' ? 'expirado' : 'suspendido'}</h1>
+          <p>
+            La licencia de {settings.restaurantName || 'este restaurante'} no esta activa. Contacta con COSTABOTS para reactivar el acceso.
+          </p>
+          <button className="secondary-button bordered-action" type="button" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -2427,6 +2554,12 @@ function DemoAuthGate() {
         color: pickSupabaseValue(client, ['primary_color']),
         sheet_id: pickSupabaseValue(client, ['sheet_id']),
         role,
+        status: normalizeClientLicenseStatus(pickSupabaseValue(client, ['status', 'STATUS'])),
+        plan: normalizeClientLicensePlan(pickSupabaseValue(client, ['plan', 'PLAN'])),
+        expires_at: pickSupabaseValue(client, ['expires_at', 'EXPIRES_AT', 'expiresAt']),
+        licenseStatus: normalizeClientLicenseStatus(pickSupabaseValue(client, ['status', 'STATUS'])),
+        licensePlan: normalizeClientLicensePlan(pickSupabaseValue(client, ['plan', 'PLAN'])),
+        licenseExpiresAt: pickSupabaseValue(client, ['expires_at', 'EXPIRES_AT', 'expiresAt']),
         IS_DEMO: true,
         is_demo: true,
         settings: demoSettings,

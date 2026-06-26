@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { BookingService, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
+import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseStatus, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 
 interface SettingsProps {
@@ -15,6 +15,7 @@ interface SettingsProps {
   isDemoMode?: boolean;
   isSuperAdmin?: boolean;
   clientId?: string;
+  clientLicense?: ClientLicense;
   lastUpdatedAt?: string;
   onRefreshTables: () => Promise<void>;
   onCreateTable: (table: Omit<RestaurantTable, 'id' | 'active'>) => Promise<void>;
@@ -26,6 +27,7 @@ interface SettingsProps {
   onUpdateResource: (resource: ReservableResource) => Promise<void>;
   onDeleteResource: (resource: ReservableResource) => Promise<void>;
   onSettingsSave: (settings: ManagerSettings) => Promise<'success' | 'error' | 'skipped'>;
+  onClientLicenseSave?: (license: ClientLicense) => Promise<'success' | 'error'>;
 }
 
 type ReservationInterval = 30 | 60;
@@ -68,6 +70,31 @@ const EMPTY_RESOURCE_FORM = {
   zone: 'PISCINA',
   capacity: 4,
 };
+const CLIENT_LICENSE_STATUSES: ClientLicenseStatus[] = ['ACTIVE', 'TRIAL', 'SUSPENDED', 'EXPIRED'];
+const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
+
+function toDateTimeLocal(value: string) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 16);
+  }
+
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocal(value: string) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
 
 function rebuildSlotCapacity(
   openingTime: string,
@@ -95,6 +122,7 @@ export function Settings({
   isDemoMode = false,
   isSuperAdmin = false,
   clientId = '',
+  clientLicense = { status: 'ACTIVE', plan: 'DEMO', expiresAt: '' },
   lastUpdatedAt = '',
   onRefreshTables,
   onCreateTable,
@@ -106,6 +134,7 @@ export function Settings({
   onUpdateResource,
   onDeleteResource,
   onSettingsSave,
+  onClientLicenseSave,
 }: SettingsProps) {
   const [draftSettings, setDraftSettings] = useState(settings);
   const [tableForm, setTableForm] = useState(EMPTY_TABLE_FORM);
@@ -114,6 +143,8 @@ export function Settings({
   const [tableDrafts, setTableDrafts] = useState<Record<string, { name: string; type: RestaurantTableType; capacity: number; order: number }>>({});
   const [tableToDelete, setTableToDelete] = useState<RestaurantTable | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
+  const [licenseDraft, setLicenseDraft] = useState<ClientLicense>(clientLicense);
+  const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
 
   useEffect(() => {
@@ -126,6 +157,11 @@ export function Settings({
     setDraftSettings(settings);
     setSaveState('idle');
   }, [settings]);
+
+  useEffect(() => {
+    setLicenseDraft(clientLicense);
+    setLicenseSaveState('idle');
+  }, [clientLicense]);
 
   useEffect(() => {
     setTableDrafts(
@@ -364,6 +400,19 @@ export function Settings({
 
     await onDeleteTable(tableToDelete);
     setTableToDelete(null);
+  }
+
+  async function handleSaveClientLicense() {
+    if (!onClientLicenseSave) {
+      return;
+    }
+
+    setLicenseSaveState('saving');
+    const result = await onClientLicenseSave({
+      ...licenseDraft,
+      expiresAt: fromDateTimeLocal(licenseDraft.expiresAt),
+    });
+    setLicenseSaveState(result === 'success' ? 'saved' : 'error');
   }
 
   async function handleSaveSettings() {
@@ -662,6 +711,78 @@ export function Settings({
                 <input value={draftSettings.googleSheetId} onChange={(event) => updateDraft('googleSheetId', event.target.value)} />
               </label>
             </div>
+            <div className="settings-subsection client-license-card">
+              <div className="section-title compact">
+                <div>
+                  <p className="eyebrow">Licencia COSTABOTS</p>
+                  <h2>Cliente operativo</h2>
+                </div>
+                <span className={`status-pill license-${licenseDraft.status.toLowerCase()}`}>{licenseDraft.status}</span>
+              </div>
+              <div className="settings-grid inner">
+                <label>
+                  Estado cliente
+                  <select
+                    value={licenseDraft.status}
+                    onChange={(event) =>
+                      setLicenseDraft((current) => ({
+                        ...current,
+                        status: event.target.value as ClientLicenseStatus,
+                      }))
+                    }
+                  >
+                    {CLIENT_LICENSE_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Plan
+                  <select
+                    value={licenseDraft.plan}
+                    onChange={(event) =>
+                      setLicenseDraft((current) => ({
+                        ...current,
+                        plan: event.target.value as ClientLicensePlan,
+                      }))
+                    }
+                  >
+                    {CLIENT_LICENSE_PLANS.map((plan) => (
+                      <option key={plan} value={plan}>
+                        {plan}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Fecha vencimiento
+                  <input
+                    type="datetime-local"
+                    value={toDateTimeLocal(licenseDraft.expiresAt)}
+                    onChange={(event) =>
+                      setLicenseDraft((current) => ({
+                        ...current,
+                        expiresAt: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="settings-actions-row">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={licenseSaveState === 'saving' || !onClientLicenseSave}
+                  onClick={() => void handleSaveClientLicense()}
+                >
+                  {licenseSaveState === 'saving' ? 'Guardando...' : 'Guardar licencia'}
+                </button>
+                {licenseSaveState === 'saved' && <span className="sync-message">Licencia guardada</span>}
+                {licenseSaveState === 'error' && <span className="sync-message error">No se pudo guardar la licencia</span>}
+              </div>
+            </div>
             {isDemoMode ? (
               <>
                 <div className="settings-subsection api-integration-card">
@@ -706,7 +827,6 @@ export function Settings({
             ) : (
               webhookFields
             )}
-            <SwitchRow label="Licencia activa" checked={draftSettings.licenseActive} onChange={(value) => updateDraft('licenseActive', value)} />
               </div>
             )}
 
