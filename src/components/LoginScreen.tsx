@@ -10,9 +10,18 @@ interface LoginScreenProps {
   onLogin: (usuario: string, password: string) => Promise<void>;
 }
 
+const DEMO_LOGIN_USER = 'demo2@costabots.local';
+const DEMO_LOGIN_PASSWORD = 'Demo2026';
+
+function shouldPrefillDemoLogin() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('demo') === '1';
+}
+
 export function LoginScreen({ error, isLoading, onLogin }: LoginScreenProps) {
-  const [usuario, setUsuario] = useState('');
-  const [password, setPassword] = useState('');
+  const isDemo = shouldPrefillDemoLogin();
+  const [usuario, setUsuario] = useState(isDemo ? DEMO_LOGIN_USER : '');
+  const [password, setPassword] = useState(isDemo ? DEMO_LOGIN_PASSWORD : '');
   const [showPassword, setShowPassword] = useState(false);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
