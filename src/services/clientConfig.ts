@@ -112,6 +112,7 @@ export interface ExternalClientConfig {
   authProfileClientId?: string;
   selectedClientId?: string;
   effectiveClientId?: string;
+  authUserEmail?: string;
   role?: string;
   status?: string;
   plan?: string;

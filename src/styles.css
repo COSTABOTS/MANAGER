@@ -287,6 +287,17 @@ select {
   text-transform: uppercase;
 }
 
+.demo-lock-notice {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #d8c48a;
+  border-radius: 8px;
+  color: #765300;
+  background: #fff8df;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .brand-lockup {
   display: flex;
   align-items: center;

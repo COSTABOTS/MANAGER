@@ -53,6 +53,7 @@ const LOGIN_WEBHOOK_URL = 'https://hook.eu1.make.com/nt1tpv599c07vq26u107ddgbsnj
 const SETTINGS_WEBHOOK_FALLBACK = '';
 const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
+const PROTECTED_DEMO_EMAIL = 'demo2@costabots.local';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
 const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'];
 const TIMED_SERVICE_ORDER: Array<'DESAYUNO' | 'ALMUERZO' | 'CENA'> = ['DESAYUNO', 'ALMUERZO', 'CENA'];
@@ -813,6 +814,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const todayBookingStatus = dateBookingStatus[dayStatus.date] ?? (settings.reservasActivas ? 'open' : 'fully_booked');
   const isTodayFullyBooked = todayBookingStatus === 'fully_booked';
   const isDemoClient = Boolean(clientConfig && (clientConfig.IS_DEMO === true || clientConfig.is_demo === true || toSupabaseBoolean(clientConfig.IS_DEMO) || toSupabaseBoolean(clientConfig.is_demo)));
+  const isProtectedDemoUser = String(clientConfig?.authUserEmail ?? '').trim().toLowerCase() === PROTECTED_DEMO_EMAIL;
 
   useEffect(() => {
     isLoadingReservationsRef.current = isLoadingReservations;
@@ -825,12 +827,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    document.body.classList.add(isSuperAdmin ? 'role-superadmin' : 'role-manager');
+    document.body.classList.add(isSuperAdmin && !isProtectedDemoUser ? 'role-superadmin' : 'role-manager');
 
     return () => {
       document.body.classList.remove('role-superadmin', 'role-manager');
     };
-  }, [clientConfig, isSuperAdmin]);
+  }, [clientConfig, isProtectedDemoUser, isSuperAdmin]);
 
   useEffect(() => {
     if (!clientConfig) {
@@ -971,7 +973,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           return;
         }
 
-        const config = await loadSupabaseClientConfig(authResult.data.user.id);
+        const config = normalizeClientConfig({
+          ...(await loadSupabaseClientConfig(authResult.data.user.id)),
+          authUserEmail: authResult.data.user.email ?? usuario.trim(),
+        });
         if (!isValidClientConfig(config)) {
           throw new Error('CLIENT_CONFIG_INVALID');
         }
@@ -1103,6 +1108,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleManagedClientChange(nextClientId: string) {
+    if (isProtectedDemoUser) {
+      setLastSync('Modo demo: no se puede cambiar el cliente activo');
+      return;
+    }
+
     if (!isSuperAdmin || !nextClientId || nextClientId === clientConfig?.client_id) {
       return;
     }
@@ -1122,7 +1132,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         return;
       }
 
-      const nextConfig = await loadSupabaseClientConfig(userId, nextClientId);
+      const nextConfig = normalizeClientConfig({
+        ...(await loadSupabaseClientConfig(userId, nextClientId)),
+        authUserEmail: data.session?.user.email ?? clientConfig?.authUserEmail ?? '',
+      });
       console.log('[SUPER_ADMIN][CLIENT_SWITCH_READY]', {
         profileClientId: nextConfig.authProfileClientId ?? nextConfig.profile_client_id,
         selectedClientId: nextConfig.selectedClientId ?? nextConfig.client_id,
@@ -1142,6 +1155,18 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   function getReservationSyncId(reservation: Reservation) {
     return reservation.idReserva || reservation.id;
+  }
+
+  function blockProtectedDemoAction(message = 'Modo demo: esta accion esta bloqueada') {
+    if (!isProtectedDemoUser) {
+      return false;
+    }
+
+    setLastSync(message);
+    setSettingsMessage(message);
+    setTablesSyncMessage(message);
+    setResourcesSyncMessage(message);
+    return true;
   }
 
   function canSyncReservationAction(reservation: Reservation, actionLabel: string) {
@@ -1665,6 +1690,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
+    if (blockProtectedDemoAction('Modo demo: la gestion de mesas esta bloqueada')) {
+      return;
+    }
+
     const useManagerApiTables = shouldUseManagerApiForTables();
     const tableWebhook = getClientWebhook('webhook_save_mesa') || settings.webhookSaveMesa;
 
@@ -1730,6 +1759,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncResource(action: 'create' | 'update' | 'delete', resource: ReservableResource) {
+    if (blockProtectedDemoAction('Modo demo: la gestion de recursos esta bloqueada')) {
+      return;
+    }
+
     if (!shouldUseManagerApiForResources()) {
       setResourcesSyncMessage('Recursos disponibles solo con manager-api');
       return;
@@ -1806,6 +1839,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncClientPrimaryColor(nextSettings: ManagerSettings) {
+    if (blockProtectedDemoAction('Modo demo: el branding esta bloqueado')) {
+      return false;
+    }
+
     if (!isSuperAdmin) {
       return true;
     }
@@ -1862,6 +1899,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
+    if (blockProtectedDemoAction('Modo demo: guardar configuracion esta bloqueado')) {
+      return 'skipped';
+    }
+
     const settingsToSave = {
       ...nextSettings,
       primaryColor: normalizeHexColor(nextSettings.primaryColor),
@@ -1960,6 +2001,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleClientLicenseSave(nextLicense: ClientLicense): Promise<'success' | 'error'> {
+    if (blockProtectedDemoAction('Modo demo: la licencia esta bloqueada')) {
+      return 'error';
+    }
+
     if (!isSuperAdmin) {
       setSettingsMessage('Solo SUPER_ADMIN puede cambiar la licencia');
       return 'error';
@@ -2405,7 +2450,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
           isDemoMode={isSupabaseDemoRoute()}
-          isSuperAdmin={isSuperAdmin}
+          isDemoUser={isProtectedDemoUser}
+          isSuperAdmin={isSuperAdmin && !isProtectedDemoUser}
           clientId={clientConfig?.client_id ?? ''}
           clientLicense={clientLicense}
           lastUpdatedAt={lastUpdatedAt}
@@ -2494,7 +2540,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       activePage={activePage}
       restaurantName={settings.restaurantName}
       restaurantLogoUrl={settings.restaurantLogoUrl}
-      isSuperAdmin={isSuperAdmin}
+      isSuperAdmin={isSuperAdmin && !isProtectedDemoUser}
       activeClientId={clientConfig.client_id ?? ''}
       managedClients={availableManagedClients}
       onClientChange={(clientId) => void handleManagedClientChange(clientId)}
@@ -2502,6 +2548,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       onLogout={handleLogout}
     >
       {isDemoClient && <div className="demo-banner">DEMO Â· Datos simulados</div>}
+      {isProtectedDemoUser && <div className="demo-banner">Modo demo: algunas opciones estan bloqueadas.</div>}
       {renderPage()}
       {reservationToCancel && (
         <div className="modal-backdrop" role="presentation" onPointerDown={() => setReservationToCancel(null)}>

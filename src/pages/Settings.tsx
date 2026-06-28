@@ -13,6 +13,7 @@ interface SettingsProps {
   isLoadingSettings: boolean;
   settingsMessage: string;
   isDemoMode?: boolean;
+  isDemoUser?: boolean;
   isSuperAdmin?: boolean;
   clientId?: string;
   clientLicense?: ClientLicense;
@@ -120,6 +121,7 @@ export function Settings({
   isLoadingSettings,
   settingsMessage,
   isDemoMode = false,
+  isDemoUser = false,
   isSuperAdmin = false,
   clientId = '',
   clientLicense = { status: 'ACTIVE', plan: 'DEMO', expiresAt: '' },
@@ -146,6 +148,7 @@ export function Settings({
   const [licenseDraft, setLicenseDraft] = useState<ClientLicense>(clientLicense);
   const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
+  const configurationLocked = isDemoUser;
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
@@ -298,6 +301,10 @@ export function Settings({
   }
 
   function addTable() {
+    if (configurationLocked) {
+      return;
+    }
+
     const name = tableForm.name.trim();
     if (!name) {
       return;
@@ -323,6 +330,10 @@ export function Settings({
   }
 
   function saveTable(table: RestaurantTable) {
+    if (configurationLocked) {
+      return;
+    }
+
     const draft = tableDrafts[table.id];
     const name = draft?.name.trim();
 
@@ -340,6 +351,10 @@ export function Settings({
   }
 
   function addResource() {
+    if (configurationLocked) {
+      return;
+    }
+
     const name = resourceForm.name.trim();
     if (!name) {
       return;
@@ -367,10 +382,18 @@ export function Settings({
   }
 
   function updateResource(resource: ReservableResource, nextResource: Partial<ReservableResource>) {
+    if (configurationLocked) {
+      return;
+    }
+
     void onUpdateResource({ ...resource, ...nextResource });
   }
 
   function saveResource(resource: ReservableResource) {
+    if (configurationLocked) {
+      return;
+    }
+
     const draft = resourceDrafts[resource.id];
     const name = draft?.name.trim();
 
@@ -390,11 +413,15 @@ export function Settings({
   }
 
   function deleteResource(resource: ReservableResource) {
+    if (configurationLocked) {
+      return;
+    }
+
     void onDeleteResource(resource);
   }
 
   async function confirmDeleteTable() {
-    if (!tableToDelete) {
+    if (configurationLocked || !tableToDelete) {
       return;
     }
 
@@ -403,7 +430,7 @@ export function Settings({
   }
 
   async function handleSaveClientLicense() {
-    if (!onClientLicenseSave || licenseSaveState === 'saving') {
+    if (configurationLocked || !onClientLicenseSave || licenseSaveState === 'saving') {
       return;
     }
 
@@ -416,6 +443,11 @@ export function Settings({
   }
 
   async function handleSaveSettings() {
+    if (configurationLocked) {
+      setSaveState('error');
+      return;
+    }
+
     setSaveState('saving');
     const result = await onSettingsSave(draftSettings);
     setSaveState(result === 'error' ? 'error' : 'saved');
@@ -498,6 +530,10 @@ export function Settings({
 
       {(isLoadingSettings || settingsMessage) && (
         <p className="sync-message">{isLoadingSettings ? 'Cargando SETTINGS...' : settingsMessage}</p>
+      )}
+
+      {configurationLocked && (
+        <p className="demo-lock-notice">Modo demo: algunas opciones estan bloqueadas.</p>
       )}
 
       {isDemoMode && (
@@ -774,7 +810,7 @@ export function Settings({
                 <button
                   className="secondary-button"
                   type="button"
-                  disabled={licenseSaveState === 'saving' || !onClientLicenseSave}
+                  disabled={configurationLocked || licenseSaveState === 'saving' || !onClientLicenseSave}
                   onClick={() => void handleSaveClientLicense()}
                 >
                   {licenseSaveState === 'saving' ? 'Guardando...' : 'Guardar licencia'}
@@ -866,7 +902,7 @@ export function Settings({
                     onChange={(event) => setTableForm((current) => ({ ...current, capacity: Number(event.target.value) }))}
                   />
                 </label>
-                <button type="button" onClick={addTable}>
+                <button type="button" disabled={configurationLocked} onClick={addTable}>
                   Añadir mesa
                 </button>
               </div>
@@ -899,16 +935,16 @@ export function Settings({
                         value={tableDraft.capacity}
                         onChange={(event) => updateTableDraft(table.id, { capacity: Number(event.target.value) })}
                       />
-                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => void onUpdateTable({ ...table, active: !table.active })}>
+                      <button className={`compact-toggle ${table.active ? 'is-open' : 'is-closed'}`} type="button" disabled={configurationLocked} onClick={() => void onUpdateTable({ ...table, active: !table.active })}>
                         <span>{table.active ? 'Activa' : 'Inactiva'}</span>
                       </button>
-                      <button className="secondary-button compact-action" type="button" onClick={() => saveTable(table)}>
+                      <button className="secondary-button compact-action" type="button" disabled={configurationLocked} onClick={() => saveTable(table)}>
                         Guardar
                       </button>
                       <button
                         className="danger-button"
                         type="button"
-                        disabled={!table.mesaId}
+                        disabled={configurationLocked || !table.mesaId}
                         title={table.mesaId ? 'Borrar mesa definitivamente' : 'No se puede borrar: falta ID_MESA'}
                         onClick={() => setTableToDelete(table)}
                       >
@@ -951,7 +987,7 @@ export function Settings({
                     onChange={(event) => setResourceForm((current) => ({ ...current, capacity: Number(event.target.value) }))}
                   />
                 </label>
-                <button type="button" onClick={addResource}>
+                <button type="button" disabled={configurationLocked} onClick={addResource}>
                   Añadir recurso
                 </button>
               </div>
@@ -978,13 +1014,13 @@ export function Settings({
                         value={resourceDraft.capacity}
                         onChange={(event) => updateResourceDraft(resource.id, { capacity: Number(event.target.value) })}
                       />
-                      <button className={`compact-toggle ${resource.active ? 'is-open' : 'is-closed'}`} type="button" onClick={() => updateResource(resource, { active: !resource.active })}>
+                      <button className={`compact-toggle ${resource.active ? 'is-open' : 'is-closed'}`} type="button" disabled={configurationLocked} onClick={() => updateResource(resource, { active: !resource.active })}>
                         <span>{resource.active ? 'Activa' : 'Inactiva'}</span>
                       </button>
-                      <button className="secondary-button compact-action" type="button" onClick={() => saveResource(resource)}>
+                      <button className="secondary-button compact-action" type="button" disabled={configurationLocked} onClick={() => saveResource(resource)}>
                         Guardar
                       </button>
-                      <button className="danger-button" type="button" onClick={() => deleteResource(resource)}>
+                      <button className="danger-button" type="button" disabled={configurationLocked} onClick={() => deleteResource(resource)}>
                         Borrar
                       </button>
                     </div>
@@ -1001,7 +1037,7 @@ export function Settings({
         <span className={`save-indicator is-${saveState}`}>
           {saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada'}
         </span>
-        <button type="button" disabled={saveState === 'saving'} onClick={handleSaveSettings}>
+        <button type="button" disabled={configurationLocked || saveState === 'saving'} onClick={handleSaveSettings}>
           Guardar configuración
         </button>
       </section>
