@@ -1,4 +1,4 @@
-const CACHE_NAME = 'costabots-manager-v29';
+const CACHE_NAME = 'costabots-manager-v30';
 const IS_LOCAL_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 const APP_SHELL = [
   '/',
