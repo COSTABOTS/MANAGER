@@ -1137,6 +1137,7 @@ async function updateClientBranding(
 
   const branding = (body.branding && typeof body.branding === 'object' ? body.branding : body) as Record<string, unknown>;
   const primaryColor = toSheetString(branding.primary_color ?? branding.primaryColor);
+  const logoUrl = toSheetString(branding.logo_url ?? branding.logoUrl ?? branding.restaurantLogoUrl);
 
   if (!/^#[0-9a-f]{6}$/i.test(primaryColor)) {
     return errorResponse(request, 'INVALID_PRIMARY_COLOR', 'primary_color no es un HEX valido', 200, {
@@ -1146,18 +1147,31 @@ async function updateClientBranding(
     });
   }
 
+  if (logoUrl) {
+    try {
+      new URL(logoUrl);
+    } catch (_error) {
+      return errorResponse(request, 'INVALID_LOGO_URL', 'logo_url no es una URL valida', 200, {
+        action: 'client.branding.update',
+        clientId: context.clientId,
+        logoUrl,
+      });
+    }
+  }
+
   const { data, error } = await context.dbClient
     .from('CLIENTES')
-    .update({ primary_color: primaryColor })
+    .update({ primary_color: primaryColor, logo_url: logoUrl })
     .eq('client_id', context.clientId)
     .select('client_id, rest_name, primary_color, logo_url, sheet_id, status, plan, expires_at, is_demo')
     .single();
 
   if (error || !data) {
-    return errorResponse(request, 'CLIENT_BRANDING_UPDATE_FAILED', error?.message || 'No se pudo actualizar primary_color', 200, {
+    return errorResponse(request, 'CLIENT_BRANDING_UPDATE_FAILED', error?.message || 'No se pudo actualizar branding', 200, {
       action: 'client.branding.update',
       clientId: context.clientId,
       primaryColor,
+      logoUrl,
       updateError: error?.message,
     });
   }

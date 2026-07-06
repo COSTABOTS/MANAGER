@@ -98,7 +98,7 @@ export function Layout({
             {isSuperAdmin && managedClients.length > 0 && (
               <label className="superadmin-client-selector">
                 <span>Cliente activo</span>
-                <select value={activeClientId} onChange={(event) => onClientChange?.(event.target.value)}>
+                <select className="client-switcher-select" value={activeClientId} onChange={(event) => onClientChange?.(event.target.value)}>
                   {managedClients.map((client) => (
                     <option key={client.client_id} value={client.client_id}>
                       {client.rest_name || client.client_id} · {client.client_id}

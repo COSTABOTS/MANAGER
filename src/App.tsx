@@ -39,7 +39,7 @@ import { requireNameOrRoom, requireWebhookFields } from './services/webhookValid
 import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
 import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
 import { saveClientLicenseWithManagerApi } from './services/clientLicense';
-import { saveClientPrimaryColorWithManagerApi } from './services/clientBranding';
+import { saveClientBrandingWithManagerApi } from './services/clientBranding';
 import { loadManagedClientsWithManagerApi } from './services/clients';
 import type { BookingService, BookingStatus, ClientLicense, ClientLicensePlan, ClientLicenseStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
@@ -1799,7 +1799,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     await syncResource('delete', resource);
   }
 
-  function applyClientPrimaryColor(primaryColor: string, updatedClient?: ManagedClientOption) {
+  function applyClientBranding(primaryColor: string, restaurantLogoUrl: string, updatedClient?: ManagedClientOption) {
     setClientConfig((current) => {
       if (!current) {
         return current;
@@ -1811,6 +1811,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
             ...current.selectedClient,
             ...(updatedClient ?? {}),
             primary_color: primaryColor,
+            logo_url: restaurantLogoUrl,
           }
         : current.selectedClient;
       const nextAvailableClients = Array.isArray(current.availableClients)
@@ -1820,6 +1821,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
                   ...client,
                   ...(updatedClient ?? {}),
                   primary_color: primaryColor,
+                  logo_url: restaurantLogoUrl,
                 }
               : client,
           )
@@ -1830,6 +1832,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         color: primaryColor,
         primary_color: primaryColor,
         primaryColor,
+        logo_url: restaurantLogoUrl,
+        logo_restaurante: restaurantLogoUrl,
+        restaurantLogoUrl,
         selectedClient: nextSelectedClient,
         availableClients: nextAvailableClients,
       });
@@ -1838,7 +1843,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     });
   }
 
-  async function syncClientPrimaryColor(nextSettings: ManagerSettings) {
+  async function syncClientBranding(nextSettings: ManagerSettings) {
     if (blockProtectedDemoAction('Modo demo: el branding esta bloqueado')) {
       return false;
     }
@@ -1849,19 +1854,21 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     const nextColor = normalizeHexColor(nextSettings.primaryColor);
     const currentColor = normalizeHexColor(clientConfig?.primary_color ?? clientConfig?.primaryColor);
+    const nextLogoUrl = nextSettings.restaurantLogoUrl.trim();
+    const currentLogoUrl = String(clientConfig?.logo_url ?? clientConfig?.logo_restaurante ?? clientConfig?.restaurantLogoUrl ?? '').trim();
 
-    if (nextColor === currentColor) {
+    if (nextColor === currentColor && nextLogoUrl === currentLogoUrl) {
       return true;
     }
 
     try {
-      const result = await saveClientPrimaryColorWithManagerApi(nextColor);
-      applyClientPrimaryColor(nextColor, mapManagedClient(result.client as unknown as Record<string, unknown>));
-      setSettingsMessage('Color principal guardado en CLIENTES');
+      const result = await saveClientBrandingWithManagerApi(nextColor, nextLogoUrl);
+      applyClientBranding(nextColor, nextLogoUrl, mapManagedClient(result.client as unknown as Record<string, unknown>));
+      setSettingsMessage('Branding guardado en CLIENTES');
       return true;
     } catch (error) {
-      console.error('[BRANDING] primary_color save error', error);
-      setSettingsMessage('No se pudo guardar el color principal en CLIENTES');
+      console.error('[BRANDING] save error', error);
+      setSettingsMessage('No se pudo guardar el branding en CLIENTES');
       return false;
     }
   }
@@ -1916,8 +1923,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setLastSync('Configuracion guardada correctamente');
     let settingsSavedByManagerApi = false;
 
-    const primaryColorSaved = await syncClientPrimaryColor(settingsToSave);
-    if (!primaryColorSaved) {
+    const brandingSaved = await syncClientBranding(settingsToSave);
+    if (!brandingSaved) {
       return 'error';
     }
 

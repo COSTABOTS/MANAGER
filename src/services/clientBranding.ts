@@ -15,7 +15,7 @@ export interface ClientBrandingUpdateResult {
   };
 }
 
-export async function saveClientPrimaryColorWithManagerApi(primaryColor: string): Promise<ClientBrandingUpdateResult> {
+export async function saveClientBrandingWithManagerApi(primaryColor: string, logoUrl: string): Promise<ClientBrandingUpdateResult> {
   let response: {
     ok?: boolean;
     code?: string;
@@ -28,6 +28,7 @@ export async function saveClientPrimaryColorWithManagerApi(primaryColor: string)
       action: 'client.branding.update',
       branding: {
         primary_color: primaryColor,
+        logo_url: logoUrl,
       },
     });
   } catch (error) {
@@ -39,7 +40,7 @@ export async function saveClientPrimaryColorWithManagerApi(primaryColor: string)
 
     const { data, error: supabaseError } = await supabase
       .from('CLIENTES')
-      .update({ primary_color: primaryColor })
+      .update({ primary_color: primaryColor, logo_url: logoUrl })
       .eq('client_id', clientId)
       .select('client_id, rest_name, primary_color, logo_url, sheet_id, status, plan, expires_at, is_demo')
       .single();
@@ -55,10 +56,14 @@ export async function saveClientPrimaryColorWithManagerApi(primaryColor: string)
   }
 
   if (response?.ok === false || !response?.client?.client_id) {
-    throw new Error(response?.code || response?.message || 'No se pudo guardar primary_color en CLIENTES');
+    throw new Error(response?.code || response?.message || 'No se pudo guardar branding en CLIENTES');
   }
 
   return {
     client: response.client,
   };
+}
+
+export async function saveClientPrimaryColorWithManagerApi(primaryColor: string): Promise<ClientBrandingUpdateResult> {
+  return saveClientBrandingWithManagerApi(primaryColor, '');
 }

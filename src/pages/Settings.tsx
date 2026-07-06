@@ -735,8 +735,8 @@ export function Settings({
                 <input value={draftSettings.costabotsLogoUrl} onChange={(event) => updateDraft('costabotsLogoUrl', event.target.value)} placeholder="https://..." />
               </label>
               <label>
-                Logo restaurante URL <span className="field-note">Proximamente</span>
-                <input value={draftSettings.restaurantLogoUrl} onChange={(event) => updateDraft('restaurantLogoUrl', event.target.value)} placeholder="https://..." disabled />
+                Logo restaurante URL <span className="field-note">URL publica del logo del restaurante</span>
+                <input value={draftSettings.restaurantLogoUrl} onChange={(event) => updateDraft('restaurantLogoUrl', event.target.value)} placeholder="https://..." />
               </label>
               <label>
                 Color principal

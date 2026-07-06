@@ -102,7 +102,6 @@ export function Today({
   tableOptions,
   hasLoadedTables,
   isLoadingTables,
-  totalPax,
   occupancyPercent,
   totalCapacity,
   onAddWalkIn,
@@ -219,9 +218,10 @@ export function Today({
   );
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
-  const displayTotalPax = totalPax;
   const displayCapacity = totalCapacity;
-  const displayOccupancyPercent = occupancyPercent;
+  const displayServicePax = reservations.reduce((total, reservation) => total + reservation.pax, 0);
+  const displayOccupancyPercent = displayCapacity > 0 ? Math.min(100, Math.round((displayServicePax / displayCapacity) * 100)) : occupancyPercent;
+  const selectedServiceLabel = selectedService === 'BALINESA' ? 'BALINESAS' : selectedService;
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
 
   useEffect(() => {
@@ -439,30 +439,20 @@ export function Today({
         </div>
       )}
 
-      <section className="today-sheet-header" aria-label="Fecha de hoy">
-        <strong>HOY</strong>
-        <span>{formatDisplayDate(displayDate)}</span>
+      <section className="today-compact-header" aria-label="Resumen operativo de hoy">
+        <div className="today-compact-date">
+          <span>HOY</span>
+          <strong>{formatDisplayDate(displayDate)}</strong>
+        </div>
+        <div className="today-compact-stat">
+          <span>Pax {selectedServiceLabel}</span>
+          <strong>{displayServicePax} / {displayCapacity}</strong>
+          <small>{displayOccupancyPercent}% ocupacion</small>
+        </div>
+        <BookingStatusToggle bookingsOpen={displayBookingsOpen} onToggle={onBookingStatus} />
       </section>
 
-      <section className="today-main-grid" aria-label="Resumen operativo de hoy">
-        <article className="today-summary-card">
-          <p className="eyebrow">Resumen</p>
-          <div className="summary-lines">
-            <div>
-              <span>Pax totales</span>
-              <strong>{displayTotalPax}</strong>
-            </div>
-            <div>
-              <span>Ocupacion</span>
-              <strong>{displayOccupancyPercent}%</strong>
-            </div>
-          </div>
-          <div className="occupancy-meter compact" aria-label={`Ocupacion ${displayOccupancyPercent}%`}>
-            <span style={{ width: `${displayOccupancyPercent}%` }} />
-          </div>
-        </article>
-
-        <BookingStatusToggle bookingsOpen={displayBookingsOpen} onToggle={onBookingStatus} />
+      <section className="today-main-grid" aria-label="Acciones operativas de hoy">
         <WalkInForm onAddWalkIn={onAddWalkIn} />
 
         <button className="manual-reservation-card" type="button" onClick={() => setIsManualModalOpen(true)}>
