@@ -6,12 +6,12 @@ import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { BrandLogo } from './BrandLogo';
 
 const NAV_ITEMS: Array<{ key: PageKey; label: string }> = [
-  { key: 'today', label: '🏠 HOY' },
-  { key: 'reservations', label: '📅 RESERVAS' },
-  { key: 'control', label: '📊 CONTROL' },
-  { key: 'feedbacks', label: '⭐ FEEDBACKS' },
-  { key: 'shows', label: '🎤 SHOWS' },
-  { key: 'settings', label: '⚙️ SETTINGS' },
+  { key: 'today', label: 'HOY' },
+  { key: 'reservations', label: 'RESERVAS' },
+  { key: 'control', label: 'CONTROL' },
+  { key: 'feedbacks', label: 'FEEDBACKS' },
+  { key: 'shows', label: 'SHOWS' },
+  { key: 'settings', label: 'SETTINGS' },
 ];
 
 interface LayoutProps {
@@ -77,11 +77,11 @@ export function Layout({
 
   return (
     <>
-      <button className="menu-button" type="button" onClick={() => setIsSidebarOpen(true)} aria-label="Abrir menu">
+      <button className="menu-button" type="button" onClick={() => setIsSidebarOpen(true)} aria-label="Abrir menú">
         <Menu size={28} />
       </button>
 
-      <aside className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`} aria-label="Navegacion principal">
+      <aside className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`} aria-label="Navegación principal">
         <div className="sidebar-header">
           <div className="sidebar-brand-stack">
             <div className="costabots-lockup">
@@ -108,7 +108,7 @@ export function Layout({
               </label>
             )}
           </div>
-          <button className="icon-button" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu">
+          <button className="icon-button" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menú">
             <X size={22} />
           </button>
         </div>
@@ -134,11 +134,11 @@ export function Layout({
         </nav>
 
         <button className="logout-button" type="button" onClick={handleLogout}>
-          🚪 LOGOUT
+          LOGOUT
         </button>
       </aside>
 
-      {isSidebarOpen && <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menu" />}
+      {isSidebarOpen && <button className="sidebar-backdrop" type="button" onClick={() => setIsSidebarOpen(false)} aria-label="Cerrar menú" />}
 
       {children}
     </>

@@ -323,7 +323,7 @@ function toSupabaseBoolean(value: unknown) {
     return value;
   }
 
-  return ['true', '1', 'yes', 'si', 'sÃ­', 'active'].includes(String(value ?? '').trim().toLowerCase());
+  return ['true', '1', 'yes', 'si', 'sí', 'active'].includes(String(value ?? '').trim().toLowerCase());
 }
 
 function normalizeDemoWebhooks(rows: Array<Record<string, unknown>>) {
@@ -400,7 +400,7 @@ function toDemoNumber(value: unknown) {
 }
 
 function toDemoBoolean(value: unknown) {
-  return ['true', '1', 'yes', 'si', 'sÃƒÂ­'].includes(String(value ?? '').trim().toLowerCase());
+  return ['true', '1', 'yes', 'si', 'sí'].includes(String(value ?? '').trim().toLowerCase());
 }
 
 function normalizeDemoStatus(value: unknown): BookingStatus {
@@ -931,7 +931,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setTablesSyncMessage('');
       setDateBookingStatus({});
       setSettings((current) => populateAdminFromClientConfig(current, clientConfig));
-      console.log('Admin cargado desde configuraciÃ³n cliente:', clientConfig.rest_nombre);
+      console.log('Admin cargado desde configuración cliente:', clientConfig.rest_nombre);
       if (isSupabaseDemoRoute()) {
         console.log('[MANAGER_API][BOOT] preload manager-api data');
         void Promise.all([
@@ -969,7 +969,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
         if (authResult.error || !authResult.data.user) {
           console.error('[MANAGER_API] Login error:', authResult.error ?? 'No auth user returned');
-          setLoginError('Usuario o contraseÃƒÂ±a incorrectos');
+          setLoginError('Usuario o contraseña incorrectos');
           return;
         }
 
@@ -997,7 +997,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         setClientConfig(config);
         setSettings((current) => populateAdminFromClientConfig(current, config));
         console.log('Cliente cargado:', config.rest_nombre);
-        console.log('Admin cargado desde configuraciÃƒÂ³n cliente:', config.rest_nombre);
+        console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
         return;
       }
 
@@ -1013,7 +1013,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.log('[Login debug] Status HTTP recibido:', response.status, response.statusText);
 
       if (!response.ok) {
-        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".');
+        console.warn('[Login debug] Punto de error: response.ok es false. Se mostrará "Usuario o contraseña incorrectos".');
         throw new Error(`Login request failed with status ${response.status}`);
       }
 
@@ -1027,14 +1027,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       };
 
       if (!isValidClientConfig(loginResponse)) {
-        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrarÃ¡ "Usuario o contraseÃ±a incorrectos".', {
+        console.warn('[Login debug] Punto de error: isValidClientConfig(loginResponse) es false. Se mostrará "Usuario o contraseña incorrectos".', {
           success: loginDebugSnapshot.success,
           client_id: loginDebugSnapshot.client_id,
           rest_nombre: loginDebugSnapshot.rest_nombre,
         });
         clearLoginSession();
         setClientConfig(null);
-        setLoginError('Usuario o contraseÃ±a incorrectos');
+        setLoginError('Usuario o contraseña incorrectos');
         return;
       }
 
@@ -1055,12 +1055,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       setClientConfig(config);
       setSettings((current) => populateAdminFromClientConfig(current, config));
       console.log('Cliente cargado:', config.rest_nombre);
-      console.log('Admin cargado desde configuraciÃ³n cliente:', config.rest_nombre);
+      console.log('Admin cargado desde configuración cliente:', config.rest_nombre);
     } catch (error) {
       console.warn('[Login debug] Punto de error: catch ejecutado. Se mostrara "Usuario o contrasena incorrectos".', error);
       clearLoginSession();
       setClientConfig(null);
-      setLoginError('Usuario o contraseÃ±a incorrectos');
+      setLoginError('Usuario o contraseña incorrectos');
     } finally {
       setIsLoggingIn(false);
     }
@@ -1427,7 +1427,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       const nextFeedbacks = await loadFeedbacksFromWebhook(feedbacksWebhook, sheetId);
       setFeedbacks(nextFeedbacks);
       setFeedbacksLoaded(true);
-      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavÃ­a.');
+      setFeedbacksMessage(nextFeedbacks.length ? 'Feedbacks actualizados correctamente' : 'No hay feedbacks todavía.');
     } catch (error) {
       console.error('GET_FEEDBACKS error', error);
       setFeedbacks([]);
@@ -2130,7 +2130,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           mesa: '',
           servicio: walkInService,
         });
-        setLastSync('Mesa aÃ±adida correctamente');
+        setLastSync('Mesa añadida correctamente');
         console.log('[DEMO][WALKIN] refresh list');
         await loadReservations();
         return;
@@ -2168,7 +2168,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     };
 
     setAllReservations((current) => [...current, optimisticReservation]);
-    setLastSync('Mesa aÃ±adida correctamente');
+    setLastSync('Mesa añadida correctamente');
     void syncValidatedWebhook(getClientWebhook('webhook_walkin'), {
       accion: 'crear_walkin',
       id_reserva: optimisticReservation.idReserva,
@@ -2210,7 +2210,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           recurso: reservation.resource ?? '',
           resource: reservation.resource ?? '',
         });
-        setLastSync('Reserva aÃ±adida correctamente');
+        setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
         await loadReservations();
         return;
@@ -2236,7 +2236,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     };
 
     setAllReservations((current) => [...current, manualReservation]);
-    setLastSync('Reserva aÃ±adida correctamente');
+    setLastSync('Reserva añadida correctamente');
     void syncValidatedWebhook(
       getClientWebhook('webhook_manual'),
       {
@@ -2547,7 +2547,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       onNavigate={setActivePage}
       onLogout={handleLogout}
     >
-      {isDemoClient && <div className="demo-banner">DEMO Â· Datos simulados</div>}
+      {isDemoClient && <div className="demo-banner">DEMO · Datos simulados</div>}
       {isProtectedDemoUser && <div className="demo-banner">Modo demo: algunas opciones estan bloqueadas.</div>}
       {renderPage()}
       {reservationToCancel && (
@@ -2561,14 +2561,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
             </div>
             <div className="cancel-summary">
               <strong>{reservationToCancel.name || reservationToCancel.room || 'Reserva sin nombre'}</strong>
-              <span>{reservationToCancel.date} Â· {reservationToCancel.time} Â· {reservationToCancel.pax} pax</span>
+              <span>{reservationToCancel.date} · {reservationToCancel.time} · {reservationToCancel.pax} pax</span>
             </div>
             <div className="modal-actions">
               <button className="secondary-button" type="button" onClick={() => setReservationToCancel(null)}>
                 No, mantener
               </button>
               <button className="danger-button" type="button" onClick={() => void confirmCancelReservation()}>
-                SÃ­, cancelar
+                Sí, cancelar
               </button>
             </div>
           </div>

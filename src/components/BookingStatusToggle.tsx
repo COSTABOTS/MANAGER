@@ -14,7 +14,7 @@ export function BookingStatusToggle({ bookingsOpen, onToggle }: BookingStatusTog
       aria-pressed={!bookingsOpen}
     >
       <span className="toggle-icon">{bookingsOpen ? <LockOpen size={32} /> : <XCircle size={32} />}</span>
-      <span>{bookingsOpen ? '🔓 RESERVAS ABIERTAS' : '❌ FULLY BOOKED'}</span>
+      <span>{bookingsOpen ? 'RESERVAS ABIERTAS' : 'FULLY BOOKED'}</span>
       <span className="toggle-track" aria-hidden="true">
         <span className="toggle-thumb" />
       </span>
