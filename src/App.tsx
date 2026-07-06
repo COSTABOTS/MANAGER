@@ -698,7 +698,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [allReservations, setAllReservations] = useState<Reservation[]>(() => (clientConfig ? [] : mockReservations));
-  const [dayStatus] = useState<DayState>({
+  const [dayStatus, setDayStatus] = useState<DayState>({
     ...todayState,
     date: getLocalDateString(new Date()),
   });
@@ -740,6 +740,33 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       saveSettingsToStorage(nextSettings);
       return nextSettings;
     });
+  }
+
+  async function refreshForCurrentLocalDayIfNeeded() {
+    const currentDate = getLocalDateString(new Date());
+
+    if (currentDate === dayStatus.date) {
+      return false;
+    }
+
+    console.log('[TODAY_DATE] day changed', {
+      previousDate: dayStatus.date,
+      currentDate,
+    });
+
+    setDayStatus((current) => ({
+      ...current,
+      date: currentDate,
+    }));
+
+    if (clientConfig && isValidClientConfig(clientConfig)) {
+      await Promise.all([
+        loadReservations(),
+        loadFullyBookedStatus(currentDate),
+      ]);
+    }
+
+    return true;
   }
 
   const enabledServices = useMemo(() => normalizeEnabledServices(settings.servicesEnabled), [settings.servicesEnabled]);
@@ -867,6 +894,32 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     return () => window.clearInterval(intervalId);
   }, [clientConfig]);
+
+  useEffect(() => {
+    if (!clientConfig || !isValidClientConfig(clientConfig)) {
+      return undefined;
+    }
+
+    const checkCurrentDay = () => {
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
+
+      void refreshForCurrentLocalDayIfNeeded();
+    };
+
+    const intervalId = window.setInterval(checkCurrentDay, 60_000);
+    document.addEventListener('visibilitychange', checkCurrentDay);
+    window.addEventListener('focus', checkCurrentDay);
+    window.addEventListener('pageshow', checkCurrentDay);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', checkCurrentDay);
+      window.removeEventListener('focus', checkCurrentDay);
+      window.removeEventListener('pageshow', checkCurrentDay);
+    };
+  }, [clientConfig, dayStatus.date]);
 
   useEffect(() => {
     if (activePage === 'feedbacks' && !feedbacksLoaded && !isLoadingFeedbacks) {
@@ -1686,6 +1739,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function refreshReservationsOnly() {
+    const dayChanged = await refreshForCurrentLocalDayIfNeeded();
+    if (dayChanged) {
+      return;
+    }
+
     await loadReservations();
   }
 
