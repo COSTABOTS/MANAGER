@@ -113,9 +113,6 @@ export function Shows({ webhookShows }: ShowsProps) {
     <main className="app-shell">
       <section className="top-bar">
         <div className="brand-lockup">
-          <div className="logo-mark" aria-hidden="true">
-            S
-          </div>
           <div>
             <p className="eyebrow">Gestion espectaculos</p>
             <h1>SHOWS</h1>

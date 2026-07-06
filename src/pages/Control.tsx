@@ -31,7 +31,7 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
   const [view, setView] = useState<ControlView>(() => {
     const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);
-    return stored === 'list' ? 'list' : 'cards';
+    return stored === 'cards' ? 'cards' : 'list';
   });
   const cards = useMemo(
     () =>
@@ -178,9 +178,6 @@ function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <section className="top-bar">
       <div className="brand-lockup">
-        <div className="logo-mark" aria-hidden="true">
-          S
-        </div>
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h1>{title}</h1>

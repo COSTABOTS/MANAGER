@@ -76,7 +76,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
     <main className="app-shell">
       <PageHeader eyebrow="Libro completo" title="RESERVAS" />
 
-      <section className="toolbar-card">
+      <section className="toolbar-card reservations-filter-toolbar">
         <label>
           Buscador
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, habitacion, estado..." />
@@ -249,9 +249,6 @@ function PageHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <section className="top-bar">
       <div className="brand-lockup">
-        <div className="logo-mark" aria-hidden="true">
-          S
-        </div>
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h1>{title}</h1>

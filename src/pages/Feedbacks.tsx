@@ -202,9 +202,6 @@ function PageHeader({
   return (
     <section className="top-bar">
       <div className="brand-lockup">
-        <div className="logo-mark" aria-hidden="true">
-          S
-        </div>
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h1>{title}</h1>

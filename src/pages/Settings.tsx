@@ -518,9 +518,6 @@ export function Settings({
     <main className="app-shell">
       <section className="top-bar">
         <div className="brand-lockup">
-          <div className="logo-mark" aria-hidden="true">
-            S
-          </div>
           <div>
             <p className="eyebrow">Panel configuracion</p>
             <h1>SETTINGS</h1>
