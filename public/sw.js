@@ -1,10 +1,13 @@
-const CACHE_NAME = 'costabots-manager-v28';
+const CACHE_NAME = 'costabots-manager-v29';
 const IS_LOCAL_DEV = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
 const APP_SHELL = [
   '/',
   '/manifest.json',
   '/LOGO_COSTABOTS_WHITE.png',
+  '/favicon.ico',
   '/favicon.png',
+  '/favicon-16x16.png',
+  '/favicon-32x32.png',
   '/apple-touch-icon.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
