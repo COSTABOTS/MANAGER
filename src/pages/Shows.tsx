@@ -1,6 +1,7 @@
 import { Plus, X } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { mockShows } from '../mock';
+import { loadShowsFromManagerApi, saveShowWithManagerApi } from '../services/shows';
 import { sendWebhook } from '../services/webhookClient';
 import type { Show, Weekday } from '../types';
 
@@ -37,6 +38,62 @@ export function Shows({ webhookShows }: ShowsProps) {
   const [draftShow, setDraftShow] = useState<Omit<Show, 'id'>>(EMPTY_SHOW);
   const [statusMessage, setStatusMessage] = useState('Shows activos visibles para Safari-IA');
 
+  useEffect(() => {
+    let isMounted = true;
+
+    loadShowsFromManagerApi()
+      .then((loadedShows) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setShows(loadedShows);
+        setStatusMessage('Shows cargados desde COSTABOTS API');
+      })
+      .catch((error) => {
+        console.warn('[SHOWS] manager-api fallback local', error);
+        if (isMounted) {
+          setStatusMessage('Shows locales cargados. COSTABOTS API no disponible.');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function syncShowWithFallback(showToSync: Show, successMessage: string) {
+    return saveShowWithManagerApi(showToSync)
+      .then((savedShow) => {
+        setShows((current) => current.map((show) => (show.id === showToSync.id ? savedShow : show)));
+        setStatusMessage(successMessage);
+        return savedShow;
+      })
+      .catch((error) => {
+        console.warn('[SHOWS] manager-api save fallback Make', error);
+        void sendWebhook(webhookShows, {
+          accion: 'actualizar_show',
+          id: showToSync.id,
+          nombre: showToSync.name,
+          tipo: showToSync.type,
+          fecha: showToSync.date,
+          diasSemana: showToSync.weekday ? [showToSync.weekday] : [],
+          hora: showToSync.time,
+          activo: showToSync.active,
+          visible_chatbot: showToSync.visibleInChatbot,
+          reservable: showToSync.bookable,
+        }).then((result) => {
+          if (result.success) {
+            setStatusMessage('Sincronizado correctamente');
+            return;
+          }
+
+          setStatusMessage(result.skipped ? 'Webhook no configurado' : 'Cambio guardado en la app, pero no sincronizado');
+        });
+        throw error;
+      });
+  }
+
   function toggleShow(id: string) {
     let updatedShow: Show | undefined;
 
@@ -57,29 +114,12 @@ export function Shows({ webhookShows }: ShowsProps) {
       }),
     );
 
-    setStatusMessage('Show actualizado. Este cambio se enviará al chatbot cuando esté conectado.');
-
     if (!updatedShow) {
       return;
     }
 
-    void sendWebhook(webhookShows, {
-      accion: 'actualizar_show',
-      id: updatedShow.id,
-      nombre: updatedShow.name,
-      tipo: updatedShow.type,
-      fecha: updatedShow.date,
-      diasSemana: updatedShow.weekday ? [updatedShow.weekday] : [],
-      hora: updatedShow.time,
-      activo: updatedShow.active,
-    }).then((result) => {
-      if (result.success) {
-        setStatusMessage('Sincronizado correctamente');
-        return;
-      }
-
-      setStatusMessage(result.skipped ? 'Webhook no configurado' : 'Cambio guardado en la app, pero no sincronizado');
-    });
+    setStatusMessage('Show actualizado. Sincronizando...');
+    void syncShowWithFallback(updatedShow, 'Show sincronizado en COSTABOTS API').catch(() => undefined);
   }
 
   function updateDraft<T extends keyof Omit<Show, 'id'>>(key: T, value: Omit<Show, 'id'>[T]) {
@@ -104,9 +144,21 @@ export function Shows({ webhookShows }: ShowsProps) {
       return;
     }
 
-    setShows((current) => [...current, nextShow]);
-    setDraftShow(EMPTY_SHOW);
-    setIsModalOpen(false);
+    setStatusMessage('Creando show...');
+    void saveShowWithManagerApi(nextShow)
+      .then((savedShow) => {
+        setShows((current) => [...current, savedShow]);
+        setDraftShow(EMPTY_SHOW);
+        setIsModalOpen(false);
+        setStatusMessage('Show creado en COSTABOTS API');
+      })
+      .catch((error) => {
+        console.warn('[SHOWS] create manager-api fallback local', error);
+        setShows((current) => [...current, nextShow]);
+        setDraftShow(EMPTY_SHOW);
+        setIsModalOpen(false);
+        setStatusMessage('Show creado en la app, pero no sincronizado');
+      });
   }
 
   return (

@@ -22,6 +22,8 @@ type ManagerAction =
   | 'reservation.assignTable'
   | 'reservation.cancel'
   | 'walkin.create'
+  | 'shows.list'
+  | 'shows.save'
   | 'clients.list'
   | 'client.license.update'
   | 'client.branding.update';
@@ -739,6 +741,55 @@ function findResourceRowIndex(values: unknown[][] | undefined, recursoId: string
   return -1;
 }
 
+function normalizeShowType(value: unknown) {
+  return toSheetString(value).toLowerCase() === 'recurring' ? 'recurring' : 'single';
+}
+
+function normalizeShowRecord(show: Record<string, unknown>) {
+  const id = toSheetString(show.id ?? show.show_id ?? show.showId);
+  const name = toSheetString(show.nombre ?? show.name ?? show.NOMBRE);
+  const type = normalizeShowType(show.tipo ?? show.type ?? show.TIPO);
+  const date = toSheetString(show.fecha ?? show.date ?? show.FECHA);
+  const weekday = toSheetString(show.dia ?? show.weekday ?? show.day ?? show.DIA);
+  const time = toSheetString(show.hora ?? show.time ?? show.HORA);
+  const activeRaw = show.activo ?? show.active ?? show.ACTIVO ?? true;
+  const visibleRaw = show.visible_chatbot ?? show.visibleInChatbot ?? show.visible_chatbot ?? show.VISIBLE_CHATBOT ?? activeRaw;
+  const reservableRaw = show.reservable ?? show.bookable ?? show.RESERVABLE ?? activeRaw;
+  const order = toSheetNumber(show.orden ?? show.order ?? show.ORDEN);
+
+  return {
+    id,
+    name,
+    nombre: name,
+    type,
+    tipo: type,
+    date,
+    fecha: date,
+    weekday,
+    dia: weekday,
+    time,
+    hora: time,
+    active: typeof activeRaw === 'boolean' ? activeRaw : normalizeBoolean(activeRaw),
+    activo: typeof activeRaw === 'boolean' ? activeRaw : normalizeBoolean(activeRaw),
+    visibleInChatbot: typeof visibleRaw === 'boolean' ? visibleRaw : normalizeBoolean(visibleRaw),
+    visible_chatbot: typeof visibleRaw === 'boolean' ? visibleRaw : normalizeBoolean(visibleRaw),
+    bookable: typeof reservableRaw === 'boolean' ? reservableRaw : normalizeBoolean(reservableRaw),
+    reservable: typeof reservableRaw === 'boolean' ? reservableRaw : normalizeBoolean(reservableRaw),
+    order,
+    orden: order,
+  };
+}
+
+function normalizeShowInput(show: Record<string, unknown> | undefined) {
+  const normalized = normalizeShowRecord(show ?? {});
+
+  if (!normalized.name) {
+    throw new Error('SHOW_NAME_REQUIRED');
+  }
+
+  return normalized;
+}
+
 async function fetchSheetValues(sheetId: string, range: string, accessToken: string) {
   const sheetsResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`,
@@ -972,7 +1023,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheet_id: resolvedSheetId,
   });
 
-  const actionRequiresSheetId = action !== 'client.license.update' && action !== 'client.branding.update' && action !== 'clients.list';
+  const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save'].includes(String(action));
   if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
@@ -1359,6 +1410,84 @@ async function listResources(request: Request, clientId: string, sheetId: string
     action: 'resources.list',
     client_id: clientId,
     resources,
+  });
+}
+
+async function listShows(request: Request, context: { dbClient: ReturnType<typeof createClient>; clientId: string }) {
+  console.log('[MANAGER_API] action=shows.list');
+  console.log(`[MANAGER_API] client_id=${context.clientId}`);
+
+  const { data, error } = await context.dbClient
+    .from('SHOWS')
+    .select('id, client_id, nombre, tipo, fecha, dia, hora, activo, visible_chatbot, reservable, orden')
+    .eq('client_id', context.clientId)
+    .order('orden', { ascending: true })
+    .order('hora', { ascending: true });
+
+  if (error) {
+    return errorResponse(request, 'SHOWS_LIST_FAILED', error.message, 200, {
+      action: 'shows.list',
+      client_id: context.clientId,
+      supabase_error: error.message,
+    });
+  }
+
+  const shows = (data ?? []).map((show: Record<string, unknown>) => normalizeShowRecord(show));
+  return jsonResponse(request, {
+    ok: true,
+    action: 'shows.list',
+    client_id: context.clientId,
+    shows,
+  });
+}
+
+async function saveShow(request: Request, context: { dbClient: ReturnType<typeof createClient>; clientId: string }, body: Record<string, unknown>) {
+  console.log('[MANAGER_API] action=shows.save');
+  const show = normalizeShowInput(body.show as Record<string, unknown> | undefined);
+  const payload = {
+    client_id: context.clientId,
+    nombre: show.name,
+    tipo: show.type,
+    fecha: show.type === 'single' ? show.date : '',
+    dia: show.type === 'recurring' ? show.weekday : '',
+    hora: show.time,
+    activo: show.active,
+    visible_chatbot: show.visibleInChatbot,
+    reservable: show.bookable,
+    orden: show.order || 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  const query = show.id
+    ? context.dbClient
+      .from('SHOWS')
+      .update(payload)
+      .eq('id', show.id)
+      .eq('client_id', context.clientId)
+      .select('id, client_id, nombre, tipo, fecha, dia, hora, activo, visible_chatbot, reservable, orden')
+      .maybeSingle()
+    : context.dbClient
+      .from('SHOWS')
+      .insert(payload)
+      .select('id, client_id, nombre, tipo, fecha, dia, hora, activo, visible_chatbot, reservable, orden')
+      .maybeSingle();
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    return errorResponse(request, 'SHOW_SAVE_FAILED', error?.message || 'No se pudo guardar el show', 200, {
+      action: 'shows.save',
+      client_id: context.clientId,
+      show_id: show.id,
+      supabase_error: error?.message,
+    });
+  }
+
+  return jsonResponse(request, {
+    ok: true,
+    action: 'shows.save',
+    client_id: context.clientId,
+    show: normalizeShowRecord(data as Record<string, unknown>),
   });
 }
 
@@ -2290,6 +2419,12 @@ Deno.serve(async (request) => {
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+
+      case 'shows.list':
+        return await listShows(request, context);
+
+      case 'shows.save':
+        return await saveShow(request, context, body as Record<string, unknown>);
 
       case 'clients.list':
         return await listClients(request, context);

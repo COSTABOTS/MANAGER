@@ -1,0 +1,24 @@
+HTTP/1.1 200 OK
+Date: Tue, 07 Jul 2026 11:04:45 GMT
+Content-Type: application/json
+Transfer-Encoding: chunked
+Connection: keep-alive
+CF-Ray: a1765ec3ed1bf7e9-MAD
+CF-Cache-Status: DYNAMIC
+Access-Control-Allow-Origin: *
+set-cookie: __cf_bm=2Uye5cg.pF4xDsGo92lRK_Y1HSZUecM_SQBj9Cj1Ioo-1783422285.4255931-1.0.1.1-9bIMqiTkGDjRBMvpMNCBectdB2Ao7_PhT1Xwpm6mr_O0v.s1N3ybvqiZR3HMfmAotP2oaTYPdDTq5sfO.BWGuNyzjc6Qfpy3wtI.8SvWqxLHKzF3dRYGDXgD9EU2Po2Z; HttpOnly; SameSite=None; Secure; Path=/; Domain=supabase.co; Expires=Tue, 07 Jul 2026 11:34:45 GMT
+Server: cloudflare
+Vary: Accept-Encoding
+access-control-allow-headers: authorization, x-client-info, apikey, content-type
+access-control-allow-methods: POST, OPTIONS
+endpoint-load-metrics: application_utilization:6,named_metrics.queue_depth:6
+sb-gateway-version: 1
+sb-project-ref: tbmkbzpdixoeucvvofjp
+sb-request-id: 019f3c40-7679-783a-9a7c-e6e063fd7a4d
+x-deno-execution-id: 7d674e16-ca4a-473d-aefb-e2b7be6dbd70
+x-sb-edge-region: eu-west-3
+x-served-by: supabase-edge-runtime
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+alt-svc: h3=":443"; ma=86400
+
+{"ok":false,"code":"PUBLIC_AUTH_REQUIRED","error":"client_id y public_token son obligatorios","message":"client_id y public_token son obligatorios","context":{"hasClientId":false,"hasPublicToken":false}}
