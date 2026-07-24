@@ -107,7 +107,6 @@ export interface ManagerSettings {
   bookingInterval: 30 | 60;
   openingDays: Record<Weekday, boolean>;
   reservasActivas: boolean;
-  maxPaxPerBooking: number;
   whatsappConfirmation: boolean;
   whatsappPreCena: boolean;
   whatsappPreCenaMinutes: number;

@@ -23,7 +23,6 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookGetCapacidad: storedSettings.webhookGetCapacidad ?? mockSettings.webhookGetCapacidad,
     webhookSettingsCapacityUrl: storedSettings.webhookSettingsCapacityUrl ?? mockSettings.webhookSettingsCapacityUrl,
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
-    maxPaxPerBooking: storedSettings.maxPaxPerBooking ?? mockSettings.maxPaxPerBooking,
     whatsappConfirmation: storedSettings.whatsappConfirmation ?? mockSettings.whatsappConfirmation,
     whatsappPreCena: storedSettings.whatsappPreCena ?? mockSettings.whatsappPreCena,
     whatsappPreCenaMinutes: storedSettings.whatsappPreCenaMinutes ?? mockSettings.whatsappPreCenaMinutes,

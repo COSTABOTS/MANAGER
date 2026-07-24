@@ -7,6 +7,8 @@ import {
 } from '../lib/reservations.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 
+const MAX_PUBLIC_RESTAURANT_PAX = 8;
+
 function getSafeErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.startsWith('GOOGLE_AUTH_ERROR')) {
@@ -38,6 +40,16 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
       ...(missingFields.length > 0 ? { missing_fields: missingFields } : {}),
       ...(invalidFields.length > 0 ? { invalid_fields: invalidFields } : {}),
     });
+  }
+
+  if (normalized.personas > MAX_PUBLIC_RESTAURANT_PAX) {
+    return jsonResponse(request, {
+      ok: false,
+      code: 'MAX_PAX_EXCEEDED',
+      message: normalized.idioma === 'EN'
+        ? 'For reservations of more than 8 people, please contact the restaurant directly.'
+        : 'Para reservas de más de 8 personas, contacta directamente con el restaurante.',
+    }, 400);
   }
 
   const context = await validatePublicClient(request, dbClient, body, {

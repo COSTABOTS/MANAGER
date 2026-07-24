@@ -593,10 +593,6 @@ export function Settings({
               Capacidad total
               <input type="number" value={draftSettings.totalCapacity} onChange={(event) => updateTotalCapacity(Number(event.target.value))} />
             </label>
-            <label>
-              Max pax por reserva
-              <input type="number" value={draftSettings.maxPaxPerBooking} onChange={(event) => updateDraft('maxPaxPerBooking', Number(event.target.value))} />
-            </label>
           </div>
 
           <div className="settings-subsection">

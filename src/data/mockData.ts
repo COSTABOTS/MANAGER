@@ -30,7 +30,6 @@ export const mockSettings: ManagerSettings = {
     sunday: true,
   },
   reservasActivas: true,
-  maxPaxPerBooking: 10,
   whatsappConfirmation: true,
   whatsappPreCena: false,
   whatsappPreCenaMinutes: 120,

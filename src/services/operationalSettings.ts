@@ -13,7 +13,6 @@ interface SettingsResponse {
 const DEFAULT_OPERATIONAL_SETTINGS = {
   BOOKINGS_ENABLED: true,
   MAX_CAPACITY: 60,
-  MAX_PAX_PER_BOOKING: 10,
   WHATSAPP_CONFIRMATION: true,
   WHATSAPP_PRE_DINNER_ENABLED: false,
   WHATSAPP_PRE_DINNER_MINUTES: 120,
@@ -174,7 +173,6 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
   const settingsMap = {
     BOOKINGS_ENABLED: settings.reservasActivas,
     MAX_CAPACITY: settings.totalCapacity,
-    MAX_PAX_PER_BOOKING: settings.maxPaxPerBooking,
     WHATSAPP_CONFIRMATION: settings.whatsappConfirmation,
     WHATSAPP_PRE_DINNER_ENABLED: settings.whatsappPreCena,
     WHATSAPP_PRE_DINNER_MINUTES: normalizePreDinnerMinutes(settings.whatsappPreCenaMinutes, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
@@ -222,7 +220,6 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     ...currentSettings,
     reservasActivas: toBooleanValue(settingsMap.BOOKINGS_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.BOOKINGS_ENABLED),
     totalCapacity: toNumberValue(settingsMap.MAX_CAPACITY, DEFAULT_OPERATIONAL_SETTINGS.MAX_CAPACITY),
-    maxPaxPerBooking: toNumberValue(settingsMap.MAX_PAX_PER_BOOKING, DEFAULT_OPERATIONAL_SETTINGS.MAX_PAX_PER_BOOKING),
     whatsappConfirmation: toBooleanValue(settingsMap.WHATSAPP_CONFIRMATION, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_CONFIRMATION),
     whatsappPreCena: toBooleanValue(settingsMap.WHATSAPP_PRE_DINNER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_ENABLED),
     whatsappPreCenaMinutes: normalizePreDinnerMinutes(settingsMap.WHATSAPP_PRE_DINNER_MINUTES, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
