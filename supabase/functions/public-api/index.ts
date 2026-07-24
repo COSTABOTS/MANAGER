@@ -1,52 +1,20 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const allowedOrigins = new Set([
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://manager.costabots.com',
-]);
-
-function getCorsHeaders(request: Request) {
-  const origin = request.headers.get('Origin') ?? '';
-
-  return {
-    'Access-Control-Allow-Origin': allowedOrigins.has(origin) ? origin : '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
-
-function jsonResponse(request: Request, body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...getCorsHeaders(request),
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-function errorResponse(request: Request, code: string, message: string, status = 200, context: Record<string, unknown> = {}) {
-  return jsonResponse(request, {
-    ok: false,
-    code,
-    error: message,
-    message,
-    context,
-  }, status);
-}
-
-function toStringValue(value: unknown) {
-  return value === undefined || value === null ? '' : String(value).trim();
-}
-
-function normalizeBoolean(value: unknown) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  return ['true', '1', 'si', 'sí', 'yes', 'activo', 'activa'].includes(toStringValue(value).toLowerCase());
-}
+import type { DbClient } from './lib/clients.ts';
+import { validatePublicClient } from './lib/clients.ts';
+import { createGoogleAccessToken, fetchSheetValues } from './lib/googleSheets.ts';
+import {
+  normalizeBoolean,
+  normalizeDateKey,
+  normalizeKey,
+  normalizeService,
+  normalizeTime,
+  pickValue,
+  rowsToObjects,
+  toNumberValue,
+  toStringValue,
+} from './lib/normalization.ts';
+import { errorResponse, getCorsHeaders, jsonResponse } from './lib/responses.ts';
+import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
 
 function normalizeShow(show: Record<string, unknown>) {
   const nombre = toStringValue(show.nombre ?? show.name);
@@ -80,61 +48,172 @@ function normalizeShow(show: Record<string, unknown>) {
   };
 }
 
-async function listShows(request: Request, dbClient: ReturnType<typeof createClient>, body: Record<string, unknown>) {
-  const clientId = toStringValue(body.client_id ?? body.clientId);
-  const publicToken = toStringValue(body.public_token ?? body.publicToken);
+function normalizeReservations(values: unknown[][] | undefined) {
+  return rowsToObjects(values).flatMap((item) => {
+    const idReserva = toStringValue(pickValue(item, ['ID_RESERVA', 'id_reserva', '0']));
+    const fecha = normalizeDateKey(pickValue(item, ['FECHA', 'fecha', '1']));
+    const hora = normalizeTime(pickValue(item, ['HORA', 'hora', '2']));
+    const pax = toNumberValue(pickValue(item, ['PAX', 'pax', '5']));
+    const estado = toStringValue(pickValue(item, ['ESTADO', 'estado', '8'])).toUpperCase();
+    const servicio = normalizeService(pickValue(item, ['SERVICIO', 'servicio', 'service', '16']));
 
-  if (!clientId || !publicToken) {
-    return errorResponse(request, 'PUBLIC_AUTH_REQUIRED', 'client_id y public_token son obligatorios', 200, {
-      hasClientId: Boolean(clientId),
-      hasPublicToken: Boolean(publicToken),
-    });
+    if (!idReserva || !fecha) {
+      return [];
+    }
+
+    return [{ idReserva, fecha, hora, pax, estado, servicio }];
+  });
+}
+
+function normalizeCapacity(values: unknown[][] | undefined) {
+  return rowsToObjects(values).flatMap((item) => {
+    const hora = normalizeTime(pickValue(item, ['HORA', 'hora', 'TIME', 'time', '0']));
+    if (!hora) {
+      return [];
+    }
+
+    const limite = toNumberValue(pickValue(item, ['LIMITE', 'limite', 'CAPACIDAD', 'capacity', '1']));
+    const activo = normalizeBoolean(pickValue(item, ['ACTIVO', 'activo', 'ACTIVE', 'active', '2']));
+
+    return [{ hora, limite, activo }];
+  });
+}
+
+function getControlHeaders(values: unknown[][] | undefined) {
+  const headers = values?.[0]?.map((header) => toStringValue(header).toUpperCase()) ?? [];
+  const findIndex = (candidates: string[], fallback: number) => {
+    const index = headers.findIndex((header) => candidates.includes(header));
+    return index >= 0 ? index : fallback;
+  };
+
+  return {
+    date: findIndex(['FECHA', 'DATE'], 0),
+    status: findIndex(['ESTADO', 'STATUS'], 1),
+    fullyBooked: findIndex(['FULLY BOOKED', 'FULLY_BOOKED', 'FULLYBOOKED'], 2),
+  };
+}
+
+function isFullyBookedForDate(values: unknown[][] | undefined, fecha: string) {
+  if (!values?.length) {
+    return false;
   }
 
-  const { data: client, error: clientError } = await dbClient
-    .from('CLIENTES')
-    .select('client_id, rest_name, status, public_token')
-    .eq('client_id', clientId)
-    .eq('public_token', publicToken)
-    .maybeSingle();
+  const headers = getControlHeaders(values);
+  const targetDate = normalizeDateKey(fecha);
 
-  if (clientError || !client) {
-    return errorResponse(request, 'CLIENT_PUBLIC_AUTH_FAILED', 'Cliente o token publico no valido', 200, {
-      client_id: clientId,
-      supabase_error: clientError?.message,
-    });
+  for (let index = 1; index < values.length; index += 1) {
+    const row = values[index];
+    if (normalizeDateKey(row?.[headers.date]) === targetDate) {
+      return normalizeBoolean(row?.[headers.fullyBooked]) || normalizeBoolean(row?.[headers.status]);
+    }
   }
 
-  const clientStatus = toStringValue((client as Record<string, unknown>).status).toUpperCase() || 'ACTIVE';
-  if (clientStatus === 'SUSPENDED' || clientStatus === 'EXPIRED') {
-    return errorResponse(request, 'LICENSE_INACTIVE', 'Licencia inactiva', 200, {
-      client_id: clientId,
-      status: clientStatus,
-    });
+  return false;
+}
+
+async function listShows(request: Request, dbClient: DbClient, body: Record<string, unknown>) {
+  const context = await validatePublicClient(request, dbClient, body);
+  if ('error' in context) {
+    return context.error;
   }
 
   const { data, error } = await dbClient
     .from('SHOWS')
     .select('id, nombre, tipo, fecha, dia, hora, activo, visible_chatbot, reservable, orden')
-    .eq('client_id', clientId)
+    .eq('client_id', context.clientId)
     .eq('activo', true)
     .eq('visible_chatbot', true)
     .order('orden', { ascending: true })
     .order('hora', { ascending: true });
 
   if (error) {
-    return errorResponse(request, 'SHOWS_LIST_FAILED', error.message, 200, {
-      client_id: clientId,
-      supabase_error: error.message,
-    });
+    console.error('[PUBLIC_API][SHOWS_LIST_FAILED]', { clientId: context.clientId, error: error.message });
+    return errorResponse(request, 'SHOWS_LIST_FAILED', 200);
   }
 
   return jsonResponse(request, {
     ok: true,
     action: 'shows.list',
-    client_id: clientId,
+    client_id: context.clientId,
     shows: (data ?? []).map((show: Record<string, unknown>) => normalizeShow(show)),
   });
+}
+
+async function checkAvailability(request: Request, dbClient: DbClient, body: Record<string, unknown>) {
+  const context = await validatePublicClient(request, dbClient, body);
+  if ('error' in context) {
+    return context.error;
+  }
+
+  const fecha = normalizeDateKey(body.fecha ?? body.date);
+  const servicio = normalizeService(body.servicio ?? body.service);
+  const hora = normalizeTime(body.hora ?? body.time);
+  const pax = toNumberValue(body.pax);
+
+  if (!fecha || !hora || pax <= 0) {
+    return jsonResponse(request, {
+      ok: true,
+      available: false,
+      remaining: 0,
+      reason: 'invalid_request',
+    });
+  }
+
+  if (!context.sheetId) {
+    return errorResponse(request, 'INVALID_CLIENT', 404);
+  }
+
+  const accessToken = await createGoogleAccessToken();
+  const [reservationsData, capacityData, controlData] = await Promise.all([
+    fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken),
+    fetchSheetValues(context.sheetId, 'CAPACIDAD!A:C', accessToken),
+    fetchSheetValues(context.sheetId, "'CONTROL RESERVAS'!A:D", accessToken),
+  ]);
+
+  if (isFullyBookedForDate(controlData.values, fecha)) {
+    return jsonResponse(request, {
+      ok: true,
+      available: false,
+      remaining: 0,
+      reason: 'fully_booked',
+    });
+  }
+
+  const reservations = normalizeReservations(reservationsData.values);
+  const reservedPax = reservations
+    .filter((reservation) =>
+      reservation.fecha === fecha
+      && reservation.hora === hora
+      && reservation.servicio === servicio
+      && reservation.estado !== 'CANCELADA')
+    .reduce((total, reservation) => total + reservation.pax, 0);
+
+  const capacityRows = normalizeCapacity(capacityData.values).filter((slot) => slot.activo);
+  const slotCapacity = capacityRows.find((slot) => slot.hora === hora)?.limite ?? 0;
+  const remaining = Math.max(0, slotCapacity - reservedPax);
+  const available = slotCapacity > 0 && remaining >= pax;
+
+  return jsonResponse(request, {
+    ok: true,
+    available,
+    remaining,
+    reason: available ? 'available' : 'capacity_exceeded',
+  });
+}
+
+function createDbClient(request: Request) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    return {
+      error: errorResponse(request, 'INTERNAL_ERROR', 500),
+    };
+  }
+
+  return {
+    dbClient: createClient(supabaseUrl, supabaseServiceRoleKey),
+  };
 }
 
 Deno.serve(async (request) => {
@@ -143,29 +222,39 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const action = toStringValue(body.action || 'shows.list');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-      return errorResponse(request, 'SUPABASE_ENV_MISSING', 'Supabase env no configurado', 500, {
-        hasUrl: Boolean(supabaseUrl),
-        hasServiceRole: Boolean(supabaseServiceRoleKey),
-      });
+    const url = new URL(request.url);
+    const db = createDbClient(request);
+    if ('error' in db) {
+      return db.error;
     }
 
-    const dbClient = createClient(supabaseUrl, supabaseServiceRoleKey);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    if (pathname.endsWith('/reservation/send-confirmation')) {
+      return await handleReservationSendConfirmation(request, db.dbClient);
+    }
+
+    if (request.method !== 'POST') {
+      return errorResponse(request, 'METHOD_NOT_ALLOWED', 405);
+    }
+
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const action = toStringValue(body.action || 'shows.list');
 
     switch (action) {
       case 'shows.list':
-        return await listShows(request, dbClient, body);
+        return await listShows(request, db.dbClient, body);
+
+      case 'availability.check':
+        return await checkAvailability(request, db.dbClient, body);
 
       default:
-        return errorResponse(request, 'UNKNOWN_ACTION', `Accion no soportada: ${action}`, 200, { action });
+        console.warn('[PUBLIC_API][UNKNOWN_ACTION]', { action: normalizeKey(action) });
+        return errorResponse(request, 'UNKNOWN_ACTION', 200);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return errorResponse(request, 'PUBLIC_API_ERROR', message, 500);
+    console.error('[PUBLIC_API][INTERNAL_ERROR]', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return errorResponse(request, 'INTERNAL_ERROR', 500);
   }
 });
