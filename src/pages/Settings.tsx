@@ -743,7 +743,6 @@ export function Settings({
               <small>Se enviara un recordatorio antes de la reserva. Las reservas creadas despues de la ventana de envio no recibiran el mensaje.</small>
             </label>
           </div>
-          <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
           <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
           <div className="settings-grid inner">
             <label>

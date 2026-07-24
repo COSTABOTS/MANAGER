@@ -21,7 +21,6 @@ const DEFAULT_OPERATIONAL_SETTINGS = {
   WHATSAPP_PRE_DINNER_MINUTES: 120,
   POST_DINNER_MESSAGE_ENABLED: false,
   POST_DINNER_MESSAGE_TIME: '12:30',
-  REVIEW_FILTER_ENABLED: true,
   FEEDBACK_ALERT_PHONE: '',
   SERVICES_ENABLED: ['CENA'] as BookingService[],
   DESAYUNO_START: '08:00',
@@ -185,7 +184,6 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
     WHATSAPP_PRE_DINNER_MINUTES: normalizePreDinnerMinutes(settings.whatsappPreCenaMinutes, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
     POST_DINNER_MESSAGE_ENABLED: settings.mensajePostCena,
     POST_DINNER_MESSAGE_TIME: normalizeTimeValue(settings.mensajePostCenaHora, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
-    REVIEW_FILTER_ENABLED: settings.filtroResenas,
     FEEDBACK_ALERT_PHONE: settings.feedbackAlertPhone,
     SERVICES_ENABLED: (settings.servicesEnabled.length > 0 ? settings.servicesEnabled : ['CENA']).join(','),
     DESAYUNO_START: settings.serviceHours.DESAYUNO.start,
@@ -236,7 +234,6 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     whatsappPreCenaMinutes: normalizePreDinnerMinutes(settingsMap.WHATSAPP_PRE_DINNER_MINUTES, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
     mensajePostCena: toBooleanValue(settingsMap.POST_DINNER_MESSAGE_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_ENABLED),
     mensajePostCenaHora: normalizeTimeValue(settingsMap.POST_DINNER_MESSAGE_TIME, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
-    filtroResenas: toBooleanValue(settingsMap.REVIEW_FILTER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.REVIEW_FILTER_ENABLED),
     feedbackAlertPhone: toStringValue(settingsMap.FEEDBACK_ALERT_PHONE),
     servicesEnabled: toServicesEnabled(servicesEnabledSetting, DEFAULT_OPERATIONAL_SETTINGS.SERVICES_ENABLED),
     serviceHours: {
