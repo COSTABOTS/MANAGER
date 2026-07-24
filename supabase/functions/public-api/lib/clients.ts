@@ -27,7 +27,7 @@ export async function validatePublicClient(request: Request, dbClient: DbClient,
 
   const { data: client, error: clientError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, public_token, sheet_id')
+    .select('client_id, rest_name, status, public_token, sheet_id, logo_url, primary_color')
     .eq('client_id', clientId)
     .eq('public_token', publicToken)
     .maybeSingle();

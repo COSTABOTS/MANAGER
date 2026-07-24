@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { CheckCircle2, Send, Star } from 'lucide-react';
 import { CLIENT_CONFIG_KEY } from '../services/clientConfig';
-import { PUBLIC_FEEDBACK_CONFIG_WEBHOOK_URL, submitFeedback } from '../services/publicFeedback';
+import { loadPublicFeedbackDetails, submitFeedback } from '../services/publicFeedback';
 import type { FeedbackSubmitState } from '../services/publicFeedback';
 
 interface FeedbackPublicProps {
@@ -14,8 +14,7 @@ interface FeedbackBranding {
   primaryColor: string;
   logoUrl: string;
   backgroundImageUrl: string;
-  positiveFeedbackWebhook: string;
-  negativeFeedbackWebhook: string;
+  alreadySubmitted: boolean;
 }
 
 const FALLBACK_BRANDING: FeedbackBranding = {
@@ -23,8 +22,7 @@ const FALLBACK_BRANDING: FeedbackBranding = {
   primaryColor: '#2f7d4a',
   logoUrl: '',
   backgroundImageUrl: '',
-  positiveFeedbackWebhook: '',
-  negativeFeedbackWebhook: '',
+  alreadySubmitted: false,
 };
 
 function toStringValue(value: unknown) {
@@ -43,23 +41,18 @@ function pickString(source: Record<string, unknown>, keys: string[]) {
 }
 
 function normalizeFeedbackBranding(config: Record<string, unknown>): FeedbackBranding {
-  const webhooks = typeof config.webhooks === 'object' && config.webhooks ? (config.webhooks as Record<string, unknown>) : {};
-  const mergedConfig = { ...webhooks, ...config };
+  const branding = typeof config.branding === 'object' && config.branding ? (config.branding as Record<string, unknown>) : {};
+  const mergedConfig = { ...config, ...branding };
 
   return {
     restaurantName:
-      pickString(mergedConfig, ['rest_nombre', 'restaurantName', 'restaurant_name', 'nombre_restaurante']) ||
+      pickString(mergedConfig, ['restaurante', 'rest_nombre', 'restaurantName', 'restaurant_name', 'nombre_restaurante']) ||
       FALLBACK_BRANDING.restaurantName,
     primaryColor: pickString(mergedConfig, ['color', 'primaryColor', 'primary_color']) || FALLBACK_BRANDING.primaryColor,
-    logoUrl: pickString(mergedConfig, ['logo_restaurante', 'restaurantLogoUrl', 'restaurant_logo_url', 'logo']),
-    backgroundImageUrl: pickString(mergedConfig, ['backgroundImageUrl', 'backgroundImage', 'restaurantBackgroundUrl', 'fondo_restaurante', 'background']),
-    positiveFeedbackWebhook: pickString(mergedConfig, ['webhook_feedback_positivo']),
-    negativeFeedbackWebhook: pickString(mergedConfig, ['webhook_feedback_negativo']),
+    logoUrl: pickString(mergedConfig, ['logo_restaurante', 'restaurantLogoUrl', 'restaurant_logo_url', 'logo', 'logoUrl']),
+    backgroundImageUrl: pickString(mergedConfig, ['backgroundImageUrl', 'backgroundImage', 'restaurantBackgroundUrl', 'fondo_restaurante', 'fondo', 'background']),
+    alreadySubmitted: config.already_submitted === true,
   };
-}
-
-function hasFeedbackWebhooks(branding: FeedbackBranding) {
-  return Boolean(branding.positiveFeedbackWebhook && branding.negativeFeedbackWebhook);
 }
 
 function getRatingText(rating: number) {
@@ -83,30 +76,13 @@ function getStoredFeedbackBranding(): FeedbackBranding {
 async function loadPublicFeedbackBranding(idReserva: string): Promise<FeedbackBranding> {
   const storedBranding = getStoredFeedbackBranding();
 
-  if (hasFeedbackWebhooks(storedBranding)) {
-    return storedBranding;
-  }
-
-  const configWebhookUrl = PUBLIC_FEEDBACK_CONFIG_WEBHOOK_URL.trim();
-
-  if (!configWebhookUrl) {
-    return storedBranding;
-  }
-
   try {
-    const response = await fetch(configWebhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ id_reserva: idReserva }),
-    });
-
-    if (!response.ok) {
+    const details = await loadPublicFeedbackDetails(idReserva);
+    if (!details || details.encontrada === false) {
       return storedBranding;
     }
 
-    return normalizeFeedbackBranding((await response.json()) as Record<string, unknown>);
+    return normalizeFeedbackBranding(details as Record<string, unknown>);
   } catch (error) {
     console.warn('[Safari Manager] No se pudo cargar config publica de feedback', error);
     return storedBranding;
@@ -127,8 +103,10 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
 
     loadPublicFeedbackBranding(idReserva)
       .then((nextBranding) => {
-        if (isMounted) {
-          setBranding(nextBranding);
+        if (!isMounted) return;
+        setBranding(nextBranding);
+        if (nextBranding.alreadySubmitted) {
+          setStatus('already_submitted');
         }
       })
       .catch(() => {
@@ -162,15 +140,14 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
     setErrorMessage('');
 
     try {
-      const feedbackWebhook = rating >= 4 ? branding.positiveFeedbackWebhook : branding.negativeFeedbackWebhook;
-      await submitFeedback({
+      const result = await submitFeedback({
         id_reserva: idReserva,
         puntuacion: rating,
         puntuacion_texto: getRatingText(rating),
         comentario: comment.trim(),
         timestamp: new Date().toISOString(),
-      }, feedbackWebhook);
-      setStatus('success');
+      });
+      setStatus(result.alreadySubmitted ? 'already_submitted' : 'success');
     } catch (error) {
       console.error('[Safari Manager] Error enviando feedback publico', error);
       setStatus('error');
@@ -182,15 +159,15 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
 
   return (
     <main className="feedback-public-shell" style={accentStyle}>
-      <section className="feedback-public-card" aria-label={`Valoracion de ${branding.restaurantName}`}>
-        {status === 'success' ? (
+      <section className="feedback-public-card" aria-label={`Valoración de ${branding.restaurantName}`}>
+        {status === 'success' || status === 'already_submitted' ? (
           <div className="feedback-public-success">
             <span className="feedback-success-icon" aria-hidden="true">
               <CheckCircle2 size={38} />
             </span>
             <p className="feedback-public-restaurant">{branding.restaurantName}</p>
-            <h1>Gracias por tu valoración</h1>
-            <p>Tu opinión nos ayuda a mejorar.</p>
+            <h1>{status === 'already_submitted' ? 'Valoración ya enviada' : 'Gracias por tu valoración'}</h1>
+            <p>{status === 'already_submitted' ? 'Ya hemos recibido tu valoración.' : 'Tu opinión nos ayuda a mejorar.'}</p>
           </div>
         ) : (
           <form className="feedback-public-form" onSubmit={handleSubmit}>
