@@ -18,6 +18,7 @@ import { handleAvailabilityByHour } from './routes/availabilityByHour.ts';
 import { handleFeedback } from './routes/feedback.ts';
 import { handleFeedbackDispatch } from './routes/feedbackDispatch.ts';
 import { handleReservationCancellation } from './routes/reservationCancellation.ts';
+import { handleReservationBalineseCreate } from './routes/reservationBalineseCreate.ts';
 import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationRemindersDispatch } from './routes/reservationRemindersDispatch.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
@@ -241,6 +242,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/reservation/create')) {
       return await handleReservationCreate(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/reservation/balinese/create')) {
+      return await handleReservationBalineseCreate(request, db.dbClient);
     }
 
     if (pathname.endsWith('/reservation/cancellation/details')) {
