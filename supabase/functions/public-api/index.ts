@@ -15,6 +15,7 @@ import {
 } from './lib/normalization.ts';
 import { errorResponse, getCorsHeaders, jsonResponse } from './lib/responses.ts';
 import { handleAvailabilityByHour } from './routes/availabilityByHour.ts';
+import { handleReservationCancellation } from './routes/reservationCancellation.ts';
 import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
 
@@ -237,6 +238,14 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/reservation/create')) {
       return await handleReservationCreate(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/reservation/cancellation/details')) {
+      return await handleReservationCancellation(request, db.dbClient, 'details');
+    }
+
+    if (pathname.endsWith('/reservation/cancellation/confirm')) {
+      return await handleReservationCancellation(request, db.dbClient, 'confirm');
     }
 
     if (pathname.endsWith('/availability/by-hour')) {
