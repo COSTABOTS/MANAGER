@@ -92,9 +92,12 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
       pax,
     );
 
+    const disponible = Boolean(horaSolicitada) && result.horas_disponibles.includes(horaSolicitada);
+
     return jsonResponse(request, {
       ...result,
-      DISPONIBLE: Boolean(horaSolicitada) && result.horas_disponibles.includes(horaSolicitada),
+      DISPONIBLE: disponible,
+      resultado: disponible ? 'TRUE' : 'FALSE',
     });
   } catch (error) {
     console.error('[PUBLIC_API][AVAILABILITY_BY_HOUR][INTERNAL_ERROR]', {
