@@ -74,6 +74,8 @@ const EMPTY_RESOURCE_FORM = {
 const CLIENT_LICENSE_STATUSES: ClientLicenseStatus[] = ['ACTIVE', 'TRIAL', 'SUSPENDED', 'EXPIRED'];
 const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
 const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MIN_PRE_DINNER_MINUTES = 15;
+const MAX_PRE_DINNER_MINUTES = 1440;
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -457,6 +459,16 @@ export function Settings({
       return;
     }
 
+    if (
+      !Number.isInteger(draftSettings.whatsappPreCenaMinutes)
+      || draftSettings.whatsappPreCenaMinutes < MIN_PRE_DINNER_MINUTES
+      || draftSettings.whatsappPreCenaMinutes > MAX_PRE_DINNER_MINUTES
+    ) {
+      setSettingsValidationMessage('Los minutos del recordatorio pre-cena deben ser un entero entre 15 y 1440.');
+      setSaveState('error');
+      return;
+    }
+
     setSaveState('saving');
     const result = await onSettingsSave(draftSettings);
     setSettingsValidationMessage('');
@@ -716,6 +728,21 @@ export function Settings({
             </label>
           </div>
           <SwitchRow label="WhatsApp pre-cena" checked={draftSettings.whatsappPreCena} onChange={(value) => updateDraft('whatsappPreCena', value)} />
+          <div className="settings-grid inner">
+            <label>
+              Minutos de antelacion
+              <input
+                disabled={!draftSettings.whatsappPreCena}
+                min={MIN_PRE_DINNER_MINUTES}
+                max={MAX_PRE_DINNER_MINUTES}
+                step={1}
+                type="number"
+                value={draftSettings.whatsappPreCenaMinutes}
+                onChange={(event) => updateDraft('whatsappPreCenaMinutes', Number(event.target.value))}
+              />
+              <small>Se enviara un recordatorio antes de la reserva. Las reservas creadas despues de la ventana de envio no recibiran el mensaje.</small>
+            </label>
+          </div>
           <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
           <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
           <div className="settings-grid inner">

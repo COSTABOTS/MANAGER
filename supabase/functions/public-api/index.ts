@@ -19,6 +19,7 @@ import { handleFeedback } from './routes/feedback.ts';
 import { handleFeedbackDispatch } from './routes/feedbackDispatch.ts';
 import { handleReservationCancellation } from './routes/reservationCancellation.ts';
 import { handleReservationCreate } from './routes/reservationCreate.ts';
+import { handleReservationRemindersDispatch } from './routes/reservationRemindersDispatch.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
 
 function normalizeShow(show: Record<string, unknown>) {
@@ -264,6 +265,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/feedback/send-pending')) {
       return await handleFeedbackDispatch(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/reservation/reminders/send-pending')) {
+      return await handleReservationRemindersDispatch(request, db.dbClient);
     }
 
     if (request.method !== 'POST') {

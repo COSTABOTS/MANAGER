@@ -35,6 +35,7 @@ export const mockSettings: ManagerSettings = {
   dailyBriefingEnabled: false,
   dailyBriefingTime: '12:00',
   whatsappPreCena: false,
+  whatsappPreCenaMinutes: 120,
   filtroResenas: true,
   mensajePostCena: false,
   mensajePostCenaHora: '12:30',

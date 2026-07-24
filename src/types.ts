@@ -112,6 +112,7 @@ export interface ManagerSettings {
   dailyBriefingEnabled: boolean;
   dailyBriefingTime: string;
   whatsappPreCena: boolean;
+  whatsappPreCenaMinutes: number;
   filtroResenas: boolean;
   mensajePostCena: boolean;
   mensajePostCenaHora: string;

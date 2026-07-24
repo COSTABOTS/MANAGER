@@ -18,6 +18,7 @@ const DEFAULT_OPERATIONAL_SETTINGS = {
   DAILY_BRIEFING_ENABLED: false,
   DAILY_BRIEFING_TIME: '12:00',
   WHATSAPP_PRE_DINNER_ENABLED: false,
+  WHATSAPP_PRE_DINNER_MINUTES: 120,
   POST_DINNER_MESSAGE_ENABLED: false,
   POST_DINNER_MESSAGE_TIME: '12:30',
   REVIEW_FILTER_ENABLED: true,
@@ -85,6 +86,17 @@ function toBooleanValue(value: unknown, fallback: boolean) {
 function toNumberValue(value: unknown, fallback: number) {
   const numberValue = Number(toStringValue(value).replace(',', '.'));
   return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizePreDinnerMinutes(value: unknown, fallback: number) {
+  const rawValue = toStringValue(value);
+  const numberValue = Number(rawValue);
+
+  if (!/^\d+$/.test(rawValue) || !Number.isInteger(numberValue) || numberValue < 15 || numberValue > 1440) {
+    return fallback;
+  }
+
+  return numberValue;
 }
 
 function normalizeTimeValue(value: unknown, fallback: string) {
@@ -170,6 +182,7 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
     DAILY_BRIEFING_ENABLED: settings.dailyBriefingEnabled,
     DAILY_BRIEFING_TIME: settings.dailyBriefingTime,
     WHATSAPP_PRE_DINNER_ENABLED: settings.whatsappPreCena,
+    WHATSAPP_PRE_DINNER_MINUTES: normalizePreDinnerMinutes(settings.whatsappPreCenaMinutes, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
     POST_DINNER_MESSAGE_ENABLED: settings.mensajePostCena,
     POST_DINNER_MESSAGE_TIME: normalizeTimeValue(settings.mensajePostCenaHora, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
     REVIEW_FILTER_ENABLED: settings.filtroResenas,
@@ -220,6 +233,7 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     dailyBriefingEnabled: toBooleanValue(settingsMap.DAILY_BRIEFING_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.DAILY_BRIEFING_ENABLED),
     dailyBriefingTime: toStringValue(settingsMap.DAILY_BRIEFING_TIME) || DEFAULT_OPERATIONAL_SETTINGS.DAILY_BRIEFING_TIME,
     whatsappPreCena: toBooleanValue(settingsMap.WHATSAPP_PRE_DINNER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_ENABLED),
+    whatsappPreCenaMinutes: normalizePreDinnerMinutes(settingsMap.WHATSAPP_PRE_DINNER_MINUTES, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_PRE_DINNER_MINUTES),
     mensajePostCena: toBooleanValue(settingsMap.POST_DINNER_MESSAGE_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_ENABLED),
     mensajePostCenaHora: normalizeTimeValue(settingsMap.POST_DINNER_MESSAGE_TIME, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
     filtroResenas: toBooleanValue(settingsMap.REVIEW_FILTER_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.REVIEW_FILTER_ENABLED),
