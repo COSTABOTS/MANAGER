@@ -3,6 +3,7 @@ import { validatePublicClient } from '../lib/clients.ts';
 import {
   getAvailabilitySheetHeaderIssues,
   getAvailableHoursByCapacity,
+  normalizeAvailabilityTime,
   normalizeCapacitySlots,
   normalizeReservationsForAvailability,
 } from '../lib/availability.ts';
@@ -41,6 +42,7 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
   }
 
   const fecha = normalizeDateKey(pickBodyValue(body, ['FECHA', 'fecha']));
+  const horaSolicitada = normalizeAvailabilityTime(pickBodyValue(body, ['HORA', 'hora']));
   const paxInput = pickBodyValue(body, ['PAX', 'pax', 'paxSolicitados', 'personas']);
   const pax = parseRequestedPax(paxInput);
   const missingFields = [
@@ -90,7 +92,10 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
       pax,
     );
 
-    return jsonResponse(request, result);
+    return jsonResponse(request, {
+      ...result,
+      DISPONIBLE: Boolean(horaSolicitada) && result.horas_disponibles.includes(horaSolicitada),
+    });
   } catch (error) {
     console.error('[PUBLIC_API][AVAILABILITY_BY_HOUR][INTERNAL_ERROR]', {
       clientId: context.clientId,
