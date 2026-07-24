@@ -2,12 +2,14 @@ import type { DbClient } from '../lib/clients.ts';
 import { validatePublicClient } from '../lib/clients.ts';
 import { appendSheetValues, createGoogleAccessToken, fetchSheetValues } from '../lib/googleSheets.ts';
 import {
+  type BalineseResource,
   buildBalineseReservationResult,
   findAvailableBalineseResource,
   getOccupiedBalineseResources,
   normalizeBalineseCreateInput,
   normalizeBalineseResources,
 } from '../lib/balineseResources.ts';
+import { normalizeService, toNumberValue, toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 
 function getSafeErrorCode(error: unknown) {
@@ -23,6 +25,31 @@ function getSafeErrorCode(error: unknown) {
   }
 
   return 'INTERNAL_ERROR';
+}
+
+function getDebugPayload(
+  body: Record<string, unknown>,
+  normalized: { fecha: string; personas: number; servicio: string },
+  resources: BalineseResource[],
+  occupiedResources: Set<string>,
+) {
+  const resourcesWithCapacity = resources
+    .filter((resource) => resource.capacidad <= 0 || resource.capacidad >= normalized.personas)
+    .map((resource) => resource.recurso);
+  const freeResources = resources
+    .filter((resource) => !occupiedResources.has(resource.recurso.toUpperCase()))
+    .map((resource) => resource.recurso);
+
+  return {
+    fecha_recibida: toStringValue(body.fecha ?? body.FECHA),
+    fecha_normalizada: normalized.fecha,
+    personas_recibidas: toNumberValue(body.personas ?? body.pax ?? body.PAX),
+    servicio_normalizado: normalizeService(body.servicio ?? body.SERVICIO),
+    recursos_activos: resources.map((resource) => resource.recurso),
+    recursos_con_capacidad: resourcesWithCapacity,
+    recursos_ocupados: Array.from(occupiedResources),
+    recursos_libres: freeResources,
+  };
 }
 
 export async function handleReservationBalineseCreate(request: Request, dbClient: DbClient) {
@@ -87,6 +114,8 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
 
   const resources = normalizeBalineseResources(resourcesData.values);
   const occupiedResources = getOccupiedBalineseResources(reservationsData.values, normalized.fecha);
+  const shouldIncludeDebug = body.debug === true;
+  let debugPayload = shouldIncludeDebug ? getDebugPayload(body, normalized, resources, occupiedResources) : undefined;
   let { resource, hasFreeResources } = findAvailableBalineseResource(resources, occupiedResources, normalized.personas);
 
   if (!resource) {
@@ -97,12 +126,14 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
       error: code,
       message: code,
       available: false,
+      ...(debugPayload ? { debug: debugPayload } : {}),
     }, 409);
   }
 
   try {
     const latestReservationsData = await fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken);
     const latestOccupiedResources = getOccupiedBalineseResources(latestReservationsData.values, normalized.fecha);
+    debugPayload = shouldIncludeDebug ? getDebugPayload(body, normalized, resources, latestOccupiedResources) : undefined;
     ({ resource, hasFreeResources } = findAvailableBalineseResource(resources, latestOccupiedResources, normalized.personas));
   } catch (error) {
     console.error('[PUBLIC_API][BALINESE_CREATE][FINAL_RECHECK_FAILED]', {
@@ -120,6 +151,7 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
       error: code,
       message: code,
       available: false,
+      ...(debugPayload ? { debug: debugPayload } : {}),
     }, 409);
   }
 
@@ -149,5 +181,6 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
       recurso: resource.recurso,
       estado: 'CONFIRMADA',
     },
+    ...(debugPayload ? { debug: debugPayload } : {}),
   }, 201);
 }
