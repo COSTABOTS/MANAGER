@@ -119,6 +119,9 @@ export async function handleReservationCancellation(request: Request, dbClient: 
       telefono: reservation.telefono,
       personas: reservation.personas,
       idioma: reservation.idioma.toUpperCase(),
+      servicio: reservation.servicio,
+      paquete_balinesa: reservation.paqueteBalinesa,
+      recurso: reservation.recurso,
     });
   }
 

@@ -20,6 +20,7 @@ export interface PublicCancellationReservation {
   estado: string;
   servicio: string;
   paqueteBalinesa: string;
+  recurso: string;
 }
 
 export function normalizeCancellationReservations(values: unknown[][] | undefined): PublicCancellationReservation[] {
@@ -35,6 +36,7 @@ export function normalizeCancellationReservations(values: unknown[][] | undefine
     const estado = toStringValue(pickValue(item, ['ESTADO', 'estado', '8'])).toUpperCase();
     const servicio = normalizeService(pickValue(item, ['SERVICIO', 'servicio', 'service', '16']));
     const paqueteBalinesa = toStringValue(pickValue(item, ['PAQUETE BALINESA', 'PAQUETE_BALINESA', 'paqueteBalinesa', 'paquete_balinesa', '17']));
+    const recurso = toStringValue(pickValue(item, ['RECURSO', 'recurso', 'resource', '18']));
 
     if (!idReserva) {
       return [];
@@ -52,6 +54,7 @@ export function normalizeCancellationReservations(values: unknown[][] | undefine
       estado,
       servicio,
       paqueteBalinesa,
+      recurso,
     }];
   });
 }
