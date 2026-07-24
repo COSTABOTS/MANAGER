@@ -114,6 +114,7 @@ export interface ManagerSettings {
   whatsappPreCena: boolean;
   filtroResenas: boolean;
   mensajePostCena: boolean;
+  mensajePostCenaHora: string;
   feedbackAlertPhone: string;
   servicesEnabled: BookingService[];
   serviceHours: Record<ServiceWithHours, { start: string; end: string }>;

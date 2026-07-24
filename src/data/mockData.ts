@@ -37,6 +37,7 @@ export const mockSettings: ManagerSettings = {
   whatsappPreCena: false,
   filtroResenas: true,
   mensajePostCena: false,
+  mensajePostCenaHora: '12:30',
   feedbackAlertPhone: '',
   servicesEnabled: ['CENA'],
   serviceHours: {

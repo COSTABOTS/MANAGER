@@ -3,7 +3,9 @@ import { sendEvolutionText } from '../lib/evolution.ts';
 import { createGoogleAccessToken, fetchSheetValues, updateSheetCell } from '../lib/googleSheets.ts';
 import {
   formatTargetDate,
-  isPostDinnerMessageEnabled,
+  getCurrentMadridTime,
+  getPostDinnerMessageConfig,
+  isWithinDispatchWindow,
   normalizeDispatchClients,
   normalizePendingFeedbackReservations,
   resolveTargetDate,
@@ -66,6 +68,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const targetDateInput = body.target_date ?? body.targetDate;
+  const force = body.force === true;
   const hasManualTargetDate = Boolean(toStringValue(targetDateInput));
   const normalizedTargetDateInput = normalizeDateKey(targetDateInput);
   if (hasManualTargetDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedTargetDateInput)) {
@@ -73,11 +76,13 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
   }
 
   const targetDate = resolveTargetDate(targetDateInput);
+  const currentTimeMadrid = getCurrentMadridTime();
   let messagesSent = 0;
   let messagesFailed = 0;
   let reservationsFound = 0;
   let reservationsSkipped = 0;
   let clientsSkippedDisabled = 0;
+  let clientsSkippedTime = 0;
   const errors: Array<{ client_id: string; id_reserva?: string; code: string }> = [];
 
   const { data: rawClients, error: clientsError } = await dbClient
@@ -108,8 +113,18 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
     let values: unknown[][] | undefined;
     try {
       const settingsData = await fetchSheetValues(client.sheetId, 'SETTINGS!A:Z', accessToken);
-      if (!isPostDinnerMessageEnabled(settingsData.values)) {
+      const postDinnerConfig = getPostDinnerMessageConfig(settingsData.values);
+      if (!postDinnerConfig.enabled) {
         clientsSkippedDisabled += 1;
+        continue;
+      }
+      if (postDinnerConfig.usedFallbackTime) {
+        console.warn('[PUBLIC_API][FEEDBACK_DISPATCH][TIME_FALLBACK]', {
+          clientId: client.clientId,
+        });
+      }
+      if (!force && !isWithinDispatchWindow(currentTimeMadrid, postDinnerConfig.time)) {
+        clientsSkippedTime += 1;
         continue;
       }
     } catch (error) {
@@ -191,12 +206,14 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
   return jsonResponse(request, {
     ok: true,
     target_date: formatTargetDate(targetDate),
+    current_time_madrid: currentTimeMadrid,
     clients_processed: clients.length,
     reservations_found: reservationsFound,
     messages_sent: messagesSent,
     messages_failed: messagesFailed,
     reservations_skipped: reservationsSkipped,
     clients_skipped_disabled: clientsSkippedDisabled,
+    clients_skipped_time: clientsSkippedTime,
     partial_success: messagesFailed > 0,
     ...(errors.length > 0 ? { errors } : {}),
   });

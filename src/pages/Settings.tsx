@@ -73,6 +73,7 @@ const EMPTY_RESOURCE_FORM = {
 };
 const CLIENT_LICENSE_STATUSES: ClientLicenseStatus[] = ['ACTIVE', 'TRIAL', 'SUSPENDED', 'EXPIRED'];
 const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
+const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -147,6 +148,7 @@ export function Settings({
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [licenseDraft, setLicenseDraft] = useState<ClientLicense>(clientLicense);
   const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [settingsValidationMessage, setSettingsValidationMessage] = useState('');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
   const configurationLocked = isDemoUser;
 
@@ -213,6 +215,7 @@ export function Settings({
   }, [hasUnsavedChanges, saveState]);
 
   function updateDraft<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
+    setSettingsValidationMessage('');
     setDraftSettings((current) => ({ ...current, [key]: value }));
   }
 
@@ -448,8 +451,15 @@ export function Settings({
       return;
     }
 
+    if (!TIME_VALUE_PATTERN.test(draftSettings.mensajePostCenaHora)) {
+      setSettingsValidationMessage('La hora del mensaje post-cena debe tener formato HH:mm.');
+      setSaveState('error');
+      return;
+    }
+
     setSaveState('saving');
     const result = await onSettingsSave(draftSettings);
+    setSettingsValidationMessage('');
     setSaveState(result === 'error' ? 'error' : 'saved');
   }
 
@@ -708,6 +718,18 @@ export function Settings({
           <SwitchRow label="WhatsApp pre-cena" checked={draftSettings.whatsappPreCena} onChange={(value) => updateDraft('whatsappPreCena', value)} />
           <SwitchRow label="Filtro reseñas" checked={draftSettings.filtroResenas} onChange={(value) => updateDraft('filtroResenas', value)} />
           <SwitchRow label="Mensaje post-cena" checked={draftSettings.mensajePostCena} onChange={(value) => updateDraft('mensajePostCena', value)} />
+          <div className="settings-grid inner">
+            <label>
+              Hora de envío del mensaje post-cena
+              <input
+                disabled={!draftSettings.mensajePostCena}
+                type="time"
+                value={draftSettings.mensajePostCenaHora}
+                onChange={(event) => updateDraft('mensajePostCenaHora', event.target.value)}
+              />
+              <small>Se enviará al día siguiente a los clientes que hayan asistido y aún no hayan recibido la invitación de feedback.</small>
+            </label>
+          </div>
         </article>
         )}
 
@@ -1032,7 +1054,7 @@ export function Settings({
 
       <section className="settings-save-bar">
         <span className={`save-indicator is-${saveState}`}>
-          {saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada'}
+          {settingsValidationMessage || (saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada')}
         </span>
         <button type="button" disabled={configurationLocked || saveState === 'saving'} onClick={handleSaveSettings}>
           Guardar configuración

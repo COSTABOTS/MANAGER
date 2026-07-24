@@ -37,6 +37,12 @@ export interface DispatchError {
   code: string;
 }
 
+export interface PostDinnerMessageConfig {
+  enabled: boolean;
+  time: string;
+  usedFallbackTime: boolean;
+}
+
 function getMadridDateParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Madrid',
@@ -67,11 +73,54 @@ function parseTargetDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
 }
 
+function normalizeTimeValue(value: unknown, fallback = '12:30') {
+  const rawValue = toStringValue(value);
+  const match = rawValue.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+
+  if (!match) {
+    return fallback;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return fallback;
+  }
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function toMinutes(time: string) {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
 export function getDefaultTargetDate() {
   const { year, month, day } = getMadridDateParts();
   const utcDate = new Date(Date.UTC(year, month - 1, day));
   utcDate.setUTCDate(utcDate.getUTCDate() - 1);
   return utcDate.toISOString().slice(0, 10);
+}
+
+export function getCurrentMadridTime() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Madrid',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00';
+  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
+
+  return `${hour}:${minute}`;
+}
+
+export function isWithinDispatchWindow(currentTime: string, configuredTime: string) {
+  const currentMinutes = toMinutes(normalizeTimeValue(currentTime));
+  const configuredMinutes = toMinutes(normalizeTimeValue(configuredTime));
+  const diffMinutes = (currentMinutes - configuredMinutes + 1440) % 1440;
+
+  return diffMinutes >= 0 && diffMinutes < 15;
 }
 
 export function resolveTargetDate(value: unknown) {
@@ -103,7 +152,7 @@ export function normalizeDispatchClients(rows: Array<Record<string, unknown>> | 
   });
 }
 
-export function isPostDinnerMessageEnabled(values: unknown[][] | undefined) {
+export function getPostDinnerMessageConfig(values: unknown[][] | undefined): PostDinnerMessageConfig {
   const settings = rowsToObjects(values).reduce<Record<string, string>>((items, item) => {
     const key = toStringValue(pickValue(item, ['VARIABLE', 'variable', 'KEY', 'key', '0'])).toUpperCase();
     const value = toStringValue(pickValue(item, ['VALUE', 'value', 'VALOR', 'valor', '1']));
@@ -114,18 +163,32 @@ export function isPostDinnerMessageEnabled(values: unknown[][] | undefined) {
 
     return items;
   }, {});
-  const rawValue = settings.POST_DINNER_MESSAGE_ENABLED;
+  const rawEnabled = settings.POST_DINNER_MESSAGE_ENABLED;
+  const rawTime = settings.POST_DINNER_MESSAGE_TIME;
+  const time = normalizeTimeValue(rawTime, '12:30');
 
-  if (rawValue === undefined) {
-    return true;
+  if (rawEnabled === undefined) {
+    return {
+      enabled: true,
+      time,
+      usedFallbackTime: rawTime === undefined || time !== toStringValue(rawTime),
+    };
   }
 
-  const normalizedValue = toStringValue(rawValue).toLowerCase();
+  const normalizedValue = toStringValue(rawEnabled).toLowerCase();
   if (['false', '0', 'no', 'off', 'falso'].includes(normalizedValue)) {
-    return false;
+    return {
+      enabled: false,
+      time,
+      usedFallbackTime: rawTime === undefined || time !== toStringValue(rawTime),
+    };
   }
 
-  return normalizeBoolean(rawValue);
+  return {
+    enabled: normalizeBoolean(rawEnabled),
+    time,
+    usedFallbackTime: rawTime === undefined || time !== toStringValue(rawTime),
+  };
 }
 
 export function normalizePendingFeedbackReservations(values: unknown[][] | undefined, targetDate: string) {
