@@ -1,5 +1,6 @@
 import {
   normalizeLanguage,
+  normalizeService,
   normalizePhone,
   pickValue,
   rowsToObjects,
@@ -17,6 +18,8 @@ export interface PublicCancellationReservation {
   personas: number;
   idioma: 'es' | 'en';
   estado: string;
+  servicio: string;
+  paqueteBalinesa: string;
 }
 
 export function normalizeCancellationReservations(values: unknown[][] | undefined): PublicCancellationReservation[] {
@@ -30,6 +33,8 @@ export function normalizeCancellationReservations(values: unknown[][] | undefine
     const personas = toNumberValue(pickValue(item, ['PAX', 'pax', 'personas', '5']));
     const idioma = normalizeLanguage(pickValue(item, ['IDIOMA', 'idioma', '6']));
     const estado = toStringValue(pickValue(item, ['ESTADO', 'estado', '8'])).toUpperCase();
+    const servicio = normalizeService(pickValue(item, ['SERVICIO', 'servicio', 'service', '16']));
+    const paqueteBalinesa = toStringValue(pickValue(item, ['PAQUETE BALINESA', 'PAQUETE_BALINESA', 'paqueteBalinesa', 'paquete_balinesa', '17']));
 
     if (!idReserva) {
       return [];
@@ -45,6 +50,8 @@ export function normalizeCancellationReservations(values: unknown[][] | undefine
       personas,
       idioma,
       estado,
+      servicio,
+      paqueteBalinesa,
     }];
   });
 }

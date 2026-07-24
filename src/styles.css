@@ -2784,12 +2784,12 @@ button:disabled {
 }
 
 .reservations-table tr.is-cancelada td {
-  color: #687182;
-  background: #eef1f5;
+  color: rgba(243, 238, 229, 0.68);
+  background: rgba(95, 38, 38, 0.28);
 }
 
 .reservations-table tr.is-cancelada:nth-child(even) td {
-  background: #e6eaf0;
+  background: rgba(95, 38, 38, 0.28);
 }
 
 .reservations-table tr.is-cancelada td:not(:last-child) {
@@ -3796,6 +3796,40 @@ button:active:not(:disabled) {
 .reservations-table tr.is-cancelada td {
   color: rgba(243, 238, 229, 0.62);
   background: rgba(95, 38, 38, 0.26);
+}
+
+.reservations-table tbody tr.is-cancelada td,
+.reservations-table tbody tr.is-cancelada:nth-child(even) td,
+.reservations-table tbody tr.is-cancelada.is-past td,
+.reservations-table tbody tr.is-cancelada.service-desayuno td,
+.reservations-table tbody tr.is-cancelada.service-almuerzo td,
+.reservations-table tbody tr.is-cancelada.service-cena td,
+.reservations-table tbody tr.is-cancelada.service-balinesa td {
+  color: rgba(243, 238, 229, 0.7);
+  background: linear-gradient(90deg, rgba(109, 43, 43, 0.36), rgba(39, 35, 39, 0.92));
+  border-bottom-color: rgba(255, 99, 99, 0.16);
+}
+
+.reservations-table tbody tr.is-cancelada:hover td,
+.reservations-table tbody tr.is-cancelada:focus-within td,
+.reservations-table tbody tr.is-cancelada:active td {
+  color: rgba(243, 238, 229, 0.78);
+  background: linear-gradient(90deg, rgba(128, 50, 50, 0.42), rgba(48, 40, 43, 0.94));
+}
+
+.reservations-table tbody tr.is-cancelada td:first-child {
+  border-left: 4px solid rgba(255, 99, 99, 0.42);
+}
+
+.reservations-table tbody tr.is-cancelada td:not(:last-child) {
+  text-decoration-color: rgba(243, 238, 229, 0.48);
+}
+
+.reservations-table tbody tr.is-cancelada .status-pill.is-cancelada {
+  color: #ff9b9b;
+  text-decoration: none;
+  background: rgba(255, 99, 99, 0.16);
+  border-color: rgba(255, 99, 99, 0.36);
 }
 
 .reservations-table tr.is-past td {
