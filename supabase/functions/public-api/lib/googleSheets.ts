@@ -122,6 +122,24 @@ export async function updateSheetCell(sheetId: string, range: string, value: str
   }
 }
 
+export async function appendSheetValues(sheetId: string, range: string, values: unknown[][], accessToken: string) {
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`GOOGLE_SHEETS_ERROR: ${response.status}`);
+  }
+}
+
 export function getSheetIdForLog(sheetId: string) {
   const value = toStringValue(sheetId);
   return value ? `${value.slice(0, 4)}...${value.slice(-4)}` : '';

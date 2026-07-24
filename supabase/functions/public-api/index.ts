@@ -15,6 +15,7 @@ import {
 } from './lib/normalization.ts';
 import { errorResponse, getCorsHeaders, jsonResponse } from './lib/responses.ts';
 import { handleAvailabilityByHour } from './routes/availabilityByHour.ts';
+import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
 
 function normalizeShow(show: Record<string, unknown>) {
@@ -232,6 +233,10 @@ Deno.serve(async (request) => {
     const pathname = url.pathname.replace(/\/+$/, '');
     if (pathname.endsWith('/reservation/send-confirmation')) {
       return await handleReservationSendConfirmation(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/reservation/create')) {
+      return await handleReservationCreate(request, db.dbClient);
     }
 
     if (pathname.endsWith('/availability/by-hour')) {
