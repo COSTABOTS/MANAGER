@@ -508,7 +508,7 @@ export function Today({
                       <strong>{resource.name}</strong>
                       <span>{isReserved ? 'Reservada' : 'Libre'}</span>
                     </div>
-                    <p>Capacidad: {resource.capacity || 4}</p>
+                    <p>{reservedReservation ? `Tel: ${reservedReservation.phone || '—'}` : `Capacidad: ${resource.capacity || 4}`}</p>
                     {reservedReservation ? (
                       <div className="balinese-reservation-summary">
                         <span>Nombre: {reservedReservation.name || '-'}</span>
