@@ -16,6 +16,7 @@ import {
 import { errorResponse, getCorsHeaders, jsonResponse } from './lib/responses.ts';
 import { handleAvailabilityByHour } from './routes/availabilityByHour.ts';
 import { handleFeedback } from './routes/feedback.ts';
+import { handleFeedbackDispatch } from './routes/feedbackDispatch.ts';
 import { handleReservationCancellation } from './routes/reservationCancellation.ts';
 import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
@@ -259,6 +260,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/feedback/submit')) {
       return await handleFeedback(request, db.dbClient, 'submit');
+    }
+
+    if (pathname.endsWith('/feedback/send-pending')) {
+      return await handleFeedbackDispatch(request, db.dbClient);
     }
 
     if (request.method !== 'POST') {

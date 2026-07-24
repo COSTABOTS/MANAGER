@@ -144,7 +144,7 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     return jsonResponse(request, {
       ok: true,
       encontrada: true,
-      already_submitted: alreadySubmitted || reservation.feedbackEnviado,
+      already_submitted: alreadySubmitted,
       reservation: {
         id_reserva: reservation.idReserva,
         nombre: reservation.nombre,
@@ -173,7 +173,7 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     });
   }
 
-  if (alreadySubmitted || reservation.feedbackEnviado) {
+  if (alreadySubmitted) {
     return jsonResponse(request, {
       ok: false,
       already_submitted: true,
@@ -182,7 +182,6 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
 
   try {
     await appendSheetValues(context.sheetId, 'FEEDBACKS!A:H', [buildFeedbackAppendRow(reservation, normalized)], accessToken);
-    await updateSheetCell(context.sheetId, `RESERVAS!${reservation.feedbackEnviadoColumn}${reservation.rowNumber}`, 'TRUE', accessToken);
   } catch (error) {
     console.error('[PUBLIC_API][FEEDBACK][SAVE_FAILED]', {
       clientId: context.clientId,
