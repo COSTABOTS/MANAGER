@@ -25,8 +25,6 @@ function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?
     webhookSettings: storedSettings.webhookSettings ?? mockSettings.webhookSettings,
     maxPaxPerBooking: storedSettings.maxPaxPerBooking ?? mockSettings.maxPaxPerBooking,
     whatsappConfirmation: storedSettings.whatsappConfirmation ?? mockSettings.whatsappConfirmation,
-    dailyBriefingEnabled: storedSettings.dailyBriefingEnabled ?? mockSettings.dailyBriefingEnabled,
-    dailyBriefingTime: storedSettings.dailyBriefingTime ?? mockSettings.dailyBriefingTime,
     whatsappPreCena: storedSettings.whatsappPreCena ?? mockSettings.whatsappPreCena,
     whatsappPreCenaMinutes: storedSettings.whatsappPreCenaMinutes ?? mockSettings.whatsappPreCenaMinutes,
     mensajePostCenaHora: storedSettings.mensajePostCenaHora ?? mockSettings.mensajePostCenaHora,

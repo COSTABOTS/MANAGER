@@ -109,8 +109,6 @@ export interface ManagerSettings {
   reservasActivas: boolean;
   maxPaxPerBooking: number;
   whatsappConfirmation: boolean;
-  dailyBriefingEnabled: boolean;
-  dailyBriefingTime: string;
   whatsappPreCena: boolean;
   whatsappPreCenaMinutes: number;
   mensajePostCena: boolean;

@@ -716,12 +716,7 @@ export function Settings({
           </div>
           <SwitchRow label="Reservas activas" checked={draftSettings.reservasActivas} onChange={(value) => updateDraft('reservasActivas', value)} />
           <SwitchRow label="WhatsApp confirmacion" checked={draftSettings.whatsappConfirmation} onChange={(value) => updateDraft('whatsappConfirmation', value)} />
-          <SwitchRow label="Briefing diario" checked={draftSettings.dailyBriefingEnabled} onChange={(value) => updateDraft('dailyBriefingEnabled', value)} />
           <div className="settings-grid inner">
-            <label>
-              Hora briefing diario
-              <input type="time" value={draftSettings.dailyBriefingTime} onChange={(event) => updateDraft('dailyBriefingTime', event.target.value)} />
-            </label>
             <label>
               Telefono alertas feedback
               <input value={draftSettings.feedbackAlertPhone} onChange={(event) => updateDraft('feedbackAlertPhone', event.target.value)} />

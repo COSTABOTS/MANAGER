@@ -32,8 +32,6 @@ export const mockSettings: ManagerSettings = {
   reservasActivas: true,
   maxPaxPerBooking: 10,
   whatsappConfirmation: true,
-  dailyBriefingEnabled: false,
-  dailyBriefingTime: '12:00',
   whatsappPreCena: false,
   whatsappPreCenaMinutes: 120,
   mensajePostCena: false,
