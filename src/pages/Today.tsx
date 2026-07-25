@@ -95,6 +95,17 @@ function parseIntegerInput(value: string) {
   return Number.isInteger(parsedValue) ? parsedValue : null;
 }
 
+function selectPaxInput(event: { currentTarget: HTMLInputElement }) {
+  const input = event.currentTarget;
+  requestAnimationFrame(() => {
+    input.select();
+  });
+}
+
+function numericInputValue(value: string) {
+  return value.replace(/\D/g, '');
+}
+
 export function Today({
   dayStatus,
   lastSync,
@@ -627,7 +638,7 @@ export function Today({
               </label>
               <label>
                 Pax
-                <input min="1" step="1" inputMode="numeric" type="number" value={manualDraft.pax} onChange={(event) => updateManualDraft('pax', event.target.value)} />
+                <input min="1" step="1" inputMode="numeric" pattern="[0-9]*" type="text" value={manualDraft.pax} onFocus={selectPaxInput} onClick={selectPaxInput} onPointerUp={selectPaxInput} onChange={(event) => updateManualDraft('pax', numericInputValue(event.target.value))} />
               </label>
               <label className="manual-form-wide">
                 Peticion especial
@@ -675,11 +686,11 @@ export function Today({
               </label>
               <label>
                 Adultos
-                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={balineseDraft.adults} onChange={(event) => updateBalineseDraft('adults', event.target.value)} />
+                <input min={0} max={4} step="1" inputMode="numeric" pattern="[0-9]*" type="text" value={balineseDraft.adults} onFocus={selectPaxInput} onClick={selectPaxInput} onPointerUp={selectPaxInput} onChange={(event) => updateBalineseDraft('adults', numericInputValue(event.target.value))} />
               </label>
               <label>
                 Niños
-                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={balineseDraft.children} onChange={(event) => updateBalineseDraft('children', event.target.value)} />
+                <input min={0} max={4} step="1" inputMode="numeric" pattern="[0-9]*" type="text" value={balineseDraft.children} onFocus={selectPaxInput} onClick={selectPaxInput} onPointerUp={selectPaxInput} onChange={(event) => updateBalineseDraft('children', numericInputValue(event.target.value))} />
               </label>
               <label>
                 Paquete
@@ -749,11 +760,11 @@ export function Today({
               </label>
               <label>
                 Adultos
-                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={otherDayBalineseDraft.adults} onChange={(event) => updateOtherDayBalineseDraft('adults', event.target.value)} />
+                <input min={0} max={4} step="1" inputMode="numeric" pattern="[0-9]*" type="text" value={otherDayBalineseDraft.adults} onFocus={selectPaxInput} onClick={selectPaxInput} onPointerUp={selectPaxInput} onChange={(event) => updateOtherDayBalineseDraft('adults', numericInputValue(event.target.value))} />
               </label>
               <label>
                 Ninos
-                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={otherDayBalineseDraft.children} onChange={(event) => updateOtherDayBalineseDraft('children', event.target.value)} />
+                <input min={0} max={4} step="1" inputMode="numeric" pattern="[0-9]*" type="text" value={otherDayBalineseDraft.children} onFocus={selectPaxInput} onClick={selectPaxInput} onPointerUp={selectPaxInput} onChange={(event) => updateOtherDayBalineseDraft('children', numericInputValue(event.target.value))} />
               </label>
               <label>
                 Paquete
@@ -780,3 +791,4 @@ export function Today({
     </main>
   );
 }
+

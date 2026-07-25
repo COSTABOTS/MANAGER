@@ -2546,13 +2546,18 @@ button:disabled {
 }
 
 .manual-form-grid > label {
+  display: grid;
+  width: 100%;
   min-width: 0;
 }
 
 .manual-form-grid input,
 .manual-form-grid select {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  max-width: 100%;
 }
 
 .manual-form-wide {

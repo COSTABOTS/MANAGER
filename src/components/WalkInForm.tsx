@@ -5,6 +5,17 @@ interface WalkInFormProps {
   onAddWalkIn: (nameOrRoom: string, pax: number) => Promise<void>;
 }
 
+function selectPaxInput(event: { currentTarget: HTMLInputElement }) {
+  const input = event.currentTarget;
+  requestAnimationFrame(() => {
+    input.select();
+  });
+}
+
+function numericInputValue(value: string) {
+  return value.replace(/\D/g, '');
+}
+
 export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
   const [nameOrRoom, setNameOrRoom] = useState('');
   const [pax, setPax] = useState('2');
@@ -48,9 +59,13 @@ export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
         Pax
         <input
           value={pax}
-          onChange={(event) => setPax(event.target.value)}
-          type="number"
+          onFocus={selectPaxInput}
+          onClick={selectPaxInput}
+          onPointerUp={selectPaxInput}
+          onChange={(event) => setPax(numericInputValue(event.target.value))}
+          type="text"
           inputMode="numeric"
+          pattern="[0-9]*"
           min="1"
           step="1"
           max="30"
