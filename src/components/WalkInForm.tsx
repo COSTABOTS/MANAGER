@@ -7,21 +7,23 @@ interface WalkInFormProps {
 
 export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
   const [nameOrRoom, setNameOrRoom] = useState('');
-  const [pax, setPax] = useState(2);
+  const [pax, setPax] = useState('2');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!nameOrRoom.trim() || pax < 1) {
+    const parsedPax = Number(pax);
+
+    if (!nameOrRoom.trim() || !pax.trim() || !Number.isInteger(parsedPax) || parsedPax < 1) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onAddWalkIn(nameOrRoom.trim(), pax);
+      await onAddWalkIn(nameOrRoom.trim(), parsedPax);
       setNameOrRoom('');
-      setPax(2);
+      setPax('2');
     } finally {
       setIsSubmitting(false);
     }
@@ -46,9 +48,11 @@ export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
         Pax
         <input
           value={pax}
-          onChange={(event) => setPax(Number(event.target.value))}
+          onChange={(event) => setPax(event.target.value)}
           type="number"
+          inputMode="numeric"
           min="1"
+          step="1"
           max="30"
         />
       </label>

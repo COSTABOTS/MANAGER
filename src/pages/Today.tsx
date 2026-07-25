@@ -50,7 +50,7 @@ const EMPTY_MANUAL_RESERVATION = {
   name: '',
   room: '',
   phone: '',
-  pax: 2,
+  pax: '2',
   specialRequest: '',
 };
 
@@ -58,8 +58,8 @@ const EMPTY_BALINESE_DRAFT = {
   name: '',
   room: '',
   phone: '',
-  adults: 2,
-  children: 0,
+  adults: '2',
+  children: '0',
   package: 'BASIC' as 'BASIC' | 'PREMIUM',
   specialRequest: '',
 };
@@ -70,8 +70,8 @@ const EMPTY_OTHER_DAY_BALINESE_DRAFT = {
   name: '',
   room: '',
   phone: '',
-  adults: 2,
-  children: 0,
+  adults: '2',
+  children: '0',
   package: 'BASIC' as 'BASIC' | 'PREMIUM',
   specialRequest: '',
 };
@@ -83,6 +83,16 @@ const BALINESE_PACKAGES = {
 
 function normalizeResourceName(value: string | undefined) {
   return String(value ?? '').trim().toUpperCase();
+}
+
+function parseIntegerInput(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue || !/^\d+$/.test(trimmedValue)) {
+    return null;
+  }
+
+  const parsedValue = Number(trimmedValue);
+  return Number.isInteger(parsedValue) ? parsedValue : null;
 }
 
 export function Today({
@@ -310,11 +320,18 @@ export function Today({
       return;
     }
 
-    const pax = balineseDraft.adults + balineseDraft.children;
+    const adults = parseIntegerInput(balineseDraft.adults);
+    const children = parseIntegerInput(balineseDraft.children);
+    const pax = (adults ?? 0) + (children ?? 0);
     const maxCapacity = Math.min(selectedBalineseResource.capacity || 4, 4);
 
     if (!balineseDraft.name.trim() && !balineseDraft.room.trim()) {
       setBalineseError('Introduce al menos nombre o habitación.');
+      return;
+    }
+
+    if (adults === null || children === null) {
+      setBalineseError('Introduce un numero valido de adultos y ninos.');
       return;
     }
 
@@ -347,7 +364,9 @@ export function Today({
       return;
     }
 
-    const pax = otherDayBalineseDraft.adults + otherDayBalineseDraft.children;
+    const adults = parseIntegerInput(otherDayBalineseDraft.adults);
+    const children = parseIntegerInput(otherDayBalineseDraft.children);
+    const pax = (adults ?? 0) + (children ?? 0);
     const maxCapacity = Math.min(otherDaySelectedResource.capacity || 4, 4);
 
     if (!otherDayBalineseDraft.date) {
@@ -357,6 +376,11 @@ export function Today({
 
     if (!otherDayBalineseDraft.name.trim() && !otherDayBalineseDraft.room.trim()) {
       setOtherDayBalineseError('Introduce al menos nombre o habitacion.');
+      return;
+    }
+
+    if (adults === null || children === null) {
+      setOtherDayBalineseError('Introduce un numero valido de adultos y ninos.');
       return;
     }
 
@@ -389,7 +413,14 @@ export function Today({
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!manualDraft.date || !manualDraft.time || manualDraft.pax < 1) {
+    const pax = parseIntegerInput(manualDraft.pax);
+
+    if (!manualDraft.date || !manualDraft.time) {
+      return;
+    }
+
+    if (pax === null || pax < 1) {
+      setManualError('Introduce un pax valido.');
       return;
     }
 
@@ -404,7 +435,7 @@ export function Today({
       name: manualDraft.name.trim(),
       room: manualDraft.room.trim(),
       phone: manualDraft.phone.trim(),
-      pax: manualDraft.pax,
+      pax,
       specialRequest: manualDraft.specialRequest.trim() || 'No, ninguna',
     });
 
@@ -596,7 +627,7 @@ export function Today({
               </label>
               <label>
                 Pax
-                <input min="1" type="number" value={manualDraft.pax} onChange={(event) => updateManualDraft('pax', Number(event.target.value))} />
+                <input min="1" step="1" inputMode="numeric" type="number" value={manualDraft.pax} onChange={(event) => updateManualDraft('pax', event.target.value)} />
               </label>
               <label className="manual-form-wide">
                 Peticion especial
@@ -644,11 +675,11 @@ export function Today({
               </label>
               <label>
                 Adultos
-                <input min={0} max={4} type="number" value={balineseDraft.adults} onChange={(event) => updateBalineseDraft('adults', Number(event.target.value))} />
+                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={balineseDraft.adults} onChange={(event) => updateBalineseDraft('adults', event.target.value)} />
               </label>
               <label>
                 Niños
-                <input min={0} max={4} type="number" value={balineseDraft.children} onChange={(event) => updateBalineseDraft('children', Number(event.target.value))} />
+                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={balineseDraft.children} onChange={(event) => updateBalineseDraft('children', event.target.value)} />
               </label>
               <label>
                 Paquete
@@ -718,11 +749,11 @@ export function Today({
               </label>
               <label>
                 Adultos
-                <input min={0} max={4} type="number" value={otherDayBalineseDraft.adults} onChange={(event) => updateOtherDayBalineseDraft('adults', Number(event.target.value))} />
+                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={otherDayBalineseDraft.adults} onChange={(event) => updateOtherDayBalineseDraft('adults', event.target.value)} />
               </label>
               <label>
                 Ninos
-                <input min={0} max={4} type="number" value={otherDayBalineseDraft.children} onChange={(event) => updateOtherDayBalineseDraft('children', Number(event.target.value))} />
+                <input min={0} max={4} step="1" inputMode="numeric" type="number" value={otherDayBalineseDraft.children} onChange={(event) => updateOtherDayBalineseDraft('children', event.target.value)} />
               </label>
               <label>
                 Paquete
