@@ -1,5 +1,6 @@
 import type { DbClient } from '../lib/clients.ts';
 import { validatePublicClient } from '../lib/clients.ts';
+import { getClientBookingUrl, getClientRestaurantName } from '../lib/clientPublicData.ts';
 import { sendEvolutionText } from '../lib/evolution.ts';
 import {
   appendSheetValues,
@@ -44,13 +45,15 @@ function getSafeErrorCode(error: unknown) {
 }
 
 function buildBranding(client: Record<string, unknown>) {
+  const restaurantName = getClientRestaurantName(client, 'es');
   return {
-    restaurante: toStringValue(client.rest_name) || 'Safari Restaurant',
-    restaurantName: toStringValue(client.rest_name) || 'Safari Restaurant',
+    restaurante: restaurantName,
+    restaurantName,
     color: toStringValue(client.primary_color),
     primaryColor: toStringValue(client.primary_color),
     logo: toStringValue(client.logo_url),
     logoUrl: toStringValue(client.logo_url),
+    bookingUrl: getClientBookingUrl(client),
     fondo: '',
     backgroundImageUrl: '',
   };

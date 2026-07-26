@@ -87,7 +87,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id')
+    .select('client_id, rest_name, status, sheet_id, booking_url, public_url, bot_url, contact_phone')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -167,7 +167,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
         await sendEvolutionText(reservation.telefono, buildInvitationMessage({
           idReserva: reservation.idReserva,
           nombre: reservation.nombre || 'Cliente',
-          restaurantName: client.restaurantName || 'Safari Restaurant',
+          restaurantName: client.restaurantName || (safeLanguage === 'en' ? 'the restaurant' : 'el restaurante'),
           idioma: safeLanguage,
         }));
       } catch (error) {

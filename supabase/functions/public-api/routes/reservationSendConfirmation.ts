@@ -1,5 +1,6 @@
 import type { DbClient } from '../lib/clients.ts';
 import { validatePublicClient } from '../lib/clients.ts';
+import { getPublicClientMessageData } from '../lib/clientPublicData.ts';
 import { sendEvolutionText } from '../lib/evolution.ts';
 import { createGoogleAccessToken, fetchSheetValues, updateSheetCell } from '../lib/googleSheets.ts';
 import {
@@ -95,7 +96,7 @@ function findMatchingReservations(rows: ReservationRow[], body: Record<string, u
   });
 }
 
-function buildMessageData(row: ReservationRow) {
+function buildMessageData(row: ReservationRow, restaurantName: string) {
   return {
     idReserva: row.idReserva,
     nombre: row.nombre,
@@ -104,6 +105,7 @@ function buildMessageData(row: ReservationRow) {
     personas: row.pax || String(toNumberValue(row.pax) || ''),
     servicio: row.servicio,
     paquete: row.paqueteBalinesa || 'BASIC',
+    restaurantName,
   };
 }
 
@@ -186,7 +188,8 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
   }
 
   const isBalinese = normalizeService(reservation.servicio) === 'BALINESA';
-  const message = buildReservationConfirmationMessage(buildMessageData(reservation), language, isBalinese);
+  const clientMessageData = getPublicClientMessageData(context.client, language);
+  const message = buildReservationConfirmationMessage(buildMessageData(reservation, clientMessageData.restaurantName), language, isBalinese);
 
   try {
     await sendEvolutionText(phone, message);

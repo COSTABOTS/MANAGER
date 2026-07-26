@@ -106,6 +106,11 @@ function numericInputValue(value: string) {
   return value.replace(/\D/g, '');
 }
 
+function getSubmitErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  return message ? `No se pudo guardar la reserva: ${message}` : 'No se pudo guardar la reserva. Revisa el error e intentalo de nuevo.';
+}
+
 export function Today({
   dayStatus,
   lastSync,
@@ -351,20 +356,24 @@ export function Today({
       return;
     }
 
-    await onAddManualReservation({
-      date: dayStatus.date,
-      time: '00:00',
-      name: balineseDraft.name.trim(),
-      room: balineseDraft.room.trim(),
-      phone: balineseDraft.phone.trim(),
-      pax,
-      specialRequest: balineseDraft.specialRequest.trim(),
-      service: 'BALINESA',
-      balinesePackage: balineseDraft.package,
-      resource: selectedBalineseResource.name,
-    });
+    try {
+      await onAddManualReservation({
+        date: dayStatus.date,
+        time: '00:00',
+        name: balineseDraft.name.trim(),
+        room: balineseDraft.room.trim(),
+        phone: balineseDraft.phone.trim(),
+        pax,
+        specialRequest: balineseDraft.specialRequest.trim(),
+        service: 'BALINESA',
+        balinesePackage: balineseDraft.package,
+        resource: selectedBalineseResource.name,
+      });
 
-    closeBalineseModal();
+      closeBalineseModal();
+    } catch (error) {
+      setBalineseError(getSubmitErrorMessage(error));
+    }
   }
 
   async function handleOtherDayBalineseSubmit(event: FormEvent<HTMLFormElement>) {
@@ -405,20 +414,24 @@ export function Today({
       return;
     }
 
-    await onAddManualReservation({
-      date: otherDayBalineseDraft.date,
-      time: '00:00',
-      name: otherDayBalineseDraft.name.trim(),
-      room: otherDayBalineseDraft.room.trim(),
-      phone: otherDayBalineseDraft.phone.trim(),
-      pax,
-      specialRequest: otherDayBalineseDraft.specialRequest.trim(),
-      service: 'BALINESA',
-      balinesePackage: otherDayBalineseDraft.package,
-      resource: otherDaySelectedResource.name,
-    });
+    try {
+      await onAddManualReservation({
+        date: otherDayBalineseDraft.date,
+        time: '00:00',
+        name: otherDayBalineseDraft.name.trim(),
+        room: otherDayBalineseDraft.room.trim(),
+        phone: otherDayBalineseDraft.phone.trim(),
+        pax,
+        specialRequest: otherDayBalineseDraft.specialRequest.trim(),
+        service: 'BALINESA',
+        balinesePackage: otherDayBalineseDraft.package,
+        resource: otherDaySelectedResource.name,
+      });
 
-    closeOtherDayBalineseModal();
+      closeOtherDayBalineseModal();
+    } catch (error) {
+      setOtherDayBalineseError(getSubmitErrorMessage(error));
+    }
   }
 
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
@@ -440,18 +453,22 @@ export function Today({
       return;
     }
 
-    await onAddManualReservation({
-      date: manualDraft.date,
-      time: manualDraft.time,
-      name: manualDraft.name.trim(),
-      room: manualDraft.room.trim(),
-      phone: manualDraft.phone.trim(),
-      pax,
-      specialRequest: manualDraft.specialRequest.trim() || 'No, ninguna',
-    });
+    try {
+      await onAddManualReservation({
+        date: manualDraft.date,
+        time: manualDraft.time,
+        name: manualDraft.name.trim(),
+        room: manualDraft.room.trim(),
+        phone: manualDraft.phone.trim(),
+        pax,
+        specialRequest: manualDraft.specialRequest.trim() || 'No, ninguna',
+      });
 
-    resetManualDraft();
-    setIsManualModalOpen(false);
+      resetManualDraft();
+      setIsManualModalOpen(false);
+    } catch (error) {
+      setManualError(getSubmitErrorMessage(error));
+    }
   }
 
   return (

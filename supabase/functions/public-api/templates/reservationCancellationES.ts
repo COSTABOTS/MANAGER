@@ -1,8 +1,22 @@
 import type { PublicCancellationReservation } from '../lib/cancellations.ts';
 
-const RESERVATION_LINK = 'https://safari.costabots.com';
+interface CancellationTemplateOptions {
+  restaurantName: string;
+  bookingUrl?: string;
+}
 
-export function buildReservationCancellationES(reservation: PublicCancellationReservation) {
+function bookingBlock(bookingUrl?: string) {
+  return bookingUrl
+    ? `
+Si deseas hacer una nueva reserva, puedes hacerlo facilmente aqui:
+${bookingUrl}
+`
+    : '';
+}
+
+export function buildReservationCancellationES(reservation: PublicCancellationReservation, options: CancellationTemplateOptions) {
+  const restaurantName = options.restaurantName || 'el restaurante';
+
   if (reservation.servicio === 'BALINESA') {
     const packageLine = reservation.paqueteBalinesa ? `\n\n🏖️ Paquete: ${reservation.paqueteBalinesa}` : '';
 
@@ -13,13 +27,10 @@ Hola ${reservation.nombre}.
 Su reserva de balinesa para el ${reservation.fecha} ha sido cancelada correctamente.
 
 👥 Personas: ${reservation.personas}${packageLine}
-
-Si deseas hacer una nueva reserva, puedes hacerlo fácilmente aquí:
-${RESERVATION_LINK}
-
+${bookingBlock(options.bookingUrl)}
 Gracias por avisarnos.
 
-Safari Restaurant`;
+${restaurantName}`;
   }
 
   return `✅ Reserva cancelada
@@ -29,11 +40,8 @@ Hola ${reservation.nombre}.
 Su reserva para el ${reservation.fecha} a las ${reservation.hora} ha sido cancelada correctamente.
 
 👥 Personas: ${reservation.personas}
-
-Si deseas hacer una nueva reserva, puedes hacerlo fácilmente aquí:
-${RESERVATION_LINK}
-
+${bookingBlock(options.bookingUrl)}
 Gracias por avisarnos.
 
-Safari Restaurant`;
+${restaurantName}`;
 }

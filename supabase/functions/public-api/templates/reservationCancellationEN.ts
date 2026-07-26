@@ -1,8 +1,22 @@
 import type { PublicCancellationReservation } from '../lib/cancellations.ts';
 
-const RESERVATION_LINK = 'https://safari.costabots.com';
+interface CancellationTemplateOptions {
+  restaurantName: string;
+  bookingUrl?: string;
+}
 
-export function buildReservationCancellationEN(reservation: PublicCancellationReservation) {
+function bookingBlock(bookingUrl?: string) {
+  return bookingUrl
+    ? `
+If you would like to make a new reservation, you can easily do so here:
+${bookingUrl}
+`
+    : '';
+}
+
+export function buildReservationCancellationEN(reservation: PublicCancellationReservation, options: CancellationTemplateOptions) {
+  const restaurantName = options.restaurantName || 'the restaurant';
+
   if (reservation.servicio === 'BALINESA') {
     const packageLine = reservation.paqueteBalinesa ? `\n\n🏖️ Package: ${reservation.paqueteBalinesa}` : '';
 
@@ -13,15 +27,12 @@ Hello ${reservation.nombre}.
 We confirm that your balinese bed reservation for ${reservation.fecha} has been successfully cancelled.
 
 👥 Guests: ${reservation.personas}${packageLine}
-
-If you would like to make a new reservation, you can easily do so here:
-${RESERVATION_LINK}
-
+${bookingBlock(options.bookingUrl)}
 Thank you for informing us in advance.
 
 We look forward to welcoming you again soon.
 
-Safari Restaurant`;
+${restaurantName}`;
   }
 
   return `✅ Reservation Cancellation Confirmation
@@ -31,13 +42,10 @@ Hello ${reservation.nombre}.
 We confirm that your reservation for ${reservation.fecha} at ${reservation.hora} has been successfully cancelled.
 
 👥 Guests: ${reservation.personas}
-
-If you would like to make a new reservation, you can easily do so here:
-${RESERVATION_LINK}
-
+${bookingBlock(options.bookingUrl)}
 Thank you for informing us in advance.
 
 We look forward to welcoming you again soon.
 
-Safari Restaurant`;
+${restaurantName}`;
 }

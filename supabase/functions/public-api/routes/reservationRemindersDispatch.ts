@@ -78,7 +78,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id')
+    .select('client_id, rest_name, status, sheet_id, booking_url, public_url, bot_url, contact_phone')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -165,7 +165,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
           nombre: reservation.nombre || 'Cliente',
           hora: reservation.hora,
           personas: reservation.personas,
-          restaurantName: client.restaurantName || 'Restaurante',
+          restaurantName: client.restaurantName || (safeLanguage === 'en' ? 'the restaurant' : 'el restaurante'),
           idioma: safeLanguage,
         }));
       } catch (error) {

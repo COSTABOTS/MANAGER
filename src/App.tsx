@@ -1255,6 +1255,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     return USE_MANAGER_API && Boolean(clientConfig);
   }
 
+  function shouldUseManagerApiForReservations() {
+    return USE_MANAGER_API && Boolean(clientConfig);
+  }
+
   async function loadFullyBookedStatus(date: string) {
     if (!isSupabaseDemoRoute()) {
       return;
@@ -2174,9 +2178,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const walkInTime = getCurrentTime();
     const walkInService = getWalkInServiceForTime(walkInTime, settings);
 
-    if (isSupabaseDemoRoute()) {
+    if (shouldUseManagerApiForReservations()) {
       const date = dayStatus.date;
       try {
+        console.log('[MANAGER_API][WALKIN] creating', {
+          clientId: clientConfig?.client_id,
+          sheetId: getClientSheetId(),
+          fecha: date,
+          hora: walkInTime,
+          pax,
+          servicio: walkInService,
+        });
         console.log('[WALKIN_SERVICE]', {
           time: walkInTime,
           servicesEnabled: settings.servicesEnabled,
@@ -2184,7 +2196,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           calculatedService: walkInService,
         });
         console.log('[STEP1]', walkInService);
-        await createWalkInWithManagerApi({
+        const response = await createWalkInWithManagerApi({
           nombre: nameOrRoom || 'Walk-in',
           habitacion: /^\d+$/.test(nameOrRoom) ? nameOrRoom : '',
           fecha: date,
@@ -2195,6 +2207,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           mesa: '',
           servicio: walkInService,
         });
+        console.log('[MANAGER_API][WALKIN] append confirmed', response);
         setLastSync('Mesa añadida correctamente');
         console.log('[DEMO][WALKIN] refresh list');
         await loadReservations();
@@ -2255,9 +2268,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
     const reservationService = reservation.service ?? getWalkInServiceForTime(reservation.time, settings);
 
-    if (isSupabaseDemoRoute()) {
+    if (shouldUseManagerApiForReservations()) {
       try {
-        await createManualReservationWithManagerApi({
+        console.log('[MANAGER_API][RESERVATION_CREATE] creating', {
+          clientId: clientConfig?.client_id,
+          sheetId: getClientSheetId(),
+          fecha: reservation.date,
+          hora: reservation.time,
+          pax: reservation.pax,
+          servicio: reservationService,
+        });
+        const response = await createManualReservationWithManagerApi({
           nombre: reservation.name,
           habitacion: reservation.room,
           telefono: reservation.phone,
@@ -2275,6 +2296,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           recurso: reservation.resource ?? '',
           resource: reservation.resource ?? '',
         });
+        console.log('[MANAGER_API][RESERVATION_CREATE] append confirmed', response);
         setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
         await loadReservations();
@@ -2282,7 +2304,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       } catch (error) {
         console.warn('[MANAGER_API] reservation.create failed', error);
         setLastSync('No se pudo crear la reserva con manager-api');
-        return;
+        throw error;
       }
     }
 
@@ -2354,7 +2376,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     if (field === 'arrived') {
-      if (isSupabaseDemoRoute()) {
+      if (shouldUseManagerApiForReservations()) {
         try {
           await saveArrivalWithManagerApi(getReservationSyncId(nextReservation), Boolean(nextReservation.arrived));
           setLastSync('Sincronizado correctamente');
@@ -2379,7 +2401,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    if (isSupabaseDemoRoute()) {
+    if (shouldUseManagerApiForReservations()) {
       try {
         await assignTableWithManagerApi(getReservationSyncId(nextReservation), String(nextReservation.table));
         setLastSync('Sincronizado correctamente');
@@ -2408,7 +2430,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    if (isSupabaseDemoRoute()) {
+    if (shouldUseManagerApiForReservations()) {
       try {
         await cancelReservationWithManagerApi(reservationToCancel.idReserva);
         setAllReservations((current) =>

@@ -8,10 +8,16 @@ export interface ReservationMessageData {
   personas: string;
   servicio: string;
   paquete: string;
+  restaurantName: string;
+}
+
+function cancellationUrl(idReserva: string, language: PublicLanguage) {
+  const langQuery = language === 'en' ? '&lang=en' : '';
+  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(idReserva)}${langQuery}`;
 }
 
 function restaurantEs(data: ReservationMessageData) {
-  return `🌴 Safari Restaurant
+  return `🌴 ${data.restaurantName}
 
 ✅ Tu reserva ha sido confirmada.
 
@@ -21,15 +27,15 @@ Nombre: ${data.nombre}
 👥 Personas: ${data.personas}
 
 ❌ Si necesitas cancelar tu reserva:
-https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}
+${cancellationUrl(data.idReserva, 'es')}
 
 ¡Te esperamos!
 
-Safari Restaurant`;
+${data.restaurantName}`;
 }
 
 function restaurantEn(data: ReservationMessageData) {
-  return `🌴 Safari Restaurant
+  return `🌴 ${data.restaurantName}
 
 ✅ Your reservation has been confirmed.
 
@@ -39,15 +45,15 @@ Name: ${data.nombre}
 👥 Guests: ${data.personas}
 
 ❌ If you need to cancel your reservation:
-https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}&lang=en
+${cancellationUrl(data.idReserva, 'en')}
 
 We look forward to welcoming you!
 
-Safari Restaurant`;
+${data.restaurantName}`;
 }
 
 function balineseEs(data: ReservationMessageData) {
-  return `🌴 Santa Cruz Suites
+  return `🌴 ${data.restaurantName}
 
 ✅ Tu cama balinesa ha sido confirmada.
 
@@ -57,15 +63,15 @@ Nombre: ${data.nombre}
 👥 Paquete: ${data.paquete}
 
 ❌ Si necesitas cancelar tu reserva:
-https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}
+${cancellationUrl(data.idReserva, 'es')}
 
 ¡Te esperamos!
 
-Santa Cruz Suites`;
+${data.restaurantName}`;
 }
 
 function balineseEn(data: ReservationMessageData) {
-  return `🌴 Santa Cruz Suites
+  return `🌴 ${data.restaurantName}
 
 ✅ Your Balinese bed has been confirmed.
 
@@ -75,11 +81,11 @@ Name: ${data.nombre}
 👥 Package: ${data.paquete}
 
 ❌ If you need to cancel your reservation:
-https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}
+${cancellationUrl(data.idReserva, 'en')}
 
 We look forward to welcoming you!
 
-Santa Cruz Suites`;
+${data.restaurantName}`;
 }
 
 export function buildReservationConfirmationMessage(data: ReservationMessageData, language: PublicLanguage, isBalinese: boolean) {

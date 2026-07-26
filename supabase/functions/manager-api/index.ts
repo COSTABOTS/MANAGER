@@ -28,6 +28,14 @@ type ManagerAction =
   | 'client.license.update'
   | 'client.branding.update';
 type SheetRow = Record<string, string | number | boolean>;
+type GoogleSheetsAppendResult = {
+  updates?: {
+    updatedRange?: string;
+    updatedRows?: number;
+    updatedColumns?: number;
+    updatedCells?: number;
+  };
+};
 type ManagerApiDebug = {
   hasAuthHeader: boolean;
   userId: string;
@@ -2092,8 +2100,28 @@ async function createReservation(request: Request, clientId: string, sheetId: st
 
   if (!appendResponse.ok) {
     const errorBody = await appendResponse.text();
+    console.error('[MANAGER_API][reservation.create] append error', {
+      clientId,
+      sheetId,
+      range: 'RESERVAS!A:S',
+      rowLength: rowToAppend.length,
+      status: appendResponse.status,
+      errorBody,
+    });
     throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
   }
+
+  const appendResult = await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
+  console.log('[MANAGER_API][reservation.create] append confirmed', {
+    clientId,
+    sheetId,
+    range: 'RESERVAS!A:S',
+    rowLength: rowToAppend.length,
+    updatedRange: appendResult?.updates?.updatedRange,
+    updatedRows: appendResult?.updates?.updatedRows,
+    updatedColumns: appendResult?.updates?.updatedColumns,
+    updatedCells: appendResult?.updates?.updatedCells,
+  });
 
   return jsonResponse(request, {
     ok: true,
@@ -2180,8 +2208,28 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
 
   if (!appendResponse.ok) {
     const errorBody = await appendResponse.text();
+    console.error('[MANAGER_API][walkin.create] append error', {
+      clientId,
+      sheetId,
+      range: 'RESERVAS!A:S',
+      rowLength: rowToAppend.length,
+      status: appendResponse.status,
+      errorBody,
+    });
     throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
   }
+
+  const appendResult = await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
+  console.log('[MANAGER_API][walkin.create] append confirmed', {
+    clientId,
+    sheetId,
+    range: 'RESERVAS!A:S',
+    rowLength: rowToAppend.length,
+    updatedRange: appendResult?.updates?.updatedRange,
+    updatedRows: appendResult?.updates?.updatedRows,
+    updatedColumns: appendResult?.updates?.updatedColumns,
+    updatedCells: appendResult?.updates?.updatedCells,
+  });
 
   return jsonResponse(request, {
     ok: true,

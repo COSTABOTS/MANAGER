@@ -1,5 +1,6 @@
 import type { DbClient } from '../lib/clients.ts';
 import { validatePublicClient } from '../lib/clients.ts';
+import { getPublicClientMessageData } from '../lib/clientPublicData.ts';
 import {
   findCancellationReservation,
   getCancellationPhone,
@@ -28,10 +29,16 @@ function getIdReserva(body: Record<string, unknown>) {
   return toStringValue(body.id_reserva ?? body.idReserva ?? body.ID_RESERVA);
 }
 
-function buildCancellationMessage(reservation: ReturnType<typeof normalizeCancellationReservations>[number]) {
+function buildCancellationMessage(reservation: ReturnType<typeof normalizeCancellationReservations>[number], client: Record<string, unknown>) {
+  const clientMessageData = getPublicClientMessageData(client, reservation.idioma);
+  const options = {
+    restaurantName: clientMessageData.restaurantName,
+    bookingUrl: clientMessageData.bookingUrl,
+  };
+
   return reservation.idioma === 'en'
-    ? buildReservationCancellationEN(reservation)
-    : buildReservationCancellationES(reservation);
+    ? buildReservationCancellationEN(reservation, options)
+    : buildReservationCancellationES(reservation, options);
 }
 
 function getSafeGoogleError(error: unknown) {
@@ -152,7 +159,7 @@ export async function handleReservationCancellation(request: Request, dbClient: 
   const phone = getCancellationPhone(reservation);
   if (phone) {
     try {
-      await sendEvolutionText(phone, buildCancellationMessage(reservation));
+      await sendEvolutionText(phone, buildCancellationMessage(reservation, context.client));
     } catch (error) {
       console.error('[PUBLIC_API][CANCELLATION][WHATSAPP_SEND_FAILED]', {
         reservationId: reservation.idReserva,

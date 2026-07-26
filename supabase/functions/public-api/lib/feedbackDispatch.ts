@@ -11,10 +11,12 @@ import {
   toStringValue,
 } from './normalization.ts';
 import { columnNumberToLetter } from './feedback.ts';
+import { getClientBookingUrl, getClientRestaurantName } from './clientPublicData.ts';
 
 export interface DispatchClient {
   clientId: string;
   restaurantName: string;
+  bookingUrl: string;
   sheetId: string;
 }
 
@@ -140,7 +142,8 @@ export function getReservationFeedbackSentColumn(values: unknown[][] | undefined
 export function normalizeDispatchClients(rows: Array<Record<string, unknown>> | null | undefined): DispatchClient[] {
   return (rows ?? []).flatMap((client) => {
     const clientId = toStringValue(client.client_id ?? client.clientId);
-    const restaurantName = toStringValue(client.rest_name ?? client.restName) || clientId;
+    const restaurantName = getClientRestaurantName(client, 'es');
+    const bookingUrl = getClientBookingUrl(client);
     const sheetId = toStringValue(client.sheet_id ?? client.sheetId);
     const status = toStringValue(client.status).toUpperCase() || 'ACTIVE';
 
@@ -148,7 +151,7 @@ export function normalizeDispatchClients(rows: Array<Record<string, unknown>> | 
       return [];
     }
 
-    return [{ clientId, restaurantName, sheetId }];
+    return [{ clientId, restaurantName, bookingUrl, sheetId }];
   });
 }
 
