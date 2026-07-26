@@ -118,8 +118,11 @@ export async function handleReservationCancellation(request: Request, dbClient: 
       return jsonResponse(request, { encontrada: false });
     }
 
+    const clientMessageData = getPublicClientMessageData(context.client, reservation.idioma);
+
     return jsonResponse(request, {
       encontrada: true,
+      restaurante: clientMessageData.restaurantName,
       nombre: reservation.nombre,
       fecha: reservation.fecha,
       hora: reservation.hora,
@@ -129,6 +132,8 @@ export async function handleReservationCancellation(request: Request, dbClient: 
       servicio: reservation.servicio,
       paquete_balinesa: reservation.paqueteBalinesa,
       recurso: reservation.recurso,
+      logo_url: toStringValue(context.client.logo_url),
+      primaryColor: toStringValue(context.client.primary_color),
     });
   }
 

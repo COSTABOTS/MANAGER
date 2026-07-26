@@ -1,18 +1,20 @@
 interface ReservationReminderParams {
   idReserva: string;
+  clientId: string;
+  publicToken: string;
   nombre: string;
   hora: string;
   personas: number;
   restaurantName: string;
 }
 
-export function buildReservationReminderES({
-  idReserva,
-  nombre,
-  hora,
-  personas,
-  restaurantName,
-}: ReservationReminderParams) {
+function cancellationUrl({ idReserva, clientId, publicToken }: ReservationReminderParams) {
+  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(idReserva)}&client_id=${encodeURIComponent(clientId)}&public_token=${encodeURIComponent(publicToken)}`;
+}
+
+export function buildReservationReminderES(params: ReservationReminderParams) {
+  const { nombre, hora, personas, restaurantName } = params;
+
   return `🌴 ${restaurantName}
 
 Hola ${nombre} 😊
@@ -20,7 +22,7 @@ Hola ${nombre} 😊
 Te recordamos que tienes una reserva hoy a las ${hora} para ${personas} personas.
 
 Si necesitas cancelar tu reserva, puedes hacerlo aquí:
-https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(idReserva)}
+${cancellationUrl(params)}
 
 ¡Te esperamos!
 

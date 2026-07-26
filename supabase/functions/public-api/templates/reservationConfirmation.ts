@@ -9,11 +9,13 @@ export interface ReservationMessageData {
   servicio: string;
   paquete: string;
   restaurantName: string;
+  clientId: string;
+  publicToken: string;
 }
 
-function cancellationUrl(idReserva: string, language: PublicLanguage) {
+function cancellationUrl(data: ReservationMessageData, language: PublicLanguage) {
   const langQuery = language === 'en' ? '&lang=en' : '';
-  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(idReserva)}${langQuery}`;
+  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}&client_id=${encodeURIComponent(data.clientId)}&public_token=${encodeURIComponent(data.publicToken)}${langQuery}`;
 }
 
 function restaurantEs(data: ReservationMessageData) {
@@ -27,7 +29,7 @@ Nombre: ${data.nombre}
 👥 Personas: ${data.personas}
 
 ❌ Si necesitas cancelar tu reserva:
-${cancellationUrl(data.idReserva, 'es')}
+${cancellationUrl(data, 'es')}
 
 ¡Te esperamos!
 
@@ -45,7 +47,7 @@ Name: ${data.nombre}
 👥 Guests: ${data.personas}
 
 ❌ If you need to cancel your reservation:
-${cancellationUrl(data.idReserva, 'en')}
+${cancellationUrl(data, 'en')}
 
 We look forward to welcoming you!
 
@@ -63,7 +65,7 @@ Nombre: ${data.nombre}
 👥 Paquete: ${data.paquete}
 
 ❌ Si necesitas cancelar tu reserva:
-${cancellationUrl(data.idReserva, 'es')}
+${cancellationUrl(data, 'es')}
 
 ¡Te esperamos!
 
@@ -81,7 +83,7 @@ Name: ${data.nombre}
 👥 Package: ${data.paquete}
 
 ❌ If you need to cancel your reservation:
-${cancellationUrl(data.idReserva, 'en')}
+${cancellationUrl(data, 'en')}
 
 We look forward to welcoming you!
 

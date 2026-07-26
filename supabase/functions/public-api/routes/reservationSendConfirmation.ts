@@ -96,7 +96,7 @@ function findMatchingReservations(rows: ReservationRow[], body: Record<string, u
   });
 }
 
-function buildMessageData(row: ReservationRow, restaurantName: string) {
+function buildMessageData(row: ReservationRow, context: { clientId: string; client: Record<string, unknown> }, restaurantName: string) {
   return {
     idReserva: row.idReserva,
     nombre: row.nombre,
@@ -106,6 +106,8 @@ function buildMessageData(row: ReservationRow, restaurantName: string) {
     servicio: row.servicio,
     paquete: row.paqueteBalinesa || 'BASIC',
     restaurantName,
+    clientId: context.clientId,
+    publicToken: toStringValue(context.client.public_token),
   };
 }
 
@@ -189,7 +191,11 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
 
   const isBalinese = normalizeService(reservation.servicio) === 'BALINESA';
   const clientMessageData = getPublicClientMessageData(context.client, language);
-  const message = buildReservationConfirmationMessage(buildMessageData(reservation, clientMessageData.restaurantName), language, isBalinese);
+  console.log('[PUBLIC_API][SEND_CONFIRMATION][CANCEL_LINK_CONTEXT]', {
+    clientId: context.clientId,
+    hasPublicToken: Boolean(toStringValue(context.client.public_token)),
+  });
+  const message = buildReservationConfirmationMessage(buildMessageData(reservation, context, clientMessageData.restaurantName), language, isBalinese);
 
   try {
     await sendEvolutionText(phone, message);

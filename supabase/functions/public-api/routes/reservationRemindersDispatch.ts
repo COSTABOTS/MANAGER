@@ -36,6 +36,8 @@ function getSafeErrorCode(error: unknown) {
 
 function buildReminderMessage(params: {
   idReserva: string;
+  clientId: string;
+  publicToken: string;
   nombre: string;
   hora: string;
   personas: number;
@@ -78,7 +80,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -162,6 +164,8 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       try {
         await sendEvolutionText(reservation.telefono, buildReminderMessage({
           idReserva: reservation.idReserva,
+          clientId: client.clientId,
+          publicToken: client.publicToken,
           nombre: reservation.nombre || 'Cliente',
           hora: reservation.hora,
           personas: reservation.personas,
