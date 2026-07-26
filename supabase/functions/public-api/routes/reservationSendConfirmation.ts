@@ -16,7 +16,11 @@ import {
   toStringValue,
 } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
-import { buildReservationConfirmationMessage } from '../templates/reservationConfirmation.ts';
+import {
+  buildReservationCancellationUrl,
+  buildReservationConfirmationMessage,
+  maskReservationCancellationUrl,
+} from '../templates/reservationConfirmation.ts';
 
 type ReservationRow = {
   rowNumber: number;
@@ -191,11 +195,14 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
 
   const isBalinese = normalizeService(reservation.servicio) === 'BALINESA';
   const clientMessageData = getPublicClientMessageData(context.client, language);
+  const messageData = buildMessageData(reservation, context, clientMessageData.restaurantName);
+  const cancellationLink = buildReservationCancellationUrl(messageData, language);
   console.log('[PUBLIC_API][SEND_CONFIRMATION][CANCEL_LINK_CONTEXT]', {
     clientId: context.clientId,
-    hasPublicToken: Boolean(toStringValue(context.client.public_token)),
+    url: maskReservationCancellationUrl(cancellationLink),
+    hasPublicToken: Boolean(messageData.publicToken),
   });
-  const message = buildReservationConfirmationMessage(buildMessageData(reservation, context, clientMessageData.restaurantName), language, isBalinese);
+  const message = buildReservationConfirmationMessage(messageData, language, isBalinese);
 
   try {
     await sendEvolutionText(phone, message);
