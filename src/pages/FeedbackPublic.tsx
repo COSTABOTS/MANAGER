@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { CheckCircle2, Send, Star } from 'lucide-react';
 import { CLIENT_CONFIG_KEY } from '../services/clientConfig';
-import { loadPublicFeedbackDetails, submitFeedback } from '../services/publicFeedback';
-import type { FeedbackSubmitState } from '../services/publicFeedback';
+import { getPublicFeedbackClientContextFromUrl, loadPublicFeedbackDetails, submitFeedback } from '../services/publicFeedback';
+import type { FeedbackSubmitState, PublicFeedbackClientContext } from '../services/publicFeedback';
 
 interface FeedbackPublicProps {
   idReserva: string;
@@ -18,7 +18,7 @@ interface FeedbackBranding {
 }
 
 const FALLBACK_BRANDING: FeedbackBranding = {
-  restaurantName: 'Safari Restaurant',
+  restaurantName: 'el restaurante',
   primaryColor: '#2f7d4a',
   logoUrl: '',
   backgroundImageUrl: '',
@@ -73,11 +73,11 @@ function getStoredFeedbackBranding(): FeedbackBranding {
   }
 }
 
-async function loadPublicFeedbackBranding(idReserva: string): Promise<FeedbackBranding> {
+async function loadPublicFeedbackBranding(idReserva: string, clientContext: PublicFeedbackClientContext): Promise<FeedbackBranding> {
   const storedBranding = getStoredFeedbackBranding();
 
   try {
-    const details = await loadPublicFeedbackDetails(idReserva);
+    const details = await loadPublicFeedbackDetails(idReserva, clientContext);
     if (!details || details.encontrada === false) {
       return storedBranding;
     }
@@ -90,6 +90,7 @@ async function loadPublicFeedbackBranding(idReserva: string): Promise<FeedbackBr
 }
 
 export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
+  const feedbackClientContext = useMemo(() => getPublicFeedbackClientContextFromUrl(), []);
   const [branding, setBranding] = useState<FeedbackBranding>(() => getStoredFeedbackBranding());
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -101,7 +102,7 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
     let isMounted = true;
     console.log('[FeedbackPublic mounted]', idReserva);
 
-    loadPublicFeedbackBranding(idReserva)
+    loadPublicFeedbackBranding(idReserva, feedbackClientContext)
       .then((nextBranding) => {
         if (!isMounted) return;
         setBranding(nextBranding);
@@ -118,7 +119,7 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
     return () => {
       isMounted = false;
     };
-  }, [idReserva]);
+  }, [feedbackClientContext, idReserva]);
 
   const accentStyle = useMemo(
     () =>
@@ -140,13 +141,16 @@ export function FeedbackPublic({ idReserva }: FeedbackPublicProps) {
     setErrorMessage('');
 
     try {
-      const result = await submitFeedback({
-        id_reserva: idReserva,
-        puntuacion: rating,
-        puntuacion_texto: getRatingText(rating),
-        comentario: comment.trim(),
-        timestamp: new Date().toISOString(),
-      });
+      const result = await submitFeedback(
+        {
+          id_reserva: idReserva,
+          puntuacion: rating,
+          puntuacion_texto: getRatingText(rating),
+          comentario: comment.trim(),
+          timestamp: new Date().toISOString(),
+        },
+        feedbackClientContext,
+      );
       setStatus(result.alreadySubmitted ? 'already_submitted' : 'success');
     } catch (error) {
       console.error('[Safari Manager] Error enviando feedback publico', error);

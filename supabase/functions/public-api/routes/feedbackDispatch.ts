@@ -13,7 +13,7 @@ import {
 import { normalizeDateKey, toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildFeedbackInvitationEN } from '../templates/feedbackInvitationEN.ts';
-import { buildFeedbackInvitationES } from '../templates/feedbackInvitationES.ts';
+import { buildFeedbackInvitationES, buildFeedbackUrl, maskFeedbackUrl } from '../templates/feedbackInvitationES.ts';
 
 function constantTimeEqual(left: string, right: string) {
   if (!left || !right || left.length !== right.length) {
@@ -40,6 +40,8 @@ function getSafeErrorCode(error: unknown) {
 
 function buildInvitationMessage(params: {
   idReserva: string;
+  clientId: string;
+  publicToken: string;
   nombre: string;
   restaurantName: string;
   idioma: 'es' | 'en';
@@ -87,7 +89,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -164,12 +166,21 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
       }
 
       try {
-        await sendEvolutionText(reservation.telefono, buildInvitationMessage({
+        const messageParams = {
           idReserva: reservation.idReserva,
+          clientId: client.clientId,
+          publicToken: client.publicToken,
           nombre: reservation.nombre || 'Cliente',
           restaurantName: client.restaurantName || (safeLanguage === 'en' ? 'the restaurant' : 'el restaurante'),
           idioma: safeLanguage,
-        }));
+        };
+        console.log('[PUBLIC_API][FEEDBACK][LINK_CONTEXT]', {
+          client_id: client.clientId,
+          id_reserva: reservation.idReserva,
+          url: maskFeedbackUrl(buildFeedbackUrl(messageParams, safeLanguage)),
+          idioma: safeLanguage,
+        });
+        await sendEvolutionText(reservation.telefono, buildInvitationMessage(messageParams));
       } catch (error) {
         const code = getSafeErrorCode(error);
         console.error('[PUBLIC_API][FEEDBACK_DISPATCH][SEND_FAILED]', {

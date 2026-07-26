@@ -1195,8 +1195,19 @@ async function updateClientBranding(
   }
 
   const branding = (body.branding && typeof body.branding === 'object' ? body.branding : body) as Record<string, unknown>;
+  const hasRestName = Object.prototype.hasOwnProperty.call(branding, 'rest_name')
+    || Object.prototype.hasOwnProperty.call(branding, 'restName')
+    || Object.prototype.hasOwnProperty.call(branding, 'restaurantName');
+  const restName = toSheetString(branding.rest_name ?? branding.restName ?? branding.restaurantName);
   const primaryColor = toSheetString(branding.primary_color ?? branding.primaryColor);
   const logoUrl = toSheetString(branding.logo_url ?? branding.logoUrl ?? branding.restaurantLogoUrl);
+
+  if (hasRestName && !restName) {
+    return errorResponse(request, 'INVALID_REST_NAME', 'rest_name no puede estar vacio', 200, {
+      action: 'client.branding.update',
+      clientId: context.clientId,
+    });
+  }
 
   if (!/^#[0-9a-f]{6}$/i.test(primaryColor)) {
     return errorResponse(request, 'INVALID_PRIMARY_COLOR', 'primary_color no es un HEX valido', 200, {
@@ -1218,19 +1229,37 @@ async function updateClientBranding(
     }
   }
 
+  const payload: { primary_color: string; logo_url: string; rest_name?: string } = {
+    primary_color: primaryColor,
+    logo_url: logoUrl,
+  };
+  if (hasRestName) {
+    payload.rest_name = restName;
+  }
+
+  console.log('[CLIENT_BRANDING_UPDATE]', {
+    targetClientId: context.clientId,
+    payload,
+  });
+
   const { data, error } = await context.dbClient
     .from('CLIENTES')
-    .update({ primary_color: primaryColor, logo_url: logoUrl })
+    .update(payload)
     .eq('client_id', context.clientId)
     .select('client_id, rest_name, primary_color, logo_url, sheet_id, status, plan, expires_at, is_demo')
     .single();
+
+  console.log('[CLIENT_BRANDING_UPDATE_RESULT]', {
+    targetClientId: context.clientId,
+    updatedClient: data,
+    updateError: error,
+  });
 
   if (error || !data) {
     return errorResponse(request, 'CLIENT_BRANDING_UPDATE_FAILED', error?.message || 'No se pudo actualizar branding', 200, {
       action: 'client.branding.update',
       clientId: context.clientId,
-      primaryColor,
-      logoUrl,
+      payload,
       updateError: error?.message,
     });
   }

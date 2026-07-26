@@ -1861,7 +1861,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     await syncResource('delete', resource);
   }
 
-  function applyClientBranding(primaryColor: string, restaurantLogoUrl: string, updatedClient?: ManagedClientOption) {
+  function applyClientBranding(restaurantName: string, primaryColor: string, restaurantLogoUrl: string, updatedClient?: ManagedClientOption) {
     setClientConfig((current) => {
       if (!current) {
         return current;
@@ -1872,6 +1872,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         ? {
             ...current.selectedClient,
             ...(updatedClient ?? {}),
+            rest_name: restaurantName,
             primary_color: primaryColor,
             logo_url: restaurantLogoUrl,
           }
@@ -1882,6 +1883,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
               ? {
                   ...client,
                   ...(updatedClient ?? {}),
+                  rest_name: restaurantName,
                   primary_color: primaryColor,
                   logo_url: restaurantLogoUrl,
                 }
@@ -1891,6 +1893,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
       const nextConfig = normalizeClientConfig({
         ...current,
+        rest_nombre: restaurantName,
+        rest_name: restaurantName,
+        restaurantName,
         color: primaryColor,
         primary_color: primaryColor,
         primaryColor,
@@ -1918,19 +1923,28 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const currentColor = normalizeHexColor(clientConfig?.primary_color ?? clientConfig?.primaryColor);
     const nextLogoUrl = nextSettings.restaurantLogoUrl.trim();
     const currentLogoUrl = String(clientConfig?.logo_url ?? clientConfig?.logo_restaurante ?? clientConfig?.restaurantLogoUrl ?? '').trim();
+    const nextRestaurantName = nextSettings.restaurantName.trim();
+    const currentRestaurantName = String(clientConfig?.rest_name ?? clientConfig?.rest_nombre ?? clientConfig?.restaurantName ?? '').trim();
 
-    if (nextColor === currentColor && nextLogoUrl === currentLogoUrl) {
+    if (nextColor === currentColor && nextLogoUrl === currentLogoUrl && nextRestaurantName === currentRestaurantName) {
       return true;
     }
 
     try {
-      const result = await saveClientBrandingWithManagerApi(nextColor, nextLogoUrl);
-      applyClientBranding(nextColor, nextLogoUrl, mapManagedClient(result.client as unknown as Record<string, unknown>));
-      setSettingsMessage('Branding guardado en CLIENTES');
+      console.log('[BRANDING] saving client visible fields', {
+        client_id: String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim(),
+        rest_name: nextRestaurantName,
+        primary_color: nextColor,
+        logo_url: nextLogoUrl,
+      });
+      const result = await saveClientBrandingWithManagerApi(nextColor, nextLogoUrl, nextRestaurantName);
+      const updatedClient = mapManagedClient(result.client as unknown as Record<string, unknown>);
+      applyClientBranding(updatedClient.rest_name || nextRestaurantName, nextColor, nextLogoUrl, updatedClient);
+      setSettingsMessage('Cliente guardado en CLIENTES');
       return true;
     } catch (error) {
       console.error('[BRANDING] save error', error);
-      setSettingsMessage('No se pudo guardar el branding en CLIENTES');
+      setSettingsMessage('No se pudo guardar el cliente en CLIENTES');
       return false;
     }
   }
@@ -2666,6 +2680,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 }
 
 function getPublicFeedbackReservationId() {
+  const params = new URLSearchParams(window.location.search);
+  const queryId = params.get('id_reserva')?.trim() || params.get('id')?.trim();
+  if (queryId) return queryId;
+
   const match = window.location.pathname.match(/^\/feedback\/([^/]+)\/?$/);
   return match?.[1] ? decodeURIComponent(match[1]) : '';
 }

@@ -1,10 +1,16 @@
+import { buildFeedbackUrl } from './feedbackInvitationES.ts';
+
 interface FeedbackInvitationParams {
   idReserva: string;
+  clientId: string;
+  publicToken: string;
   nombre: string;
   restaurantName: string;
 }
 
-export function buildFeedbackInvitationEN({ idReserva, nombre, restaurantName }: FeedbackInvitationParams) {
+export function buildFeedbackInvitationEN(params: FeedbackInvitationParams) {
+  const { nombre, restaurantName } = params;
+
   return `🌴 ${restaurantName}
 
 Hello ${nombre} 😊
@@ -14,7 +20,7 @@ Thank you for visiting ${restaurantName}.
 We hope you enjoyed your experience with us.
 
 ⭐ We'd love to hear your feedback:
-https://costabots-feedback-public.vercel.app/feedback/${encodeURIComponent(idReserva)}?lang=en
+${buildFeedbackUrl(params, 'en')}
 
 Your opinion helps us continue improving and providing the best possible service.
 
