@@ -69,6 +69,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const force = body.force === true;
   const clock = getCurrentMadridClock(body);
+  const nowUtc = new Date().toISOString();
   let messagesSent = 0;
   let messagesFailed = 0;
   let reservationsFound = 0;
@@ -116,6 +117,14 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
     }
 
     const preDinnerConfig = getPreDinnerMessageConfig(settingsData.values);
+    console.log('[PRE_DINNER][CLIENT]', {
+      client_id: client.clientId,
+      enabled: preDinnerConfig.enabled,
+      minutes: preDinnerConfig.minutes,
+      timezone: 'Europe/Madrid',
+      now_utc: nowUtc,
+      now_local: `${clock.date} ${clock.time}`,
+    });
     if (!preDinnerConfig.enabled) {
       clientsSkippedDisabled += 1;
       continue;
@@ -146,6 +155,12 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       preDinnerConfig.minutes,
       force,
       skipStats,
+      (entry) => {
+        console.log('[PRE_DINNER][RESERVATION]', {
+          client_id: client.clientId,
+          ...entry,
+        });
+      },
     );
     reservationsFound += reservations.length;
     reservationsSkippedLateCreation += skipStats.lateCreation;
@@ -172,6 +187,13 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
           restaurantName: client.restaurantName || (safeLanguage === 'en' ? 'the restaurant' : 'el restaurante'),
           idioma: safeLanguage,
         }));
+        console.log('[PRE_DINNER][SEND]', {
+          client_id: client.clientId,
+          id_reserva: reservation.idReserva,
+          evolution_called: true,
+          evolution_status: 'sent',
+          sheet_updated: false,
+        });
       } catch (error) {
         console.error('[PUBLIC_API][RESERVATION_REMINDERS][SEND_FAILED]', {
           clientId: client.clientId,
@@ -191,6 +213,14 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
           accessToken,
         );
         messagesSent += 1;
+        console.log('[PRE_DINNER][SEND]', {
+          client_id: client.clientId,
+          id_reserva: reservation.idReserva,
+          evolution_called: true,
+          evolution_status: 'sent',
+          sheet_updated: true,
+          sheet_cell: `RESERVAS!${reservation.precenaEnviadoColumn}${reservation.rowNumber}`,
+        });
       } catch (error) {
         console.error('[PUBLIC_API][RESERVATION_REMINDERS][MARK_FAILED]', {
           clientId: client.clientId,

@@ -45,6 +45,19 @@ export interface ReminderSkipStats {
   balinesa: number;
 }
 
+export type ReservationReminderDebugLogger = (entry: {
+  id_reserva: string;
+  fecha: string;
+  hora: string;
+  scheduled_send_time: string;
+  estado: string;
+  servicio: string;
+  telefono_presente: boolean;
+  precena_enviado: boolean;
+  eligible: boolean;
+  discard_reason: string;
+}) => void;
+
 const DEFAULT_PRE_DINNER_MINUTES = 120;
 const MIN_PRE_DINNER_MINUTES = 15;
 const MAX_PRE_DINNER_MINUTES = 1440;
@@ -83,6 +96,14 @@ function dateTimeToMinuteKey(date: string, time: string) {
     Number(timeMatch[1]),
     Number(timeMatch[2]),
   ) / 60000);
+}
+
+function minuteKeyToDebugDateTime(minuteKey: number) {
+  if (!Number.isFinite(minuteKey)) {
+    return '';
+  }
+
+  return new Date(minuteKey * 60000).toISOString().slice(0, 16).replace('T', ' ');
 }
 
 function normalizeInteger(value: unknown, fallback: number) {
@@ -187,6 +208,7 @@ export function normalizePendingReservationReminders(
   minutesBeforeReservation: number,
   force: boolean,
   skipStats: ReminderSkipStats,
+  debugLogger?: ReservationReminderDebugLogger,
 ) {
   const preDinnerSentColumn = getReservationPreDinnerSentColumn(values);
 
@@ -205,38 +227,80 @@ export function normalizePendingReservationReminders(
     const estado = toStringValue(pickValue(item, ['ESTADO', 'estado', '8'])).toUpperCase();
     const servicio = normalizeService(pickValue(item, ['SERVICIO', 'servicio', 'service', '16']));
     const preDinnerSent = normalizeBoolean(pickValue(item, ['PRECENA_ENVIADO', 'PRE_CENA_ENVIADO', 'precena_enviado', '19']));
+    const reservationMinuteKey = dateTimeToMinuteKey(fecha, hora);
+    const reminderTargetMinuteKey = reservationMinuteKey - minutesBeforeReservation;
+    const logReservation = (eligible: boolean, discardReason: string) => {
+      debugLogger?.({
+        id_reserva: idReserva,
+        fecha,
+        hora,
+        scheduled_send_time: minuteKeyToDebugDateTime(reminderTargetMinuteKey),
+        estado,
+        servicio,
+        telefono_presente: Boolean(telefono),
+        precena_enviado: preDinnerSent,
+        eligible,
+        discard_reason: discardReason,
+      });
+    };
 
-    if (!idReserva || fecha !== clock.date || estado !== 'CONFIRMADA' || !telefono || !hora) {
+    if (!idReserva) {
+      logReservation(false, 'MISSING_ID_RESERVA');
+      return [];
+    }
+
+    if (fecha !== clock.date) {
+      logReservation(false, 'DATE_MISMATCH');
+      return [];
+    }
+
+    if (estado !== 'CONFIRMADA') {
+      logReservation(false, 'STATUS_NOT_CONFIRMED');
+      return [];
+    }
+
+    if (!telefono) {
+      logReservation(false, 'PHONE_MISSING');
+      return [];
+    }
+
+    if (!hora) {
+      logReservation(false, 'TIME_MISSING');
       return [];
     }
 
     if (preDinnerSent) {
       skipStats.alreadySent += 1;
+      logReservation(false, 'ALREADY_SENT');
       return [];
     }
 
     if (servicio === 'BALINESA') {
       skipStats.balinesa += 1;
+      logReservation(false, 'BALINESA_SKIPPED');
       return [];
     }
 
-    const reservationMinuteKey = dateTimeToMinuteKey(fecha, hora);
-    const reminderTargetMinuteKey = reservationMinuteKey - minutesBeforeReservation;
     if (!force) {
       if (!Number.isFinite(reservationMinuteKey) || clock.minuteKey >= reservationMinuteKey) {
+        logReservation(false, Number.isFinite(reservationMinuteKey) ? 'RESERVATION_TIME_PASSED' : 'INVALID_RESERVATION_TIME');
         return [];
       }
 
       const createdAtMinuteKey = parseCreatedAtMinuteKey(pickValue(item, ['CREATED_AT', 'created_at', '14']));
       if (Number.isFinite(createdAtMinuteKey) && createdAtMinuteKey > reminderTargetMinuteKey + DISPATCH_WINDOW_MINUTES) {
         skipStats.lateCreation += 1;
+        logReservation(false, 'CREATED_AFTER_DISPATCH_WINDOW');
         return [];
       }
 
       if (clock.minuteKey < reminderTargetMinuteKey || clock.minuteKey >= reminderTargetMinuteKey + DISPATCH_WINDOW_MINUTES) {
+        logReservation(false, 'OUTSIDE_DISPATCH_WINDOW');
         return [];
       }
     }
+
+    logReservation(true, '');
 
     return [{
       rowNumber: rowIndex + 1,
