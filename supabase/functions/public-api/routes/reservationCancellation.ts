@@ -14,6 +14,8 @@ import { toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildReservationCancellationEN } from '../templates/reservationCancellationEN.ts';
 import { buildReservationCancellationES } from '../templates/reservationCancellationES.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
+import { toCancellationReservation } from '../lib/supabaseSecondaryFlows.ts';
 
 type CancellationRouteMode = 'details' | 'confirm';
 
@@ -92,26 +94,32 @@ export async function handleReservationCancellation(request: Request, dbClient: 
     return context.error;
   }
 
-  if (!context.sheetId) {
+  const useSupabase = context.reservationStore.toLowerCase() === 'supabase';
+  if (!useSupabase && !context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
   let accessToken = '';
-  try {
-    accessToken = await createGoogleAccessToken();
-  } catch (error) {
-    console.error('[PUBLIC_API][CANCELLATION][GOOGLE_AUTH_FAILED]', {
-      error: getSafeGoogleError(error),
-    });
-    return errorResponse(request, 'GOOGLE_AUTH_ERROR', 500);
+  let reservation: ReturnType<typeof normalizeCancellationReservations>[number] | null = null;
+  const supabaseStore = useSupabase
+    ? new SupabaseReservationStore({ clientId: context.clientId, sheetId: context.sheetId, reservationStore: 'supabase' }, dbClient)
+    : null;
+  if (supabaseStore) {
+    try {
+      const found = await supabaseStore.getReservation(getIdReserva(body));
+      reservation = found ? toCancellationReservation(found) : null;
+    } catch {
+      return errorResponse(request, 'SHEETS_READ_FAILED', 502);
+    }
+  } else {
+    try { accessToken = await createGoogleAccessToken(); } catch (error) {
+      console.error('[PUBLIC_API][CANCELLATION][GOOGLE_AUTH_FAILED]', { error: getSafeGoogleError(error) });
+      return errorResponse(request, 'GOOGLE_AUTH_ERROR', 500);
+    }
+    const rows = await loadCancellationReservations(context.sheetId, accessToken);
+    if (!rows) return errorResponse(request, 'SHEETS_READ_FAILED', 502);
+    reservation = findCancellationReservation(rows, getIdReserva(body));
   }
-
-  const rows = await loadCancellationReservations(context.sheetId, accessToken);
-  if (!rows) {
-    return errorResponse(request, 'SHEETS_READ_FAILED', 502);
-  }
-
-  const reservation = findCancellationReservation(rows, getIdReserva(body));
 
   if (mode === 'details') {
     if (!isConfirmedReservation(reservation)) {
@@ -152,10 +160,10 @@ export async function handleReservationCancellation(request: Request, dbClient: 
   }
 
   try {
-    await updateSheetCell(context.sheetId, `RESERVAS!I${reservation.rowNumber}`, 'CANCELADA', accessToken);
+    if (supabaseStore) await supabaseStore.cancelReservation(reservation.idReserva);
+    else await updateSheetCell(context.sheetId, `RESERVAS!I${reservation.rowNumber}`, 'CANCELADA', accessToken);
   } catch (error) {
     console.error('[PUBLIC_API][CANCELLATION][STATUS_UPDATE_FAILED]', {
-      reservationId: reservation.idReserva,
       error: getSafeGoogleError(error),
     });
     return errorResponse(request, 'CANCELLATION_UPDATE_FAILED', 502);
@@ -167,7 +175,6 @@ export async function handleReservationCancellation(request: Request, dbClient: 
       await sendEvolutionText(phone, buildCancellationMessage(reservation, context.client));
     } catch (error) {
       console.error('[PUBLIC_API][CANCELLATION][WHATSAPP_SEND_FAILED]', {
-        reservationId: reservation.idReserva,
         error: error instanceof Error ? error.message : String(error),
       });
     }

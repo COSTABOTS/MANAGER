@@ -38,6 +38,15 @@ export interface ReservationRecord {
   balinesePackage: string;
   resource: string;
   sourceChannel?: string;
+  createdAt?: string;
+  preDinnerSent?: boolean;
+}
+
+export interface CreateFeedbackCommand {
+  reservationId: string;
+  rating: number;
+  comment: string;
+  submittedAt: string;
 }
 
 export interface CreateReservationCommand {
@@ -79,6 +88,13 @@ export interface ReservationStore {
   cancelReservation?(id: string): Promise<ReservationMutationResult>;
   updateArrival?(id: string, arrived: boolean): Promise<ReservationMutationResult>;
   assignTable?(id: string, table: string): Promise<ReservationMutationResult>;
+  updateReservationPhone?(id: string, phone: string): Promise<ReservationMutationResult>;
+  getFeedbackByReservation?(id: string): Promise<boolean>;
+  createFeedback?(command: CreateFeedbackCommand): Promise<{ created: boolean }>;
+  markPreDinnerSent?(id: string): Promise<ReservationMutationResult>;
+  markFeedbackSent?(id: string): Promise<ReservationMutationResult>;
+  listPendingReminderReservations?(date: string): Promise<ReservationRecord[]>;
+  listPendingFeedbackReservations?(date: string): Promise<ReservationRecord[]>;
 }
 
 export interface SheetsReservationStoreOperations {

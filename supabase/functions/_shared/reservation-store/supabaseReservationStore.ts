@@ -7,6 +7,7 @@ import type {
   CreateReservationCommand,
   CreateReservationResult,
   ReservationMutationResult,
+  CreateFeedbackCommand,
 } from './types.ts';
 
 interface QueryError {
@@ -286,6 +287,54 @@ export class SupabaseReservationStore implements ReservationStore {
     return await this.updateLogical(id, { table_id: tableId });
   }
 
+  async updateReservationPhone(id: string, phone: string): Promise<ReservationMutationResult> {
+    return await this.updateLogical(id, { customer_phone: phone });
+  }
+
+  async getFeedbackByReservation(id: string): Promise<boolean> {
+    const physicalId = await this.findPhysicalId(id);
+    if (!physicalId) return false;
+    const result = await this.dbClient.from('feedbacks').select('id')
+      .eq('client_id', this.context.clientId).eq('reservation_id', physicalId).limit(1).maybeSingle();
+    return Boolean(requireOptionalRow(result, 'GET_FEEDBACK_FAILED'));
+  }
+
+  async createFeedback(command: CreateFeedbackCommand): Promise<{ created: boolean }> {
+    const physicalId = await this.findPhysicalId(command.reservationId);
+    if (!physicalId) throw new Error('SUPABASE_RESERVATION_STORE_RESERVATION_NOT_FOUND');
+    if (await this.getFeedbackByReservation(command.reservationId)) return { created: false };
+    const result = await (this.dbClient.from('feedbacks') as any).insert({
+      client_id: this.context.clientId,
+      reservation_id: physicalId,
+      legacy_reservation_id: command.reservationId,
+      rating: command.rating,
+      comment: command.comment || null,
+      submitted_at: command.submittedAt,
+    }).select('id').maybeSingle();
+    if (result.error) {
+      // The unique (client_id,reservation_id) index also closes concurrent duplicates.
+      if (String(result.error.code) === '23505') return { created: false };
+      throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FEEDBACK_FAILED: ${result.error.message}`);
+    }
+    return { created: true };
+  }
+
+  async markPreDinnerSent(id: string): Promise<ReservationMutationResult> {
+    return await this.updateLogical(id, { pre_dinner_sent: true });
+  }
+
+  async markFeedbackSent(id: string): Promise<ReservationMutationResult> {
+    return await this.updateLogical(id, { feedback_sent: true });
+  }
+
+  async listPendingReminderReservations(date: string): Promise<ReservationRecord[]> {
+    return await this.listPending(date, 'pre_dinner_sent', false);
+  }
+
+  async listPendingFeedbackReservations(date: string): Promise<ReservationRecord[]> {
+    return await this.listPending(date, 'feedback_sent', true);
+  }
+
   private async insertDirect(command: CreateReservationCommand, channel: string) {
     const payload = await this.toDatabasePayload(command, channel);
     const result = await (this.dbClient.from('reservations') as any).insert(payload).select('id').maybeSingle();
@@ -333,7 +382,19 @@ export class SupabaseReservationStore implements ReservationStore {
     return null;
   }
 
-  private async mapReservations(rows: DatabaseRow[]): Promise<ReservationRecord[]> {
+  private async listPending(date: string, sentColumn: 'pre_dinner_sent' | 'feedback_sent', requireArrival: boolean) {
+    let query = (this.dbClient.from('reservations') as any)
+      .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,pre_dinner_sent,service,balinese_package,created_at')
+      .eq('client_id', this.context.clientId)
+      .eq('booking_date', normalizeDatabaseDate(date))
+      .in('status', ['confirmed']);
+    if (requireArrival) query = query.eq('arrived', true);
+    const rows = requireRows(await query.order('booking_time', { ascending: true }), 'LIST_PENDING_FAILED');
+    const mapped = await this.mapReservations(rows, true);
+    return mapped.filter((row) => sentColumn === 'feedback_sent' ? !row.feedbackSent : !row.preDinnerSent);
+  }
+
+  private async mapReservations(rows: DatabaseRow[], includeDeliveryState = false): Promise<ReservationRecord[]> {
     if (rows.length === 0) {
       return [];
     }
@@ -364,6 +425,10 @@ export class SupabaseReservationStore implements ReservationStore {
       balinesePackage: toStringValue(row.balinese_package),
       resource: resourceLabels.get(toStringValue(row.resource_id)) ?? '',
       sourceChannel: toStringValue(row.source_channel).toLowerCase(),
+      ...(includeDeliveryState ? {
+        createdAt: toStringValue(row.created_at),
+        preDinnerSent: toBooleanValue(row.pre_dinner_sent),
+      } : {}),
     }));
   }
 
