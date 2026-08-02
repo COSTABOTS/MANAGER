@@ -225,7 +225,7 @@ test('listReservations maps SQL rows to internal models and uses provisional cre
     id: 'RES-FIXTURE-001', date: '15/08/2026', time: '20:00', name: 'Cliente Ejemplo',
     phone: '600000000', pax: 2, language: 'EN', specialRequest: 'Sin datos reales',
     status: 'CONFIRMED', origin: 'BOT', table: 'M1', arrived: true, feedbackSent: true,
-    room: '', service: 'CENA', balinesePackage: 'PACK-1', resource: 'B1',
+    room: '', service: 'CENA', balinesePackage: 'PACK-1', resource: 'B1', sourceChannel: 'typebot',
   });
   assert.equal(rows[1].id, 'PUB-2');
 });

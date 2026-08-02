@@ -1,5 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
+import { runReservationListShadow } from '../_shared/reservation-store/reservationListShadowComparison.ts';
+import { SupabaseReservationStore } from '../_shared/reservation-store/supabaseReservationStore.ts';
+import type { SupabaseReadClient } from '../_shared/reservation-store/supabaseReservationStore.ts';
 import type { CreateReservationCommand, ReservationRecord } from '../_shared/reservation-store/types.ts';
 
 type ManagerAction =
@@ -1059,6 +1062,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'GOOGLE_SHEET_ID',
   ]));
   const reservationStore = toSheetString(pickRecordValue(resolvedClient, ['reservation_store'])) || 'sheets';
+  const reservationShadowRead = pickRecordValue(resolvedClient, ['reservation_shadow_read']) === true;
 
   debug.hasSheetId = Boolean(resolvedSheetId);
   console.log('[MANAGER_API][SHEET_ID_DIAGNOSTIC]', {
@@ -1114,6 +1118,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     clientId: targetClientId,
     sheetId: resolvedSheetId,
     reservationStore,
+    reservationShadowRead,
     role: profileRole,
     serviceRoleAvailable: Boolean(supabaseServiceRoleKey),
     license: {
@@ -1699,11 +1704,18 @@ async function deleteResource(request: Request, sheetId: string, body: Record<st
   });
 }
 
-async function listReservations(request: Request, clientId: string, sheetId: string, reservationStore: unknown, debug: ManagerApiDebug) {
+async function listReservations(
+  request: Request,
+  clientId: string,
+  sheetId: string,
+  reservationShadowRead: boolean,
+  dbClient: unknown,
+  debug: ManagerApiDebug,
+) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
-  const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {
+  const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'sheets' }, {
     listReservations: async () => {
       const accessToken = await createGoogleAccessToken();
       const sheetsResponse = await fetch(
@@ -1721,7 +1733,20 @@ async function listReservations(request: Request, clientId: string, sheetId: str
       return normalizeReservations(sheetsData.values).map(toReservationRecord);
     },
   });
-  const reservations = (await store.listReservations()).map(toManagerReservation);
+  const sheetsReservations = await store.listReservations();
+  await runReservationListShadow({
+    enabled: reservationShadowRead,
+    requestId: crypto.randomUUID(),
+    clientId,
+    sheetsReservations,
+    readSupabase: () => new SupabaseReservationStore({
+      clientId,
+      sheetId,
+      reservationStore: 'supabase',
+      reservationShadowRead,
+    }, dbClient as SupabaseReadClient).listReservations(),
+  });
+  const reservations = sheetsReservations.map(toManagerReservation);
   console.log(`[MANAGER_API] reservations=${reservations.length}`);
 
   return jsonResponse(request, {
@@ -2473,7 +2498,14 @@ Deno.serve(async (request) => {
         return await deleteResource(request, context.sheetId, body as Record<string, unknown>);
 
       case 'reservations.list':
-        return await listReservations(request, context.clientId, context.sheetId, context.reservationStore, debug);
+        return await listReservations(
+          request,
+          context.clientId,
+          context.sheetId,
+          context.reservationShadowRead,
+          context.dbClient,
+          debug,
+        );
 
       case 'feedbacks.list':
         return await listFeedbacks(request, context.clientId, context.sheetId, debug);

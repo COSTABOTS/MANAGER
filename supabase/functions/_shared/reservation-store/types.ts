@@ -37,6 +37,7 @@ export interface ReservationRecord {
   service: string;
   balinesePackage: string;
   resource: string;
+  sourceChannel?: string;
 }
 
 export interface CreateReservationCommand {

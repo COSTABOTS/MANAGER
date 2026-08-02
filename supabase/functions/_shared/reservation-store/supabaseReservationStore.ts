@@ -278,6 +278,7 @@ export class SupabaseReservationStore implements SupabaseReservationReader {
       service: toStringValue(row.service).toUpperCase(),
       balinesePackage: toStringValue(row.balinese_package),
       resource: resourceLabels.get(toStringValue(row.resource_id)) ?? '',
+      sourceChannel: toStringValue(row.source_channel).toLowerCase(),
     }));
   }
 
