@@ -3,12 +3,12 @@ import test from 'node:test';
 import {
   authorizeAdministrativeToken,
   authorizeAdministrativeRequest,
+  reservationSyncRequestId,
   syncReservations,
+  type AtomicReservationPlanRow,
+  type AtomicReservationSyncResult,
   type ReservationSyncAdapter,
-  type ReservationSyncInsert,
   type ReservationSyncRow,
-  type ReservationSyncSummary,
-  type ReservationSyncUpdate,
 } from './syncReservations.ts';
 
 const HEADERS = [
@@ -31,24 +31,12 @@ function sheetRow(id: string, overrides: Record<number, unknown> = {}) {
 class FakeAdapter implements ReservationSyncAdapter {
   readonly rows = new Map<string, ReservationSyncRow>();
   readonly activeRuns = new Set<string>();
-  readonly finished: Array<{ id: string; summary: Partial<ReservationSyncSummary> }> = [];
-  readonly calls = { begin: 0, finish: 0, insert: 0, update: 0, delete: 0 };
+  readonly completedRequests = new Map<string, AtomicReservationSyncResult>();
+  readonly calls = { apply: 0, delete: 0 };
   tables = new Map([['S1', 'table-demo']]);
   resources = new Map([['R1', 'resource-demo']]);
 
   key(clientId: string, legacyId: string) { return `${clientId}|${legacyId}`; }
-  async beginRun(clientId: string) {
-    this.calls.begin += 1;
-    if (this.activeRuns.has(clientId)) throw new Error('SYNC_ALREADY_RUNNING');
-    this.activeRuns.add(clientId);
-    return `run-${clientId}-${this.calls.begin}`;
-  }
-  async finishRun(runId: string, summary: Partial<ReservationSyncSummary>) {
-    this.calls.finish += 1;
-    const clientId = runId.replace(/^run-/, '').replace(/-\d+$/, '');
-    this.activeRuns.delete(clientId);
-    this.finished.push({ id: runId, summary });
-  }
   async listExisting(clientId: string, ids: string[]) {
     return ids.flatMap((id) => {
       const row = this.rows.get(this.key(clientId, id));
@@ -61,20 +49,60 @@ class FakeAdapter implements ReservationSyncAdapter {
   async resolveResourceIds(_clientId: string, labels: string[]) {
     return new Map(labels.flatMap((label) => this.resources.has(label) ? [[label, this.resources.get(label)!]] : []));
   }
-  async insertReservation(row: ReservationSyncInsert) {
-    this.calls.insert += 1;
-    const key = this.key(row.client_id, row.legacy_reservation_id);
-    if (this.rows.has(key)) throw new Error('duplicate');
-    this.rows.set(key, { ...structuredClone(row), id: `uuid-${this.calls.insert}`, created_at: 'created-on-insert' });
-  }
-  async updateOwnedReservation(clientId: string, legacyId: string, changes: ReservationSyncUpdate) {
-    this.calls.update += 1;
-    const key = this.key(clientId, legacyId);
-    const current = this.rows.get(key);
-    if (!current) return 'missing' as const;
-    if (!['sheets', 'legacy_unknown'].includes(current.source_channel)) return 'protected' as const;
-    this.rows.set(key, { ...current, ...structuredClone(changes) });
-    return 'updated' as const;
+  async applyAtomicPlan(clientId: string, requestId: string, plan: AtomicReservationPlanRow[]) {
+    this.calls.apply += 1;
+    const requestKey = `${clientId}|${requestId}`;
+    const completed = this.completedRequests.get(requestKey);
+    if (completed) return {
+      ...structuredClone(completed), inserted: 0, updated: 0,
+      skipped: completed.inserted + completed.updated + completed.skipped,
+      idempotent_replay: true,
+    };
+    if (this.activeRuns.has(clientId)) throw new Error('SYNC_ALREADY_RUNNING');
+    this.activeRuns.add(clientId);
+    const snapshot = structuredClone(this.rows);
+    try {
+      for (const row of plan) {
+        const current = this.rows.get(this.key(clientId, row.legacy_reservation_id));
+        if (current && !['sheets', 'legacy_unknown'].includes(current.source_channel)) {
+          throw new Error('PROTECTED_SOURCE_CONFLICT');
+        }
+      }
+      let inserted = 0;
+      let updated = 0;
+      let skipped = 0;
+      for (const row of plan) {
+        if (row.legacy_reservation_id === 'FAIL-LAST') throw new Error('ATOMIC_INSERT_FAILED');
+        const key = this.key(clientId, row.legacy_reservation_id);
+        const current = this.rows.get(key);
+        if (!current) {
+          inserted += 1;
+          this.rows.set(key, {
+            ...structuredClone(row), id: `uuid-${this.rows.size + 1}`, client_id: clientId,
+            public_reference: row.legacy_reservation_id, source_channel: 'sheets', created_at: 'created-on-insert',
+          });
+          continue;
+        }
+        const desired = { ...current, ...structuredClone(row) };
+        if (JSON.stringify(current) === JSON.stringify(desired)) skipped += 1;
+        else {
+          updated += 1;
+          this.rows.set(key, desired);
+        }
+      }
+      const result: AtomicReservationSyncResult = {
+        run_id: `run-${requestId}`, status: 'completed', inserted, updated, skipped,
+        deleted: 0, errors: 0, idempotent_replay: false,
+      };
+      this.completedRequests.set(requestKey, structuredClone(result));
+      return result;
+    } catch (error) {
+      this.rows.clear();
+      snapshot.forEach((value, key) => this.rows.set(key, value));
+      throw error;
+    } finally {
+      this.activeRuns.delete(clientId);
+    }
   }
 }
 
@@ -85,7 +113,7 @@ test('dry_run calculates a plan in memory and performs exactly zero writes', asy
     { run: null, inserts: 0, updates: 0, deletes: 0, skips: 0 });
   assert.deepEqual({ wouldInsert: result.would_insert, wouldUpdate: result.would_update, wouldSkip: result.would_skip },
     { wouldInsert: 1, wouldUpdate: 0, wouldSkip: 0 });
-  assert.deepEqual(adapter.calls, { begin: 0, finish: 0, insert: 0, update: 0, delete: 0 });
+  assert.deepEqual(adapter.calls, { apply: 0, delete: 0 });
   assert.equal(adapter.rows.size, 0);
 });
 
@@ -96,6 +124,8 @@ test('real run inserts, second identical run skips, and never deletes', async ()
   const second = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: values, dryRun: false, adapter });
   assert.deepEqual([first.inserts, first.updates, first.skips], [1, 0, 0]);
   assert.deepEqual([second.inserts, second.updates, second.skips], [0, 0, 1]);
+  assert.equal(first.idempotent_replay, false);
+  assert.equal(second.idempotent_replay, true);
   assert.equal(adapter.calls.delete, 0);
   assert.equal(first.deletes, 0);
   assert.equal(second.deletes, 0);
@@ -118,6 +148,24 @@ test('update changes only synchronizable fields and preserves immutable identity
   assert.equal(after.source_channel, before.source_channel);
 });
 
+test('atomic plan can mix insert, update and skip', async () => {
+  const adapter = new FakeAdapter();
+  await syncReservations({
+    clientId: 'CB-DEMO-002',
+    sheetValues: [HEADERS, sheetRow('SAME'), sheetRow('CHANGE')],
+    dryRun: false,
+    adapter,
+  });
+  const result = await syncReservations({
+    clientId: 'CB-DEMO-002',
+    sheetValues: [HEADERS, sheetRow('SAME'), sheetRow('CHANGE', { 5: '4' }), sheetRow('NEW')],
+    dryRun: false,
+    adapter,
+  });
+  assert.deepEqual([result.inserts, result.updates, result.skips], [1, 1, 1]);
+  assert.equal(adapter.rows.size, 3);
+});
+
 test('all identity operations are isolated by client_id and legacy_reservation_id', async () => {
   const adapter = new FakeAdapter();
   await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, sheetRow('SHARED-ID')], dryRun: false, adapter });
@@ -136,6 +184,17 @@ test('duplicate Sheet IDs are rejected without inserts', async () => {
   assert.equal(result.blocking_errors, 2);
   assert.equal(result.rows_blocked, 2);
   assert.equal(result.error_summary[0]?.code, 'DUPLICATE_LEGACY_RESERVATION_ID');
+});
+
+test('more than 500 source rows are rejected before reads or writes', async () => {
+  const adapter = new FakeAdapter();
+  const rows = Array.from({ length: 501 }, (_, index) => sheetRow(`LIMIT-${index}`));
+  await assert.rejects(
+    () => syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, ...rows], dryRun: false, adapter }),
+    /SYNC_ROW_LIMIT_EXCEEDED/,
+  );
+  assert.equal(adapter.calls.apply, 0);
+  assert.equal(adapter.rows.size, 0);
 });
 
 test('every non-legacy source channel is protected when legacy ID matches', async () => {
@@ -305,13 +364,58 @@ test('HTTP authentication returns sanitized 401/403 responses and no response fo
 
 test('a second real run is blocked while another run is active', async () => {
   const adapter = new FakeAdapter();
-  await adapter.beginRun('CB-DEMO-002');
-  await assert.rejects(
-    () => syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS], dryRun: false, adapter }),
-    /SYNC_ALREADY_RUNNING/,
-  );
-  assert.equal(adapter.calls.insert, 0);
-  assert.equal(adapter.calls.update, 0);
+  adapter.activeRuns.add('CB-DEMO-002');
+  const result = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, sheetRow('BLOCKED')], dryRun: false, adapter });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.blocking_errors, 1);
+  assert.equal(adapter.rows.size, 0);
+});
+
+test('atomic adapter applies 30 inserts in one call', async () => {
+  const adapter = new FakeAdapter();
+  const rows = Array.from({ length: 30 }, (_, index) => sheetRow(`ATOMIC-${index + 1}`));
+  const result = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, ...rows], dryRun: false, adapter });
+  assert.equal(result.inserts, 30);
+  assert.equal(result.updates, 0);
+  assert.equal(result.skips, 0);
+  assert.equal(adapter.calls.apply, 1);
+  assert.equal(adapter.rows.size, 30);
+});
+
+test('failure on the last atomic row rolls back the full batch', async () => {
+  const adapter = new FakeAdapter();
+  const result = await syncReservations({
+    clientId: 'CB-DEMO-002',
+    sheetValues: [HEADERS, sheetRow('FIRST'), sheetRow('FAIL-LAST')],
+    dryRun: false,
+    adapter,
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.inserts, 0);
+  assert.equal(adapter.rows.size, 0);
+});
+
+test('request id is stable for the same tenant and plan and differs across tenants', async () => {
+  const row: AtomicReservationPlanRow = {
+    legacy_reservation_id: 'STABLE', booking_date: '2026-08-16', booking_time: '20:00',
+    service: 'CENA', customer_name: null, customer_phone: null, pax: 2, locale: 'es',
+    special_request: null, status: 'confirmed', legacy_status: 'CONFIRMADA', legacy_source: 'BOT',
+    table_id: null, resource_id: null, room: null, arrived: false, feedback_sent: false,
+    pre_dinner_sent: false, balinese_package: null, legacy_created_at: null,
+    legacy_updated_at: null, legacy_locale: 'ES',
+  };
+  const first = await reservationSyncRequestId('CB-DEMO-002', [row]);
+  assert.equal(first, await reservationSyncRequestId('CB-DEMO-002', [row]));
+  assert.notEqual(first, await reservationSyncRequestId('CB-OTHER-001', [row]));
+  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('an active run for one tenant does not block a different tenant', async () => {
+  const adapter = new FakeAdapter();
+  adapter.activeRuns.add('CB-DEMO-002');
+  const result = await syncReservations({ clientId: 'CB-OTHER-001', sheetValues: [HEADERS, sheetRow('OTHER')], dryRun: false, adapter });
+  assert.equal(result.inserts, 1);
+  assert.equal(adapter.rows.size, 1);
 });
 
 test('normalizes legacy status/source and all approved destination columns', async () => {

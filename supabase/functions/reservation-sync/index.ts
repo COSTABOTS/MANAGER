@@ -3,11 +3,11 @@ import {
   MAX_SYNC_ROWS,
   authorizeAdministrativeRequest,
   syncReservations,
+  type AtomicReservationPlanRow,
+  type AtomicReservationSyncResult,
   type ReservationSyncAdapter,
-  type ReservationSyncInsert,
   type ReservationSyncRow,
   type ReservationSyncSummary,
-  type ReservationSyncUpdate,
 } from './syncReservations.ts';
 
 const RESPONSE_HEADERS = {
@@ -79,24 +79,6 @@ async function readReservationsSheet(sheetId: string) {
 
 function createAdapter(db: SupabaseClient<any>): ReservationSyncAdapter {
   return {
-    async beginRun(clientId) {
-      const { data, error } = await db.from('reservation_sync_runs').insert({ client_id: clientId }).select('id').single();
-      if (error?.code === '23505') throw new Error('SYNC_ALREADY_RUNNING');
-      if (error || !data?.id) throw new Error('SYNC_RUN_START_FAILED');
-      return String(data.id);
-    },
-    async finishRun(runId, summary) {
-      const { error } = await db.from('reservation_sync_runs').update({
-        finished_at: new Date().toISOString(),
-        inserts: summary.inserts,
-        updates: summary.updates,
-        skips: summary.skips,
-        errors: summary.errors,
-        status: summary.status,
-        error_summary: summary.error_summary,
-      }).eq('id', runId).eq('status', 'running');
-      if (error) throw new Error('SYNC_RUN_FINISH_FAILED');
-    },
     async listExisting(clientId, legacyReservationIds) {
       if (legacyReservationIds.length === 0) return [];
       const { data, error } = await db.from('reservations').select(RESERVATION_COLUMNS)
@@ -132,20 +114,19 @@ function createAdapter(db: SupabaseClient<any>): ReservationSyncAdapter {
       });
       return result;
     },
-    async insertReservation(row: ReservationSyncInsert) {
-      const { error } = await db.from('reservations').insert(row);
-      if (error) throw new Error('SYNC_INSERT_FAILED');
-    },
-    async updateOwnedReservation(clientId, legacyReservationId, changes: ReservationSyncUpdate) {
-      const { data, error } = await db.from('reservations').update(changes).eq('client_id', clientId)
-        .eq('legacy_reservation_id', legacyReservationId).in('source_channel', ['sheets', 'legacy_unknown'])
-        .select('id').maybeSingle();
-      if (error) throw new Error('SYNC_UPDATE_FAILED');
-      if (data) return 'updated';
-      const { data: target, error: targetError } = await db.from('reservations').select('source_channel')
-        .eq('client_id', clientId).eq('legacy_reservation_id', legacyReservationId).maybeSingle();
-      if (targetError) throw new Error('SYNC_UPDATE_CHECK_FAILED');
-      return target ? 'protected' : 'missing';
+    async applyAtomicPlan(clientId: string, requestId: string, rows: AtomicReservationPlanRow[]) {
+      const { data, error } = await db.rpc('apply_reservation_sync_plan', {
+        p_client_id: clientId,
+        p_request_id: requestId,
+        p_rows: rows,
+      });
+      if (error) {
+        const safeCode = ['SYNC_ALREADY_RUNNING', 'TENANT_NOT_FOUND', 'REQUEST_ID_REQUIRED', 'SYNC_ROW_LIMIT_EXCEEDED']
+          .find((code) => String(error.message ?? '').includes(code));
+        throw new Error(safeCode ?? 'ATOMIC_SYNC_RPC_FAILED');
+      }
+      if (!data || typeof data !== 'object') throw new Error('ATOMIC_SYNC_RPC_FAILED');
+      return data as AtomicReservationSyncResult;
     },
   };
 }

@@ -4,7 +4,7 @@ import {
   type SyncIssue,
 } from './normalizeSheetReservation.ts';
 
-export const MAX_SYNC_ROWS = 2000;
+export const MAX_SYNC_ROWS = 500;
 const OWNED_SOURCE_CHANNELS = new Set(['sheets', 'legacy_unknown']);
 
 export interface AdministrativeAuthAdapter {
@@ -80,6 +80,22 @@ export type ReservationSyncUpdate = Omit<
   'id' | 'client_id' | 'legacy_reservation_id' | 'public_reference' | 'source_channel' | 'created_at'
 >;
 
+export type AtomicReservationPlanRow = ReservationSyncUpdate & {
+  legacy_reservation_id: string;
+};
+
+export interface AtomicReservationSyncResult {
+  run_id: string;
+  status: 'completed' | 'failed';
+  inserted: number;
+  updated: number;
+  skipped: number;
+  deleted: 0;
+  errors: number;
+  error_code?: string;
+  idempotent_replay: boolean;
+}
+
 export interface ReservationSyncSummary {
   run_id: string | null;
   tenant: string;
@@ -102,20 +118,14 @@ export interface ReservationSyncSummary {
   blocking_errors: number;
   excluded_by_code: Record<string, number>;
   error_summary: SyncIssue[];
+  idempotent_replay: boolean;
 }
 
 export interface ReservationSyncAdapter {
-  beginRun(clientId: string): Promise<string>;
-  finishRun(runId: string, summary: Omit<ReservationSyncSummary, 'run_id' | 'tenant' | 'dry_run'>): Promise<void>;
   listExisting(clientId: string, legacyReservationIds: string[]): Promise<ReservationSyncRow[]>;
   resolveTableIds(clientId: string, labels: string[]): Promise<Map<string, string>>;
   resolveResourceIds(clientId: string, labels: string[]): Promise<Map<string, string>>;
-  insertReservation(row: ReservationSyncInsert): Promise<void>;
-  updateOwnedReservation(
-    clientId: string,
-    legacyReservationId: string,
-    changes: ReservationSyncUpdate,
-  ): Promise<'updated' | 'protected' | 'missing'>;
+  applyAtomicPlan(clientId: string, requestId: string, rows: AtomicReservationPlanRow[]): Promise<AtomicReservationSyncResult>;
 }
 
 function unique(values: Array<string | null>) {
@@ -183,9 +193,22 @@ function issue(rowNumber: number, code: string, severity: SyncIssue['severity'],
 }
 
 type PlannedAction =
-  | { kind: 'insert'; rowNumber: number; row: ReservationSyncInsert }
-  | { kind: 'update'; rowNumber: number; clientId: string; legacyId: string; changes: ReservationSyncUpdate }
-  | { kind: 'skip'; rowNumber: number };
+  | { kind: 'insert'; rowNumber: number; planRow: AtomicReservationPlanRow }
+  | { kind: 'update'; rowNumber: number; planRow: AtomicReservationPlanRow }
+  | { kind: 'skip'; rowNumber: number; planRow: AtomicReservationPlanRow };
+
+function canonicalPlan(clientId: string, rows: AtomicReservationPlanRow[]) {
+  return JSON.stringify({ client_id: clientId, rows });
+}
+
+export async function reservationSyncRequestId(clientId: string, rows: AtomicReservationPlanRow[]) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPlan(clientId, rows))));
+  const hex = [...digest.slice(0, 16)].map((value) => value.toString(16).padStart(2, '0')).join('').split('');
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  const value = hex.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
 
 function refreshIssueCounters(summary: ReservationSyncSummary, issues: SyncIssue[], actions: PlannedAction[]) {
   const excluded = issues.filter((item) => item.severity === 'excluded_row');
@@ -220,11 +243,8 @@ export async function syncReservations(input: {
 
   const normalized = normalizeSheetReservations(input.sheetValues);
   const issues = [...normalized.issues];
-  let runId: string | null = null;
-  if (!dryRun) runId = await input.adapter.beginRun(input.clientId);
-
   const summary: ReservationSyncSummary = {
-    run_id: runId,
+    run_id: null,
     tenant: input.clientId,
     dry_run: dryRun,
     rows_read: sourceRowCount,
@@ -245,6 +265,7 @@ export async function syncReservations(input: {
     blocking_errors: 0,
     excluded_by_code: {},
     error_summary: issues,
+    idempotent_replay: false,
   };
 
   try {
@@ -263,16 +284,11 @@ export async function syncReservations(input: {
       if (row.resourceLabel && !resourceId) issues.push(issue(row.rowNumber, 'RESOURCE_REFERENCE_NOT_FOUND', 'warning', 'resource_id'));
 
       const changes = asUpdate(row, tableId, resourceId);
+      const planRow: AtomicReservationPlanRow = { legacy_reservation_id: row.legacyReservationId, ...changes };
       const existing = existingById.get(row.legacyReservationId);
       if (!existing) {
         summary.would_insert += 1;
-        actions.push({ kind: 'insert', rowNumber: row.rowNumber, row: {
-          client_id: input.clientId,
-          legacy_reservation_id: row.legacyReservationId,
-          public_reference: row.legacyReservationId,
-          source_channel: 'sheets',
-          ...changes,
-        } });
+        actions.push({ kind: 'insert', rowNumber: row.rowNumber, planRow });
         continue;
       }
 
@@ -282,35 +298,26 @@ export async function syncReservations(input: {
       }
       if (JSON.stringify(comparable(existing)) === JSON.stringify(comparable(changes))) {
         summary.would_skip += 1;
-        actions.push({ kind: 'skip', rowNumber: row.rowNumber });
+        actions.push({ kind: 'skip', rowNumber: row.rowNumber, planRow });
         continue;
       }
 
       summary.would_update += 1;
-      actions.push({ kind: 'update', rowNumber: row.rowNumber, clientId: input.clientId, legacyId: row.legacyReservationId, changes });
+      actions.push({ kind: 'update', rowNumber: row.rowNumber, planRow });
     }
 
     refreshIssueCounters(summary, issues, actions);
     if (!dryRun && summary.blocking_errors === 0) {
-      for (const action of actions) {
-        try {
-          if (action.kind === 'insert') {
-            await input.adapter.insertReservation(action.row);
-            summary.inserts += 1;
-          } else if (action.kind === 'update') {
-            const result = await input.adapter.updateOwnedReservation(action.clientId, action.legacyId, action.changes);
-            if (result !== 'updated') {
-              issues.push(issue(action.rowNumber, result === 'protected' ? 'PROTECTED_SOURCE_CHANNEL' : 'UPDATE_TARGET_MISSING', 'blocking_error'));
-              break;
-            }
-            summary.updates += 1;
-          } else {
-            summary.skips += 1;
-          }
-        } catch {
-          issues.push(issue(action.rowNumber, action.kind === 'insert' ? 'INSERT_FAILED' : 'UPDATE_FAILED', 'blocking_error'));
-          break;
-        }
+      const planRows = actions.map((action) => action.planRow);
+      const requestId = await reservationSyncRequestId(input.clientId, planRows);
+      const result = await input.adapter.applyAtomicPlan(input.clientId, requestId, planRows);
+      summary.run_id = result.run_id;
+      summary.inserts = result.inserted;
+      summary.updates = result.updated;
+      summary.skips = result.skipped;
+      summary.idempotent_replay = result.idempotent_replay;
+      if (result.status !== 'completed' || result.errors > 0) {
+        issues.push(issue(0, result.error_code ?? 'ATOMIC_SYNC_FAILED', 'blocking_error'));
       }
     }
 
@@ -321,29 +328,6 @@ export async function syncReservations(input: {
     refreshIssueCounters(summary, issues, []);
     summary.status = 'failed';
     if (dryRun) throw error;
-  } finally {
-    if (!dryRun && runId) {
-      await input.adapter.finishRun(runId, {
-        rows_read: summary.rows_read,
-        rows_importable: summary.rows_importable,
-        rows_excluded: summary.rows_excluded,
-        rows_with_warnings: summary.rows_with_warnings,
-        rows_blocked: summary.rows_blocked,
-        status: summary.status,
-        inserts: summary.inserts,
-        updates: summary.updates,
-        deletes: 0,
-        skips: summary.skips,
-        would_insert: summary.would_insert,
-        would_update: summary.would_update,
-        would_skip: summary.would_skip,
-        errors: summary.errors,
-        warnings: summary.warnings,
-        blocking_errors: summary.blocking_errors,
-        excluded_by_code: summary.excluded_by_code,
-        error_summary: summary.error_summary,
-      });
-    }
   }
 
   return summary;
