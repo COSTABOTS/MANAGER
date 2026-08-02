@@ -159,15 +159,16 @@ test('Manager and Supabase reads remain isolated by effective client_id', () => 
   assert.doesNotMatch(manager, /CB-DEMO-002|CB-SAFARI-001/);
 });
 
-test('Manager response is built only from Sheets and exposes no shadow internals', () => {
+test('Manager response uses the selected official source and exposes no routing internals', () => {
   const manager = readFileSync(new URL('../../manager-api/index.ts', import.meta.url), 'utf8');
   const listFunction = manager.slice(
     manager.indexOf('async function listReservations('),
     manager.indexOf('async function listCapacity('),
   );
-  assert.match(listFunction, /reservationStore: 'sheets'/);
-  assert.match(listFunction, /const sheetsReservations = await store\.listReservations\(\)/);
-  assert.match(listFunction, /const reservations = sheetsReservations\.map\(toManagerReservation\)/);
+  assert.match(listFunction, /readOfficialReservationList/);
+  assert.match(listFunction, /reservationStore: String\(reservationStore \|\| 'sheets'\)/);
+  assert.match(listFunction, /const reservations = officialReservations\.map\(toManagerReservation\)/);
+  assert.doesNotMatch(listFunction, /reservation_store\s*:/);
   assert.doesNotMatch(listFunction, /shadow_status\s*:/);
   assert.doesNotMatch(listFunction, /sourceChannel\s*:/);
 });

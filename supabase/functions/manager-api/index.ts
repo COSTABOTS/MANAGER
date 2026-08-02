@@ -4,6 +4,7 @@ import { runReservationListShadow } from '../_shared/reservation-store/reservati
 import { SupabaseReservationStore } from '../_shared/reservation-store/supabaseReservationStore.ts';
 import type { SupabaseReadClient } from '../_shared/reservation-store/supabaseReservationStore.ts';
 import type { CreateReservationCommand, ReservationRecord } from '../_shared/reservation-store/types.ts';
+import { readOfficialReservationList } from './reservationListSource.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -1708,6 +1709,7 @@ async function listReservations(
   request: Request,
   clientId: string,
   sheetId: string,
+  reservationStore: unknown,
   reservationShadowRead: boolean,
   dbClient: unknown,
   debug: ManagerApiDebug,
@@ -1715,8 +1717,7 @@ async function listReservations(
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
-  const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'sheets' }, {
-    listReservations: async () => {
+  const readSheets = async () => {
       const accessToken = await createGoogleAccessToken();
       const sheetsResponse = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
@@ -1731,22 +1732,24 @@ async function listReservations(
       const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
       debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
       return normalizeReservations(sheetsData.values).map(toReservationRecord);
-    },
-  });
-  const sheetsReservations = await store.listReservations();
-  await runReservationListShadow({
-    enabled: reservationShadowRead,
-    requestId: crypto.randomUUID(),
-    clientId,
-    sheetsReservations,
-    readSupabase: () => new SupabaseReservationStore({
+  };
+  const readSupabase = () => new SupabaseReservationStore({
       clientId,
       sheetId,
       reservationStore: 'supabase',
       reservationShadowRead,
-    }, dbClient as SupabaseReadClient).listReservations(),
+    }, dbClient as SupabaseReadClient).listReservations();
+  const officialReservations = await readOfficialReservationList({
+    reservationStore: String(reservationStore || 'sheets'),
+    reservationShadowRead,
+    readSheets,
+    readSupabase,
+    runShadow: async (sheetsReservations) => {
+      await runReservationListShadow({ enabled: true, requestId: crypto.randomUUID(), clientId,
+        sheetsReservations, readSupabase });
+    },
   });
-  const reservations = sheetsReservations.map(toManagerReservation);
+  const reservations = officialReservations.map(toManagerReservation);
   console.log(`[MANAGER_API] reservations=${reservations.length}`);
 
   return jsonResponse(request, {
@@ -2513,6 +2516,7 @@ Deno.serve(async (request) => {
           request,
           context.clientId,
           context.sheetId,
+          context.reservationStore,
           context.reservationShadowRead,
           context.dbClient,
           debug,
