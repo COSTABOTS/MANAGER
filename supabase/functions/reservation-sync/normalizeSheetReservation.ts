@@ -1,6 +1,7 @@
 export interface SyncIssue {
   row_number: number;
   code: string;
+  severity: 'warning' | 'excluded_row' | 'blocking_error';
   field?: string;
 }
 
@@ -135,19 +136,19 @@ export function normalizeSheetReservations(values: unknown[][] | undefined): Nor
     const pax = Number(text(get('PAX')).replace(',', '.'));
 
     if (!legacyReservationId) {
-      issues.push({ row_number: rowNumber, code: 'INVALID_ROW', field: 'legacy_reservation_id' });
+      issues.push({ row_number: rowNumber, code: 'MISSING_LEGACY_RESERVATION_ID', severity: 'excluded_row', field: 'legacy_reservation_id' });
       return;
     }
     if (!bookingDate) {
-      issues.push({ row_number: rowNumber, code: 'INVALID_ROW', field: 'booking_date' });
+      issues.push({ row_number: rowNumber, code: 'INVALID_BOOKING_DATE', severity: 'excluded_row', field: 'booking_date' });
       return;
     }
     if (bookingTime === '') {
-      issues.push({ row_number: rowNumber, code: 'INVALID_ROW', field: 'booking_time' });
+      issues.push({ row_number: rowNumber, code: 'INVALID_BOOKING_TIME', severity: 'blocking_error', field: 'booking_time' });
       return;
     }
     if (!Number.isInteger(pax) || pax <= 0 || pax > 32767) {
-      issues.push({ row_number: rowNumber, code: 'INVALID_ROW', field: 'pax' });
+      issues.push({ row_number: rowNumber, code: 'INVALID_PAX', severity: 'excluded_row', field: 'pax' });
       return;
     }
 
@@ -183,10 +184,12 @@ export function normalizeSheetReservations(values: unknown[][] | undefined): Nor
   const frequencies = new Map<string, number>();
   rows.forEach((row) => frequencies.set(row.legacyReservationId, (frequencies.get(row.legacyReservationId) ?? 0) + 1));
   const duplicateIds = new Set([...frequencies].filter(([, count]) => count > 1).map(([id]) => id));
-  for (const duplicateId of duplicateIds) {
-    const first = rows.find((row) => row.legacyReservationId === duplicateId);
-    issues.push({ row_number: first?.rowNumber ?? 0, code: 'DUPLICATE_LEGACY_ID', field: 'legacy_reservation_id' });
-  }
+  rows.filter((row) => duplicateIds.has(row.legacyReservationId)).forEach((row) => issues.push({
+    row_number: row.rowNumber,
+    code: 'DUPLICATE_LEGACY_RESERVATION_ID',
+    severity: 'blocking_error',
+    field: 'legacy_reservation_id',
+  }));
 
   return { rows: rows.filter((row) => !duplicateIds.has(row.legacyReservationId)), issues };
 }

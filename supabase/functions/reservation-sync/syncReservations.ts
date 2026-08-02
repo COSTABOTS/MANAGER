@@ -7,6 +7,43 @@ import {
 export const MAX_SYNC_ROWS = 2000;
 const OWNED_SOURCE_CHANNELS = new Set(['sheets', 'legacy_unknown']);
 
+export interface AdministrativeAuthAdapter {
+  serviceRoleCanReadRuns(token: string): Promise<boolean>;
+  getAuthenticatedUserId(token: string): Promise<string | null>;
+  isActiveSuperAdmin(userId: string): Promise<boolean>;
+}
+
+export async function authorizeAdministrativeToken(
+  token: string,
+  adapter: AdministrativeAuthAdapter,
+): Promise<'service_role' | 'super_admin'> {
+  if (!token.trim()) throw new Error('UNAUTHENTICATED');
+  if (await adapter.serviceRoleCanReadRuns(token)) return 'service_role';
+  const userId = await adapter.getAuthenticatedUserId(token);
+  if (!userId) throw new Error('INVALID_TOKEN');
+  if (!await adapter.isActiveSuperAdmin(userId)) throw new Error('ADMIN_REQUIRED');
+  return 'super_admin';
+}
+
+export async function authorizeAdministrativeRequest(
+  request: Request,
+  adapter: AdministrativeAuthAdapter,
+): Promise<Response | null> {
+  const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  try {
+    await authorizeAdministrativeToken(token, adapter);
+    return null;
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'INVALID_TOKEN';
+    const status = code === 'UNAUTHENTICATED' || code === 'INVALID_TOKEN' ? 401 : 403;
+    const safeCode = status === 403 ? 'ADMIN_REQUIRED' : code;
+    return new Response(JSON.stringify({ error: safeCode }), {
+      status,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  }
+}
+
 export interface ReservationSyncRow {
   id?: string;
   client_id: string;
@@ -47,6 +84,11 @@ export interface ReservationSyncSummary {
   run_id: string | null;
   tenant: string;
   dry_run: boolean;
+  rows_read: number;
+  rows_importable: number;
+  rows_excluded: number;
+  rows_with_warnings: number;
+  rows_blocked: number;
   status: 'completed' | 'partial' | 'failed';
   inserts: number;
   updates: number;
@@ -56,6 +98,9 @@ export interface ReservationSyncSummary {
   would_update: number;
   would_skip: number;
   errors: number;
+  warnings: number;
+  blocking_errors: number;
+  excluded_by_code: Record<string, number>;
   error_summary: SyncIssue[];
 }
 
@@ -133,8 +178,32 @@ function asUpdate(
   };
 }
 
-function issue(rowNumber: number, code: string, field?: string): SyncIssue {
-  return { row_number: rowNumber, code, ...(field ? { field } : {}) };
+function issue(rowNumber: number, code: string, severity: SyncIssue['severity'], field?: string): SyncIssue {
+  return { row_number: rowNumber, code, severity, ...(field ? { field } : {}) };
+}
+
+type PlannedAction =
+  | { kind: 'insert'; rowNumber: number; row: ReservationSyncInsert }
+  | { kind: 'update'; rowNumber: number; clientId: string; legacyId: string; changes: ReservationSyncUpdate }
+  | { kind: 'skip'; rowNumber: number };
+
+function refreshIssueCounters(summary: ReservationSyncSummary, issues: SyncIssue[], actions: PlannedAction[]) {
+  const excluded = issues.filter((item) => item.severity === 'excluded_row');
+  const warnings = issues.filter((item) => item.severity === 'warning');
+  const blocking = issues.filter((item) => item.severity === 'blocking_error');
+  const actionRows = new Set(actions.map((item) => item.rowNumber));
+  summary.rows_importable = actionRows.size;
+  summary.rows_excluded = new Set(excluded.map((item) => item.row_number)).size;
+  summary.rows_blocked = new Set(blocking.map((item) => item.row_number)).size;
+  summary.rows_with_warnings = new Set(warnings.map((item) => item.row_number).filter((row) => actionRows.has(row))).size;
+  summary.warnings = warnings.length;
+  summary.blocking_errors = blocking.length;
+  summary.errors = summary.blocking_errors;
+  summary.excluded_by_code = excluded.reduce<Record<string, number>>((counts, item) => {
+    counts[item.code] = (counts[item.code] ?? 0) + 1;
+    return counts;
+  }, {});
+  summary.error_summary = issues;
 }
 
 export async function syncReservations(input: {
@@ -150,7 +219,7 @@ export async function syncReservations(input: {
   if (sourceRowCount > maxRows) throw new Error('SYNC_ROW_LIMIT_EXCEEDED');
 
   const normalized = normalizeSheetReservations(input.sheetValues);
-  const errors = [...normalized.issues];
+  const issues = [...normalized.issues];
   let runId: string | null = null;
   if (!dryRun) runId = await input.adapter.beginRun(input.clientId);
 
@@ -158,6 +227,11 @@ export async function syncReservations(input: {
     run_id: runId,
     tenant: input.clientId,
     dry_run: dryRun,
+    rows_read: sourceRowCount,
+    rows_importable: 0,
+    rows_excluded: 0,
+    rows_with_warnings: 0,
+    rows_blocked: 0,
     status: 'completed',
     inserts: 0,
     updates: 0,
@@ -167,7 +241,10 @@ export async function syncReservations(input: {
     would_update: 0,
     would_skip: 0,
     errors: 0,
-    error_summary: errors,
+    warnings: 0,
+    blocking_errors: 0,
+    excluded_by_code: {},
+    error_summary: issues,
   };
 
   try {
@@ -177,70 +254,81 @@ export async function syncReservations(input: {
       input.adapter.resolveResourceIds(input.clientId, unique(normalized.rows.map((row) => row.resourceLabel))),
     ]);
     const existingById = new Map(existingRows.map((row) => [row.legacy_reservation_id, row]));
+    const actions: PlannedAction[] = [];
 
     for (const row of normalized.rows) {
       const tableId = row.tableLabel ? tableIds.get(row.tableLabel) ?? null : null;
       const resourceId = row.resourceLabel ? resourceIds.get(row.resourceLabel) ?? null : null;
-      if (row.tableLabel && !tableId) errors.push(issue(row.rowNumber, 'REFERENCE_NOT_FOUND', 'table_id'));
-      if (row.resourceLabel && !resourceId) errors.push(issue(row.rowNumber, 'REFERENCE_NOT_FOUND', 'resource_id'));
+      if (row.tableLabel && !tableId) issues.push(issue(row.rowNumber, 'TABLE_REFERENCE_NOT_FOUND', 'warning', 'table_id'));
+      if (row.resourceLabel && !resourceId) issues.push(issue(row.rowNumber, 'RESOURCE_REFERENCE_NOT_FOUND', 'warning', 'resource_id'));
 
       const changes = asUpdate(row, tableId, resourceId);
       const existing = existingById.get(row.legacyReservationId);
       if (!existing) {
         summary.would_insert += 1;
-        if (!dryRun) {
-          try {
-            await input.adapter.insertReservation({
-              client_id: input.clientId,
-              legacy_reservation_id: row.legacyReservationId,
-              public_reference: row.legacyReservationId,
-              source_channel: 'sheets',
-              ...changes,
-            });
-            summary.inserts += 1;
-          } catch {
-            errors.push(issue(row.rowNumber, 'INSERT_FAILED'));
-          }
-        }
+        actions.push({ kind: 'insert', rowNumber: row.rowNumber, row: {
+          client_id: input.clientId,
+          legacy_reservation_id: row.legacyReservationId,
+          public_reference: row.legacyReservationId,
+          source_channel: 'sheets',
+          ...changes,
+        } });
         continue;
       }
 
       if (!OWNED_SOURCE_CHANNELS.has(existing.source_channel)) {
-        errors.push(issue(row.rowNumber, 'PROTECTED_SOURCE_CHANNEL', 'source_channel'));
+        issues.push(issue(row.rowNumber, 'PROTECTED_SOURCE_CHANNEL', 'blocking_error', 'source_channel'));
         continue;
       }
       if (JSON.stringify(comparable(existing)) === JSON.stringify(comparable(changes))) {
         summary.would_skip += 1;
-        if (!dryRun) summary.skips += 1;
+        actions.push({ kind: 'skip', rowNumber: row.rowNumber });
         continue;
       }
 
       summary.would_update += 1;
-      if (!dryRun) {
+      actions.push({ kind: 'update', rowNumber: row.rowNumber, clientId: input.clientId, legacyId: row.legacyReservationId, changes });
+    }
+
+    refreshIssueCounters(summary, issues, actions);
+    if (!dryRun && summary.blocking_errors === 0) {
+      for (const action of actions) {
         try {
-          const result = await input.adapter.updateOwnedReservation(input.clientId, row.legacyReservationId, changes);
-          if (result !== 'updated') {
-            errors.push(issue(row.rowNumber, result === 'protected' ? 'PROTECTED_SOURCE_CHANNEL' : 'UPDATE_TARGET_MISSING'));
-          } else {
+          if (action.kind === 'insert') {
+            await input.adapter.insertReservation(action.row);
+            summary.inserts += 1;
+          } else if (action.kind === 'update') {
+            const result = await input.adapter.updateOwnedReservation(action.clientId, action.legacyId, action.changes);
+            if (result !== 'updated') {
+              issues.push(issue(action.rowNumber, result === 'protected' ? 'PROTECTED_SOURCE_CHANNEL' : 'UPDATE_TARGET_MISSING', 'blocking_error'));
+              break;
+            }
             summary.updates += 1;
+          } else {
+            summary.skips += 1;
           }
         } catch {
-          summary.updates -= 1;
-          errors.push(issue(row.rowNumber, 'UPDATE_FAILED'));
+          issues.push(issue(action.rowNumber, action.kind === 'insert' ? 'INSERT_FAILED' : 'UPDATE_FAILED', 'blocking_error'));
+          break;
         }
       }
     }
 
-    summary.errors = errors.length;
-    summary.status = summary.errors > 0 ? 'partial' : 'completed';
+    refreshIssueCounters(summary, issues, actions);
+    summary.status = summary.blocking_errors > 0 ? 'failed' : (summary.warnings > 0 || summary.rows_excluded > 0 ? 'partial' : 'completed');
   } catch (error) {
-    errors.push(issue(0, 'SYNC_FAILED'));
-    summary.errors = errors.length;
+    issues.push(issue(0, 'SYNC_FAILED', 'blocking_error'));
+    refreshIssueCounters(summary, issues, []);
     summary.status = 'failed';
     if (dryRun) throw error;
   } finally {
     if (!dryRun && runId) {
       await input.adapter.finishRun(runId, {
+        rows_read: summary.rows_read,
+        rows_importable: summary.rows_importable,
+        rows_excluded: summary.rows_excluded,
+        rows_with_warnings: summary.rows_with_warnings,
+        rows_blocked: summary.rows_blocked,
         status: summary.status,
         inserts: summary.inserts,
         updates: summary.updates,
@@ -250,6 +338,9 @@ export async function syncReservations(input: {
         would_update: summary.would_update,
         would_skip: summary.would_skip,
         errors: summary.errors,
+        warnings: summary.warnings,
+        blocking_errors: summary.blocking_errors,
+        excluded_by_code: summary.excluded_by_code,
         error_summary: summary.error_summary,
       });
     }

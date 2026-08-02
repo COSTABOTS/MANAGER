@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  authorizeAdministrativeToken,
+  authorizeAdministrativeRequest,
   syncReservations,
   type ReservationSyncAdapter,
   type ReservationSyncInsert,
@@ -131,8 +133,9 @@ test('duplicate Sheet IDs are rejected without inserts', async () => {
     clientId: 'CB-DEMO-002', sheetValues: [HEADERS, sheetRow('DUP'), sheetRow('DUP')], dryRun: true, adapter,
   });
   assert.equal(result.would_insert, 0);
-  assert.equal(result.errors, 1);
-  assert.equal(result.error_summary[0]?.code, 'DUPLICATE_LEGACY_ID');
+  assert.equal(result.blocking_errors, 2);
+  assert.equal(result.rows_blocked, 2);
+  assert.equal(result.error_summary[0]?.code, 'DUPLICATE_LEGACY_RESERVATION_ID');
 });
 
 test('every non-legacy source channel is protected when legacy ID matches', async () => {
@@ -152,7 +155,7 @@ test('every non-legacy source channel is protected when legacy ID matches', asyn
   });
   const result = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, ...rows], dryRun: false, adapter });
   assert.equal(result.updates, 0);
-  assert.equal(result.errors, protectedSources.length);
+  assert.equal(result.blocking_errors, protectedSources.length);
   protectedSources.forEach((_source, index) => {
     assert.equal(adapter.rows.get(adapter.key('CB-DEMO-002', `RES-PROTECTED-${index}`))?.pax, 9);
   });
@@ -168,10 +171,136 @@ test('missing table/resource produce null tenant-safe references and sanitized i
   assert.equal(inserted.table_id, null);
   assert.equal(inserted.resource_id, null);
   assert.deepEqual(result.error_summary.map((item) => item.field), ['table_id', 'resource_id']);
+  assert.equal(result.warnings, 2);
+  assert.equal(result.blocking_errors, 0);
+  assert.equal(result.inserts, 1);
   const serialized = JSON.stringify(result.error_summary);
   for (const forbidden of ['Persona Sintética', '+34000000000', 'H-TEST', 'Petición sintética', 'S1', 'R1']) {
     assert.ok(!serialized.includes(forbidden));
   }
+});
+
+test('86 missing IDs, invalid date and invalid pax are excluded with exact counters', async () => {
+  const adapter = new FakeAdapter();
+  const missing = Array.from({ length: 86 }, () => sheetRow('', {}));
+  const values = [HEADERS, ...missing, sheetRow('BAD-DATE', { 1: 'not-a-date' }), sheetRow('BAD-PAX', { 5: '0' }), sheetRow('VALID')];
+  const result = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: values, dryRun: true, adapter });
+  assert.equal(result.rows_read, 89);
+  assert.equal(result.rows_excluded, 88);
+  assert.equal(result.rows_importable, 1);
+  assert.equal(result.rows_blocked, 0);
+  assert.equal(result.blocking_errors, 0);
+  assert.equal(result.would_insert, 1);
+  assert.deepEqual(result.excluded_by_code, {
+    MISSING_LEGACY_RESERVATION_ID: 86,
+    INVALID_BOOKING_DATE: 1,
+    INVALID_PAX: 1,
+  });
+});
+
+test('unresolved table warning does not block a real insert', async () => {
+  const adapter = new FakeAdapter();
+  adapter.tables.clear();
+  const result = await syncReservations({ clientId: 'CB-DEMO-002', sheetValues: [HEADERS, sheetRow('WARN', { 18: '' })], dryRun: false, adapter });
+  assert.equal(result.inserts, 1);
+  assert.equal(result.warnings, 1);
+  assert.equal(result.blocking_errors, 0);
+  assert.equal(result.rows_with_warnings, 1);
+});
+
+test('real run processes only importable rows when there are exclusions and no blockers', async () => {
+  const adapter = new FakeAdapter();
+  const result = await syncReservations({
+    clientId: 'CB-DEMO-002',
+    sheetValues: [HEADERS, sheetRow(''), sheetRow('VALID-REAL')],
+    dryRun: false,
+    adapter,
+  });
+  assert.equal(result.rows_excluded, 1);
+  assert.equal(result.rows_importable, 1);
+  assert.equal(result.blocking_errors, 0);
+  assert.equal(result.inserts, 1);
+  assert.equal(adapter.rows.size, 1);
+  assert.equal(adapter.calls.delete, 0);
+});
+
+test('protected ownership blocks the entire real plan before writes', async () => {
+  const adapter = new FakeAdapter();
+  adapter.rows.set(adapter.key('CB-DEMO-002', 'PROTECTED'), {
+    client_id: 'CB-DEMO-002', legacy_reservation_id: 'PROTECTED', source_channel: 'demo',
+    booking_date: '2026-08-16', booking_time: '20:00', service: 'CENA', customer_name: null,
+    customer_phone: null, pax: 2, locale: 'es', special_request: null, status: 'confirmed',
+    legacy_status: 'CONFIRMADA', legacy_source: 'DEMO', table_id: null, resource_id: null,
+    room: null, arrived: false, feedback_sent: false, pre_dinner_sent: false,
+    balinese_package: null, legacy_created_at: null, legacy_updated_at: null, legacy_locale: 'ES',
+  });
+  const result = await syncReservations({
+    clientId: 'CB-DEMO-002', sheetValues: [HEADERS, sheetRow('IMPORTABLE'), sheetRow('PROTECTED')], dryRun: false, adapter,
+  });
+  assert.equal(result.blocking_errors, 1);
+  assert.equal(result.inserts, 0);
+  assert.equal(adapter.rows.has(adapter.key('CB-DEMO-002', 'IMPORTABLE')), false);
+});
+
+test('administrative HTTP policy accepts service role and active SUPER_ADMIN only', async () => {
+  const service = await authorizeAdministrativeToken('service-token', {
+    serviceRoleCanReadRuns: async () => true,
+    getAuthenticatedUserId: async () => { throw new Error('must not run'); },
+    isActiveSuperAdmin: async () => false,
+  });
+  assert.equal(service, 'service_role');
+  const admin = await authorizeAdministrativeToken('admin-jwt', {
+    serviceRoleCanReadRuns: async () => false,
+    getAuthenticatedUserId: async () => 'user-id',
+    isActiveSuperAdmin: async () => true,
+  });
+  assert.equal(admin, 'super_admin');
+  await assert.rejects(() => authorizeAdministrativeToken('user-jwt', {
+    serviceRoleCanReadRuns: async () => false,
+    getAuthenticatedUserId: async () => 'user-id',
+    isActiveSuperAdmin: async () => false,
+  }), /ADMIN_REQUIRED/);
+  await assert.rejects(() => authorizeAdministrativeToken('', {
+    serviceRoleCanReadRuns: async () => false,
+    getAuthenticatedUserId: async () => null,
+    isActiveSuperAdmin: async () => false,
+  }), /UNAUTHENTICATED/);
+});
+
+test('authentication failures and source do not expose supplied credentials', async () => {
+  const secret = 'service-role-secret-marker';
+  let message = '';
+  try {
+    await authorizeAdministrativeToken(secret, {
+      serviceRoleCanReadRuns: async () => false,
+      getAuthenticatedUserId: async () => null,
+      isActiveSuperAdmin: async () => false,
+    });
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  assert.ok(!message.includes(secret));
+});
+
+test('HTTP authentication returns sanitized 401/403 responses and no response for authorized callers', async () => {
+  const adapter = {
+    serviceRoleCanReadRuns: async (token: string) => token === 'service-token',
+    getAuthenticatedUserId: async (token: string) => token === 'admin-token' || token === 'user-token' ? 'user-id' : null,
+    isActiveSuperAdmin: async () => true,
+  };
+  assert.equal(await authorizeAdministrativeRequest(new Request('https://local.test', { headers: { Authorization: 'Bearer service-token' } }), adapter), null);
+  assert.equal(await authorizeAdministrativeRequest(new Request('https://local.test', { headers: { Authorization: 'Bearer admin-token' } }), adapter), null);
+  const missing = await authorizeAdministrativeRequest(new Request('https://local.test'), adapter);
+  assert.equal(missing?.status, 401);
+  assert.deepEqual(await missing?.json(), { error: 'UNAUTHENTICATED' });
+  const rejected = await authorizeAdministrativeRequest(new Request('https://local.test', { headers: { Authorization: 'Bearer rejected-secret' } }), {
+    ...adapter,
+    getAuthenticatedUserId: async () => 'user-id',
+    isActiveSuperAdmin: async () => false,
+  });
+  assert.equal(rejected?.status, 403);
+  assert.deepEqual(await rejected?.json(), { error: 'ADMIN_REQUIRED' });
+  assert.ok(!JSON.stringify(await authorizeAdministrativeRequest(new Request('https://local.test', { headers: { Authorization: 'Bearer invalid-secret' } }), adapter)).includes('invalid-secret'));
 });
 
 test('a second real run is blocked while another run is active', async () => {

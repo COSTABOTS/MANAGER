@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   MAX_SYNC_ROWS,
+  authorizeAdministrativeRequest,
   syncReservations,
   type ReservationSyncAdapter,
   type ReservationSyncInsert,
@@ -176,13 +177,28 @@ Deno.serve(async (request) => {
   const requestedLimit = body.max_rows === undefined ? 500 : Number(body.max_rows);
   if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > MAX_SYNC_ROWS) return json(400, { error: 'INVALID_MAX_ROWS' });
 
-  const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
-  const { data: userData, error: userError } = await authClient.auth.getUser(token);
-  if (userError || !userData.user) return json(401, { error: 'INVALID_TOKEN' });
   const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: profile, error: profileError } = await db.from('PROFILES').select('role,status')
-    .eq('user_id', userData.user.id).eq('status', 'ACTIVE').maybeSingle();
-  if (profileError || stringValue(profile?.role).toUpperCase() !== 'SUPER_ADMIN') return json(403, { error: 'ADMIN_REQUIRED' });
+  const credentialClient = createClient(supabaseUrl, token, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
+  const authFailure = await authorizeAdministrativeRequest(request, {
+      async serviceRoleCanReadRuns() {
+        const { error } = await credentialClient.from('reservation_sync_runs').select('id').limit(1);
+        return !error;
+      },
+      async getAuthenticatedUserId() {
+        const { data, error } = await authClient.auth.getUser(token);
+        return error ? null : data.user?.id ?? null;
+      },
+      async isActiveSuperAdmin(userId) {
+        const { data, error } = await db.from('PROFILES').select('role,status')
+          .eq('user_id', userId).eq('status', 'ACTIVE').maybeSingle();
+        return !error && stringValue(data?.role).toUpperCase() === 'SUPER_ADMIN';
+      },
+  });
+  if (authFailure) return json(authFailure.status, await authFailure.json() as Record<string, unknown>);
 
   const { data: tenant, error: tenantError } = await db.from('CLIENTES').select('client_id,sheet_id')
     .eq('client_id', clientId).maybeSingle();
