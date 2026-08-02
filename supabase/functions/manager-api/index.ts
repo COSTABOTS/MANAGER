@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
+import type { CreateReservationCommand, ReservationRecord } from '../_shared/reservation-store/types.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -387,6 +389,52 @@ function normalizeReservations(values: unknown[][] | undefined): SheetRow[] {
       RECURSO: recurso,
     }];
   });
+}
+
+function toReservationRecord(row: SheetRow): ReservationRecord {
+  return {
+    id: toSheetString(row.idReserva),
+    date: toSheetString(row.fecha),
+    time: toSheetString(row.hora),
+    name: toSheetString(row.nombre),
+    phone: toSheetString(row.telefono),
+    pax: toSheetNumber(row.pax),
+    language: toSheetString(row.idioma),
+    specialRequest: toSheetString(row.peticionEspecial),
+    status: toSheetString(row.estado),
+    origin: toSheetString(row.origen),
+    table: toSheetString(row.mesa),
+    arrived: Boolean(row.llego),
+    feedbackSent: Boolean(row.feedbackEnviado),
+    room: toSheetString(row.habitacion),
+    service: toSheetString(row.servicio),
+    balinesePackage: toSheetString(row.paqueteBalinesa),
+    resource: toSheetString(row.recurso),
+  };
+}
+
+function toManagerReservation(record: ReservationRecord): SheetRow {
+  return {
+    id: record.id, idReserva: record.id, id_reserva: record.id, ID_RESERVA: record.id,
+    date: record.date, fecha: record.date, FECHA: record.date,
+    time: record.time, hora: record.time, HORA: record.time,
+    name: record.name, nombre: record.name, NOMBRE: record.name,
+    phone: record.phone, telefono: record.phone, TELEFONO: record.phone,
+    pax: record.pax, PAX: record.pax,
+    language: record.language, idioma: record.language, IDIOMA: record.language,
+    specialRequest: record.specialRequest, peticionEspecial: record.specialRequest,
+    peticiones: record.specialRequest, PETICION_ESPECIAL: record.specialRequest,
+    status: record.status, estado: record.status, ESTADO: record.status,
+    origin: record.origin, origen: record.origin, ORIGEN: record.origin,
+    table: record.table, mesa: record.table, MESA: record.table,
+    arrived: record.arrived, llego: record.arrived, LLEGO: record.arrived,
+    feedbackEnviado: record.feedbackSent, feedback_enviado: record.feedbackSent,
+    room: record.room, habitacion: record.room, HABITACION: record.room,
+    service: record.service, servicio: record.service, SERVICIO: record.service,
+    balinesePackage: record.balinesePackage, paqueteBalinesa: record.balinesePackage,
+    PAQUETE_BALINESA: record.balinesePackage,
+    resource: record.resource, recurso: record.resource, RECURSO: record.resource,
+  };
 }
 
 function normalizeCapacity(values: unknown[][] | undefined): SheetRow[] {
@@ -1010,6 +1058,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'google_sheet_id',
     'GOOGLE_SHEET_ID',
   ]));
+  const reservationStore = toSheetString(pickRecordValue(resolvedClient, ['reservation_store'])) || 'sheets';
 
   debug.hasSheetId = Boolean(resolvedSheetId);
   console.log('[MANAGER_API][SHEET_ID_DIAGNOSTIC]', {
@@ -1064,6 +1113,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     dbClient,
     clientId: targetClientId,
     sheetId: resolvedSheetId,
+    reservationStore,
     role: profileRole,
     serviceRoleAvailable: Boolean(supabaseServiceRoleKey),
     license: {
@@ -1649,24 +1699,29 @@ async function deleteResource(request: Request, sheetId: string, body: Record<st
   });
 }
 
-async function listReservations(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function listReservations(request: Request, clientId: string, sheetId: string, reservationStore: unknown, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
-  const accessToken = await createGoogleAccessToken();
-  const sheetsResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
+  const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {
+    listReservations: async () => {
+      const accessToken = await createGoogleAccessToken();
+      const sheetsResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
 
-  if (!sheetsResponse.ok) {
-    const errorBody = await sheetsResponse.text();
-    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
-  }
+      if (!sheetsResponse.ok) {
+        const errorBody = await sheetsResponse.text();
+        throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+      }
 
-  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
-  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
-  const reservations = normalizeReservations(sheetsData.values);
+      const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+      debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+      return normalizeReservations(sheetsData.values).map(toReservationRecord);
+    },
+  });
+  const reservations = (await store.listReservations()).map(toManagerReservation);
   console.log(`[MANAGER_API] reservations=${reservations.length}`);
 
   return jsonResponse(request, {
@@ -2059,7 +2114,7 @@ async function updateReservationCell(
   return null;
 }
 
-async function createReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+async function createReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
@@ -2109,48 +2164,32 @@ async function createReservation(request: Request, clientId: string, sheetId: st
     paqueteBalinesa,
     recurso,
   ];
-  console.log('[MANAGER_API][reservation.create] rowToAppend', rowToAppend);
-  console.log('[MANAGER_API][reservation.create] row length', rowToAppend.length, 'Q index 16', rowToAppend[16], 'R index 17', rowToAppend[17], 'S index 18', rowToAppend[18]);
-
-  const accessToken = await createGoogleAccessToken();
-  const appendResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: [rowToAppend],
-      }),
+  const command: CreateReservationCommand = {
+    id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax,
+    language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: origen || 'MANUAL',
+    table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio,
+    balinesePackage: paqueteBalinesa, resource: recurso,
+  };
+  const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {
+    createManualReservation: async (currentCommand) => {
+      const accessToken = await createGoogleAccessToken();
+      const appendResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [rowToAppend] }),
+        },
+      );
+      if (!appendResponse.ok) {
+        const errorBody = await appendResponse.text();
+        throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+      }
+      await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
+      return { reservation: currentCommand };
     },
-  );
-
-  if (!appendResponse.ok) {
-    const errorBody = await appendResponse.text();
-    console.error('[MANAGER_API][reservation.create] append error', {
-      clientId,
-      sheetId,
-      range: 'RESERVAS!A:S',
-      rowLength: rowToAppend.length,
-      status: appendResponse.status,
-      errorBody,
-    });
-    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
-  }
-
-  const appendResult = await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
-  console.log('[MANAGER_API][reservation.create] append confirmed', {
-    clientId,
-    sheetId,
-    range: 'RESERVAS!A:S',
-    rowLength: rowToAppend.length,
-    updatedRange: appendResult?.updates?.updatedRange,
-    updatedRows: appendResult?.updates?.updatedRows,
-    updatedColumns: appendResult?.updates?.updatedColumns,
-    updatedCells: appendResult?.updates?.updatedCells,
   });
+  await store.createManualReservation(command);
 
   return jsonResponse(request, {
     ok: true,
@@ -2160,13 +2199,11 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   });
 }
 
-async function createWalkIn(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+async function createWalkIn(request: Request, clientId: string, sheetId: string, reservationStore: unknown, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const walkin = (body.walkin ?? {}) as Record<string, unknown>;
-  console.log('[STEP3] walkin recibido', walkin);
-  console.log('[STEP4] servicio recibido', walkin.servicio, walkin.service);
   const idReserva = makeReservationId();
   console.log(`[MANAGER_API] walkin idReserva=${idReserva}`);
 
@@ -2210,55 +2247,32 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
     '',
     '',
   ];
-  console.log('[MANAGER_API][walkin.create] rowToAppend', rowToAppend);
-  console.log('[MANAGER_API][walkin.create] row length', rowToAppend.length, 'Q index 16', rowToAppend[16], 'R index 17', rowToAppend[17], 'S index 18', rowToAppend[18]);
-  console.log('[MANAGER_API][walkin.create][Q_TEST]', {
-    action: 'walkin.create',
-    rowLength: rowToAppend.length,
-    appendRange: 'RESERVAS!A:S',
-    servicioFinal: servicio,
-    row16: rowToAppend[16],
-    row17: rowToAppend[17],
-    row18: rowToAppend[18],
-  });
-
-  const accessToken = await createGoogleAccessToken();
-  const appendResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ values: [rowToAppend] }),
+  const command: CreateReservationCommand = {
+    id: idReserva, date: fecha, time: hora, name: nombre, phone: '', pax,
+    language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'WALK-IN',
+    table: mesa, arrived: true, feedbackSent: false, room: habitacion, service: servicio,
+    balinesePackage: '', resource: '',
+  };
+  const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {
+    createWalkIn: async (currentCommand) => {
+      const accessToken = await createGoogleAccessToken();
+      const appendResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:S')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [rowToAppend] }),
+        },
+      );
+      if (!appendResponse.ok) {
+        const errorBody = await appendResponse.text();
+        throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
+      }
+      await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
+      return { reservation: currentCommand };
     },
-  );
-
-  if (!appendResponse.ok) {
-    const errorBody = await appendResponse.text();
-    console.error('[MANAGER_API][walkin.create] append error', {
-      clientId,
-      sheetId,
-      range: 'RESERVAS!A:S',
-      rowLength: rowToAppend.length,
-      status: appendResponse.status,
-      errorBody,
-    });
-    throw new Error(`GOOGLE_SHEETS_ERROR: ${appendResponse.status}: ${errorBody}`);
-  }
-
-  const appendResult = await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
-  console.log('[MANAGER_API][walkin.create] append confirmed', {
-    clientId,
-    sheetId,
-    range: 'RESERVAS!A:S',
-    rowLength: rowToAppend.length,
-    updatedRange: appendResult?.updates?.updatedRange,
-    updatedRows: appendResult?.updates?.updatedRows,
-    updatedColumns: appendResult?.updates?.updatedColumns,
-    updatedCells: appendResult?.updates?.updatedCells,
   });
+  await store.createWalkIn(command);
 
   return jsonResponse(request, {
     ok: true,
@@ -2459,7 +2473,7 @@ Deno.serve(async (request) => {
         return await deleteResource(request, context.sheetId, body as Record<string, unknown>);
 
       case 'reservations.list':
-        return await listReservations(request, context.clientId, context.sheetId, debug);
+        return await listReservations(request, context.clientId, context.sheetId, context.reservationStore, debug);
 
       case 'feedbacks.list':
         return await listFeedbacks(request, context.clientId, context.sheetId, debug);
@@ -2483,7 +2497,7 @@ Deno.serve(async (request) => {
         return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'reservation.create':
-        return await createReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+        return await createReservation(request, context.clientId, context.sheetId, context.reservationStore, body as Record<string, unknown>);
 
       case 'reservation.arrive':
         return await updateReservationArrival(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
@@ -2495,7 +2509,7 @@ Deno.serve(async (request) => {
         return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'walkin.create':
-        return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+        return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, body as Record<string, unknown>);
 
       case 'shows.list':
         return await listShows(request, context);
