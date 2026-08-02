@@ -70,6 +70,35 @@ class FixtureClient implements SupabaseReadClient {
   }
 }
 
+class FailedQuery implements SupabaseReadQuery {
+  constructor(privateMessage: string) { this.message = privateMessage; }
+  private readonly message: string;
+  select(): SupabaseReadQuery { return this; }
+  eq(): SupabaseReadQuery { return this; }
+  is(): SupabaseReadQuery { return this; }
+  in(): SupabaseReadQuery { return this; }
+  order(): SupabaseReadQuery { return this; }
+  limit(): SupabaseReadQuery { return this; }
+  maybeSingle(): SupabaseReadQuery { return this; }
+  then<TResult1 = { data: null; error: { message: string } }, TResult2 = never>(
+    onfulfilled?: ((value: { data: null; error: { message: string } }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2> {
+    return Promise.resolve({ data: null, error: { message: this.message } }).then(onfulfilled, onrejected);
+  }
+}
+
+class SelectiveFailureClient extends FixtureClient {
+  private readonly failedTable: string;
+  constructor(tables: Record<string, Row[]>, failedTable: string) {
+    super(tables);
+    this.failedTable = failedTable;
+  }
+  override from(table: string): SupabaseReadQuery {
+    return table === this.failedTable ? new FailedQuery('synthetic database failure') : super.from(table);
+  }
+}
+
 const context = { clientId: 'CB-FIXTURE-001', sheetId: '', reservationStore: 'supabase' };
 
 function reservation(overrides: Row = {}): Row {
@@ -152,6 +181,7 @@ test('availability preserves slot order and counts every active status variant',
       reservation({ id: '10000000-0000-4000-8000-000000000003', booking_time: '20:00:00', status: 'legacy_unknown', legacy_status: 'CONFIRMADA', pax: 2 }),
       reservation({ id: '10000000-0000-4000-8000-000000000004', booking_time: '20:00:00', status: 'legacy_unknown', legacy_status: 'CONFIRMED', pax: 2 }),
       reservation({ id: '10000000-0000-4000-8000-000000000005', booking_time: '20:00:00', status: 'cancelled', legacy_status: 'CONFIRMADA', pax: 99 }),
+      reservation({ id: '10000000-0000-4000-8000-000000000007', booking_time: '20:00:00', status: 'no_show', legacy_status: null, pax: 99 }),
       reservation({ id: '10000000-0000-4000-8000-000000000006', client_id: 'CB-OTHER', booking_time: '20:00:00', pax: 99 }),
     ],
   });
@@ -160,6 +190,21 @@ test('availability preserves slot order and counts every active status variant',
     requestedPax: 2,
     availableTimes: ['20:00'],
     requestedTimeAvailable: true,
+  });
+});
+
+test('invalid or disabled capacity slots are ignored', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '18:00:00', capacity: 0, active: true, service: null, weekday: null, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '19:00:00', capacity: 10, active: false, service: null, weekday: null, valid_from: null, valid_until: null },
+    ],
+  });
+  const store = new SupabaseReservationStore(context, client);
+  assert.deepEqual(await store.getAvailability({ date: '2026-08-15', requestedPax: 2 }), {
+    requestedPax: 2,
+    availableTimes: [],
+    requestedTimeAvailable: false,
   });
 });
 
@@ -193,6 +238,34 @@ test('getReservation searches legacy id, public reference and UUID without leaki
   assert.equal((await store.getReservation('PUB-FIXTURE-001'))?.id, 'RES-FIXTURE-001');
   assert.equal((await store.getReservation(uuid))?.id, 'RES-FIXTURE-001');
   assert.equal(await store.getReservation(''), null);
+  assert.equal(await store.getReservation('RES-FROM-ANOTHER-TENANT'), null);
+});
+
+test('orphaned table and resource references map to empty internal fields', async () => {
+  const client = new FixtureClient({
+    reservations: [reservation({
+      table_id: '60000000-0000-4000-8000-000000000001',
+      resource_id: '70000000-0000-4000-8000-000000000001',
+    })],
+  });
+  const [mapped] = await new SupabaseReservationStore(context, client).listReservations();
+  assert.equal(mapped.table, '');
+  assert.equal(mapped.resource, '');
+});
+
+test('an inaccessible reservations table produces an explicit list error', async () => {
+  const store = new SupabaseReservationStore(context, new SelectiveFailureClient({}, 'reservations'));
+  await assert.rejects(() => store.listReservations(), /SUPABASE_RESERVATION_STORE_LIST_RESERVATIONS_FAILED/);
+});
+
+test('a failed availability query produces an explicit read error', async () => {
+  const store = new SupabaseReservationStore(context, new SelectiveFailureClient({
+    booking_capacity_slots: [],
+  }, 'reservations'));
+  await assert.rejects(
+    () => store.getAvailability({ date: '2026-08-15', requestedPax: 2 }),
+    /SUPABASE_RESERVATION_STORE_GET_AVAILABILITY_RESERVATIONS_FAILED/,
+  );
 });
 
 test('the Supabase store exposes no mutating methods', () => {
