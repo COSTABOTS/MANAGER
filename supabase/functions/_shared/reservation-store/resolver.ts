@@ -1,5 +1,6 @@
 import { ReservationStoreNotEnabledError } from './errors.ts';
 import { SheetsReservationStore } from './sheetsReservationStore.ts';
+import { SupabaseReservationStore, type SupabaseReadClient } from './supabaseReservationStore.ts';
 import type {
   ReservationStore,
   ReservationStoreClientContext,
@@ -13,8 +14,13 @@ function normalizeStoreName(value: unknown) {
 export function resolveReservationStore(
   context: ReservationStoreClientContext,
   sheetsOperations: SheetsReservationStoreOperations,
+  supabaseClient?: SupabaseReadClient,
 ): ReservationStore {
   const configuredStore = normalizeStoreName(context.reservationStore) || 'sheets';
+  if (configuredStore === 'supabase') {
+    if (!supabaseClient) throw new ReservationStoreNotEnabledError('supabase_client_missing');
+    return new SupabaseReservationStore(context, supabaseClient);
+  }
   if (configuredStore !== 'sheets') {
     throw new ReservationStoreNotEnabledError(configuredStore);
   }

@@ -2139,13 +2139,9 @@ async function updateReservationCell(
   return null;
 }
 
-async function createReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, body: Record<string, unknown>) {
-  console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
+async function createReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: SupabaseReadClient, body: Record<string, unknown>) {
   const reservation = (body.reservation ?? {}) as Record<string, unknown>;
   const idReserva = makeReservationId();
-  console.log(`[MANAGER_API] idReserva=${idReserva}`);
 
   const nombre = toSheetString(reservation.nombre ?? reservation.name);
   const telefono = toSheetString(reservation.telefono ?? reservation.phone);
@@ -2213,7 +2209,7 @@ async function createReservation(request: Request, clientId: string, sheetId: st
       await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
       return { reservation: currentCommand };
     },
-  });
+  }, dbClient);
   await store.createManualReservation(command);
 
   return jsonResponse(request, {
@@ -2224,13 +2220,9 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   });
 }
 
-async function createWalkIn(request: Request, clientId: string, sheetId: string, reservationStore: unknown, body: Record<string, unknown>) {
-  console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
+async function createWalkIn(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: SupabaseReadClient, body: Record<string, unknown>) {
   const walkin = (body.walkin ?? {}) as Record<string, unknown>;
   const idReserva = makeReservationId();
-  console.log(`[MANAGER_API] walkin idReserva=${idReserva}`);
 
   const nombre = toSheetString(walkin.nombre ?? walkin.name) || 'Walk-in';
   const fecha = toSheetString(walkin.fecha ?? walkin.date) || new Date().toISOString().slice(0, 10);
@@ -2296,7 +2288,7 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
       await appendResponse.json().catch(() => null) as GoogleSheetsAppendResult | null;
       return { reservation: currentCommand };
     },
-  });
+  }, dbClient);
   await store.createWalkIn(command);
 
   return jsonResponse(request, {
@@ -2307,13 +2299,19 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   });
 }
 
-async function updateReservationArrival(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
-  console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
+async function updateReservationArrival(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: SupabaseReadClient, body: Record<string, unknown>, debug: ManagerApiDebug) {
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   const rawArrival = body.llego ?? body.arrived;
   const llego = typeof rawArrival === 'boolean' ? rawArrival : normalizeBoolean(rawArrival);
+  if (String(reservationStore).toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {}, dbClient);
+    try { if (!store.updateArrival) throw new Error('STORE_OPERATION_MISSING'); await store.updateArrival(idReserva, llego); }
+    catch (error) {
+      if (String(error).includes('NOT_FOUND')) return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+      throw error;
+    }
+    return jsonResponse(request, { ok: true, action: 'reservation.arrive', client_id: clientId, idReserva, llego });
+  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
   const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
@@ -2352,12 +2350,19 @@ async function updateReservationArrival(request: Request, clientId: string, shee
   });
 }
 
-async function assignReservationTable(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
-  console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
+async function assignReservationTable(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: SupabaseReadClient, body: Record<string, unknown>, debug: ManagerApiDebug) {
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   const mesa = toSheetString(body.mesa ?? body.table);
+  if (String(reservationStore).toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {}, dbClient);
+    try { if (!store.assignTable) throw new Error('STORE_OPERATION_MISSING'); await store.assignTable(idReserva, mesa); }
+    catch (error) {
+      if (String(error).includes('TABLE_NOT_FOUND')) return errorResponse(request, 'TABLE_NOT_FOUND', 'Mesa no encontrada', 404);
+      if (String(error).includes('RESERVATION_NOT_FOUND')) return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+      throw error;
+    }
+    return jsonResponse(request, { ok: true, action: 'reservation.assignTable', client_id: clientId, idReserva, mesa });
+  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
   const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
@@ -2394,13 +2399,19 @@ async function assignReservationTable(request: Request, clientId: string, sheetI
   });
 }
 
-async function cancelReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
-  console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
+async function cancelReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: SupabaseReadClient, body: Record<string, unknown>, debug: ManagerApiDebug) {
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   if (!idReserva) {
     return errorResponse(request, 'ID_RESERVA_REQUIRED', 'ID_RESERVA requerido', 400);
+  }
+  if (String(reservationStore).toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore }, {}, dbClient);
+    try { if (!store.cancelReservation) throw new Error('STORE_OPERATION_MISSING'); await store.cancelReservation(idReserva); }
+    catch (error) {
+      if (String(error).includes('NOT_FOUND')) return errorResponse(request, 'RESERVATION_NOT_FOUND', 'Reserva no encontrada', 404, { idReserva });
+      throw error;
+    }
+    return jsonResponse(request, { ok: true, action: 'reservation.cancel', client_id: clientId, idReserva });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -2529,19 +2540,19 @@ Deno.serve(async (request) => {
         return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'reservation.create':
-        return await createReservation(request, context.clientId, context.sheetId, context.reservationStore, body as Record<string, unknown>);
+        return await createReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'reservation.arrive':
-        return await updateReservationArrival(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await updateReservationArrival(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.assignTable':
-        return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await assignReservationTable(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.cancel':
-        return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await cancelReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'walkin.create':
-        return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, body as Record<string, unknown>);
+        return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'shows.list':
         return await listShows(request, context);

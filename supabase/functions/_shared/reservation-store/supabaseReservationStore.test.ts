@@ -268,9 +268,9 @@ test('a failed availability query produces an explicit read error', async () => 
   );
 });
 
-test('the Supabase store exposes no mutating methods', () => {
+test('the Supabase store exposes the approved mutating methods', () => {
   const store = new SupabaseReservationStore(context, new FixtureClient());
   for (const method of ['createReservation', 'createManualReservation', 'createWalkIn', 'cancelReservation', 'updateArrival', 'assignTable']) {
-    assert.equal(method in store, false);
+    assert.equal(typeof (store as unknown as Record<string, unknown>)[method], 'function');
   }
 });

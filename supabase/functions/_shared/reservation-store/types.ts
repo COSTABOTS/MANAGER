@@ -66,6 +66,8 @@ export interface CreateReservationResult {
   reservation: CreateReservationCommand;
 }
 
+export interface ReservationMutationResult { reservation: ReservationRecord }
+
 export interface ReservationStore {
   readonly name: ReservationStoreName;
   getAvailability(query: AvailabilityQuery): Promise<AvailabilityResult>;
@@ -74,6 +76,9 @@ export interface ReservationStore {
   createReservation(command: CreateReservationCommand): Promise<CreateReservationResult>;
   createManualReservation(command: CreateReservationCommand): Promise<CreateReservationResult>;
   createWalkIn(command: CreateReservationCommand): Promise<CreateReservationResult>;
+  cancelReservation?(id: string): Promise<ReservationMutationResult>;
+  updateArrival?(id: string, arrived: boolean): Promise<ReservationMutationResult>;
+  assignTable?(id: string, table: string): Promise<ReservationMutationResult>;
 }
 
 export interface SheetsReservationStoreOperations {
@@ -83,4 +88,7 @@ export interface SheetsReservationStoreOperations {
   createReservation?: (command: CreateReservationCommand) => Promise<CreateReservationResult>;
   createManualReservation?: (command: CreateReservationCommand) => Promise<CreateReservationResult>;
   createWalkIn?: (command: CreateReservationCommand) => Promise<CreateReservationResult>;
+  cancelReservation?: (id: string) => Promise<ReservationMutationResult>;
+  updateArrival?: (id: string, arrived: boolean) => Promise<ReservationMutationResult>;
+  assignTable?: (id: string, table: string) => Promise<ReservationMutationResult>;
 }

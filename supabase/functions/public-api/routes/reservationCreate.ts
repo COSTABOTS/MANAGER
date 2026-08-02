@@ -101,13 +101,12 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
         await appendSheetValues(context.sheetId, 'RESERVAS!A:S', [result.row], accessToken);
         return { reservation };
       },
-    });
+    }, dbClient);
     await store.createReservation(command);
   } catch (error) {
     const errorCode = getSafeErrorCode(error);
     console.error('[PUBLIC_API][RESERVATION_CREATE][APPEND_FAILED]', {
       clientId: context.clientId,
-      reservationId: result.idReserva,
       error: errorCode,
     });
     return errorResponse(request, 'RESERVATION_CREATE_FAILED', 500);

@@ -4,6 +4,9 @@ import type {
   ReservationRecord,
   ReservationStore,
   ReservationStoreClientContext,
+  CreateReservationCommand,
+  CreateReservationResult,
+  ReservationMutationResult,
 } from './types.ts';
 
 interface QueryError {
@@ -27,12 +30,8 @@ export interface SupabaseReadQuery extends PromiseLike<QueryResult> {
 
 export interface SupabaseReadClient {
   from(table: string): SupabaseReadQuery;
+  rpc?(name: string, params: Record<string, unknown>): PromiseLike<QueryResult>;
 }
-
-type SupabaseReservationReader = Pick<
-  ReservationStore,
-  'name' | 'getAvailability' | 'listReservations' | 'getReservation'
->;
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -145,7 +144,7 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-export class SupabaseReservationStore implements SupabaseReservationReader {
+export class SupabaseReservationStore implements ReservationStore {
   readonly name = 'supabase' as const;
   private readonly context: ReservationStoreClientContext;
   private readonly dbClient: SupabaseReadClient;
@@ -245,6 +244,92 @@ export class SupabaseReservationStore implements SupabaseReservationReader {
       }
     }
 
+    return null;
+  }
+
+  async createReservation(command: CreateReservationCommand): Promise<CreateReservationResult> {
+    if (!this.dbClient.rpc) throw new Error('SUPABASE_RESERVATION_STORE_RPC_UNAVAILABLE');
+    const result = await this.dbClient.rpc('create_hospitality_reservation', {
+      p_client_id: this.context.clientId,
+      p_idempotency_key: command.id,
+      p_reservation: await this.toDatabasePayload(command, 'typebot'),
+    });
+    if (result.error) throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+    return { reservation: command };
+  }
+
+  async createManualReservation(command: CreateReservationCommand) {
+    await this.insertDirect(command, 'manager_manual');
+    return { reservation: command };
+  }
+
+  async createWalkIn(command: CreateReservationCommand) {
+    await this.insertDirect(command, 'walk_in');
+    return { reservation: command };
+  }
+
+  async cancelReservation(id: string): Promise<ReservationMutationResult> {
+    return await this.updateLogical(id, { status: 'cancelled', legacy_status: 'CANCELADA' });
+  }
+
+  async updateArrival(id: string, arrived: boolean): Promise<ReservationMutationResult> {
+    return await this.updateLogical(id, { arrived });
+  }
+
+  async assignTable(id: string, table: string): Promise<ReservationMutationResult> {
+    let tableId: string | null = null;
+    if (table) {
+      const lookup = await (this.dbClient.from('restaurant_tables') as any).select('id').eq('client_id', this.context.clientId).eq('label', table).limit(1).maybeSingle();
+      if (lookup.error || !lookup.data) throw new Error('SUPABASE_RESERVATION_STORE_TABLE_NOT_FOUND');
+      tableId = String(lookup.data.id);
+    }
+    return await this.updateLogical(id, { table_id: tableId });
+  }
+
+  private async insertDirect(command: CreateReservationCommand, channel: string) {
+    const payload = await this.toDatabasePayload(command, channel);
+    const result = await (this.dbClient.from('reservations') as any).insert(payload).select('id').maybeSingle();
+    if (result.error) throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+  }
+
+  private async toDatabasePayload(command: CreateReservationCommand, channel: string) {
+    let tableId: string | null = null;
+    if (command.table) {
+      const result = await (this.dbClient.from('restaurant_tables') as any).select('id').eq('client_id', this.context.clientId).eq('label', command.table).limit(1).maybeSingle();
+      if (result.error || !result.data) throw new Error('SUPABASE_RESERVATION_STORE_TABLE_NOT_FOUND');
+      tableId = String(result.data.id);
+    }
+    return {
+      client_id: this.context.clientId, legacy_reservation_id: command.id, public_reference: command.id,
+      booking_date: normalizeDatabaseDate(command.date), booking_time: normalizeTime(command.time), service: command.service || 'CENA',
+      customer_name: command.name || null, customer_phone: command.phone || null, pax: command.pax,
+      locale: command.language.toLowerCase(), legacy_locale: command.language, special_request: command.specialRequest || null,
+      status: command.status === 'CANCELADA' ? 'cancelled' : 'confirmed', legacy_status: command.status,
+      source_channel: channel, legacy_source: command.origin, table_id: tableId, room: command.room || null,
+      arrived: command.arrived, feedback_sent: command.feedbackSent, balinese_package: command.balinesePackage || null,
+      legacy_created_at: command.createdAt || null, legacy_updated_at: command.updatedAt || null,
+    };
+  }
+
+  private async updateLogical(id: string, patch: Record<string, unknown>): Promise<ReservationMutationResult> {
+    const physicalId = await this.findPhysicalId(id);
+    if (!physicalId) throw new Error('SUPABASE_RESERVATION_STORE_RESERVATION_NOT_FOUND');
+    const result = await (this.dbClient.from('reservations') as any).update(patch).eq('client_id', this.context.clientId).eq('id', physicalId).select('id').maybeSingle();
+    if (result.error || !result.data) throw new Error('SUPABASE_RESERVATION_STORE_UPDATE_FAILED');
+    const reservation = await this.getReservation(physicalId);
+    if (!reservation) throw new Error('SUPABASE_RESERVATION_STORE_RESERVATION_NOT_FOUND');
+    return { reservation };
+  }
+
+  private async findPhysicalId(id: string): Promise<string | null> {
+    const normalized = toStringValue(id);
+    const candidates: Array<[string, string]> = [['legacy_reservation_id', normalized], ['public_reference', normalized]];
+    if (isUuid(normalized)) candidates.push(['id', normalized]);
+    for (const [column, value] of candidates) {
+      const result = await (this.dbClient.from('reservations') as any).select('id').eq('client_id', this.context.clientId).eq(column, value).limit(1).maybeSingle();
+      if (result.error) throw new Error(`SUPABASE_RESERVATION_STORE_GET_RESERVATION_FAILED: ${result.error.message}`);
+      if (result.data?.id) return String(result.data.id);
+    }
     return null;
   }
 
