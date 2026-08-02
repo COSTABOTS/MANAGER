@@ -4,6 +4,7 @@ export interface ReservationStoreClientContext {
   clientId: string;
   sheetId: string;
   reservationStore?: unknown;
+  reservationShadowRead?: unknown;
 }
 
 export interface AvailabilityQuery {

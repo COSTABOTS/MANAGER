@@ -11,6 +11,8 @@ import { createGoogleAccessToken, fetchSheetValues } from '../lib/googleSheets.t
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { normalizeDateKey, toNumberValue, toStringValue } from '../lib/normalization.ts';
 import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
+import { runAvailabilityShadow } from '../../_shared/reservation-store/shadowComparison.ts';
 
 function pickBodyValue(body: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -74,7 +76,7 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
     const store = resolveReservationStore({
       clientId: context.clientId,
       sheetId: context.sheetId,
-      reservationStore: context.reservationStore,
+      reservationStore: 'sheets',
     }, {
       getAvailability: async (query) => {
         const accessToken = await createGoogleAccessToken();
@@ -105,6 +107,18 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
       },
     });
     const result = await store.getAvailability({ date: fecha, requestedPax: pax, requestedTime: horaSolicitada });
+    await runAvailabilityShadow({
+      enabled: context.reservationShadowRead,
+      requestId: crypto.randomUUID(),
+      clientId: context.clientId,
+      sheetsResult: result,
+      readSupabase: () => new SupabaseReservationStore({
+        clientId: context.clientId,
+        sheetId: context.sheetId,
+        reservationStore: 'supabase',
+        reservationShadowRead: context.reservationShadowRead,
+      }, dbClient).getAvailability({ date: fecha, requestedPax: pax, requestedTime: horaSolicitada }),
+    });
 
     return jsonResponse(request, {
       ok: true,

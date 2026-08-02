@@ -27,7 +27,7 @@ export async function validatePublicClient(request: Request, dbClient: DbClient,
 
   const { data: client, error: clientError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, public_token, sheet_id, reservation_store, logo_url, primary_color, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, public_token, sheet_id, reservation_store, reservation_shadow_read, logo_url, primary_color, booking_url, public_url, bot_url, contact_phone')
     .eq('client_id', clientId)
     .eq('public_token', publicToken)
     .maybeSingle();
@@ -47,5 +47,6 @@ export async function validatePublicClient(request: Request, dbClient: DbClient,
     clientId,
     sheetId: toStringValue((client as Record<string, unknown>).sheet_id),
     reservationStore: toStringValue((client as Record<string, unknown>).reservation_store) || 'sheets',
+    reservationShadowRead: (client as Record<string, unknown>).reservation_shadow_read === true,
   };
 }
