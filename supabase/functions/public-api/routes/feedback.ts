@@ -6,7 +6,6 @@ import {
   appendSheetValues,
   createGoogleAccessToken,
   fetchSheetValues,
-  updateSheetCell,
 } from '../lib/googleSheets.ts';
 import {
   buildFeedbackAppendRow,
@@ -21,6 +20,8 @@ import {
 import { toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildFeedbackAlertMessage } from '../templates/feedbackAlert.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
+import { toFeedbackReservation } from '../lib/supabaseSecondaryFlows.ts';
 
 type FeedbackRouteMode = 'details' | 'submit';
 
@@ -104,6 +105,7 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     return context.error;
   }
 
+  const useSupabase = context.reservationStore.toLowerCase() === 'supabase';
   if (!context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
@@ -120,8 +122,23 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
   }
 
   let feedbackContext: Awaited<ReturnType<typeof loadFeedbackContext>>;
+  const supabaseStore = useSupabase
+    ? new SupabaseReservationStore({ clientId: context.clientId, sheetId: context.sheetId, reservationStore: 'supabase' }, dbClient)
+    : null;
+  const idReserva = getIdReserva(body);
   try {
-    feedbackContext = await loadFeedbackContext(context.sheetId, accessToken);
+    if (supabaseStore) {
+      const [found, submitted, settingsData] = await Promise.all([
+        supabaseStore.getReservation(idReserva),
+        supabaseStore.getFeedbackByReservation(idReserva),
+        fetchSheetValues(context.sheetId, 'SETTINGS!A:Z', accessToken),
+      ]);
+      feedbackContext = {
+        reservations: found ? [toFeedbackReservation(found)] : [],
+        feedbacks: submitted ? [{ rowNumber: 0, idReserva }] : [],
+        settings: normalizeSettings(settingsData.values),
+      };
+    } else feedbackContext = await loadFeedbackContext(context.sheetId, accessToken);
   } catch (error) {
     console.error('[PUBLIC_API][FEEDBACK][SHEETS_READ_FAILED]', {
       clientId: context.clientId,
@@ -130,7 +147,6 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     return errorResponse(request, 'SHEETS_READ_FAILED', 502);
   }
 
-  const idReserva = getIdReserva(body);
   const reservation = findFeedbackReservation(feedbackContext.reservations, idReserva);
   const alreadySubmitted = hasFeedbackForReservation(feedbackContext.feedbacks, idReserva);
   const branding = buildBranding(context.client);
@@ -184,11 +200,16 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
   }
 
   try {
-    await appendSheetValues(context.sheetId, 'FEEDBACKS!A:H', [buildFeedbackAppendRow(reservation, normalized)], accessToken);
+    if (supabaseStore) {
+      const result = await supabaseStore.createFeedback({ reservationId: reservation.idReserva, rating: normalized.puntuacion,
+        comment: normalized.comentario, submittedAt: normalized.timestamp });
+      if (!result.created) return jsonResponse(request, { ok: false, already_submitted: true }, 409);
+    } else {
+      await appendSheetValues(context.sheetId, 'FEEDBACKS!A:H', [buildFeedbackAppendRow(reservation, normalized)], accessToken);
+    }
   } catch (error) {
     console.error('[PUBLIC_API][FEEDBACK][SAVE_FAILED]', {
       clientId: context.clientId,
-      reservationId: reservation.idReserva,
       error: getSafeErrorCode(error),
     });
     return errorResponse(request, 'FEEDBACK_SAVE_FAILED', 500);
@@ -220,7 +241,6 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
   } catch (error) {
     console.error('[PUBLIC_API][FEEDBACK][ALERT_SEND_FAILED]', {
       clientId: context.clientId,
-      reservationId: reservation.idReserva,
       error: error instanceof Error ? error.message : String(error),
     });
     return jsonResponse(request, {

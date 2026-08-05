@@ -12,6 +12,8 @@ import {
 } from '../lib/feedbackDispatch.ts';
 import { normalizeDateKey, toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
+import { selectSupabaseFeedbackInvitations } from '../lib/supabaseSecondaryFlows.ts';
 import { buildFeedbackInvitationEN } from '../templates/feedbackInvitationEN.ts';
 import { buildFeedbackInvitationES, buildFeedbackUrl, maskFeedbackUrl } from '../templates/feedbackInvitationES.ts';
 
@@ -89,7 +91,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone, reservation_store')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -139,9 +141,17 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
       continue;
     }
 
+    let supabaseStore: SupabaseReservationStore | null = null;
+    let reservations: ReturnType<typeof normalizePendingFeedbackReservations>;
     try {
-      const reservationsData = await fetchSheetValues(client.sheetId, 'RESERVAS!A:Z', accessToken);
-      values = reservationsData.values;
+      if (client.reservationStore === 'supabase') {
+        supabaseStore = new SupabaseReservationStore({ clientId: client.clientId, sheetId: client.sheetId, reservationStore: 'supabase' }, dbClient);
+        reservations = selectSupabaseFeedbackInvitations(await supabaseStore.listPendingFeedbackReservations(targetDate));
+      } else {
+        const reservationsData = await fetchSheetValues(client.sheetId, 'RESERVAS!A:Z', accessToken);
+        values = reservationsData.values;
+        reservations = normalizePendingFeedbackReservations(values, targetDate);
+      }
     } catch (error) {
       const code = getSafeErrorCode(error);
       console.error('[PUBLIC_API][FEEDBACK_DISPATCH][SHEETS_READ_FAILED]', {
@@ -153,7 +163,6 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
       continue;
     }
 
-    const reservations = normalizePendingFeedbackReservations(values, targetDate);
     reservationsFound += reservations.length;
 
     for (const reservation of reservations) {
@@ -161,7 +170,6 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
       if (reservation.languageFallback) {
         console.warn('[PUBLIC_API][FEEDBACK_DISPATCH][LANGUAGE_FALLBACK]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
         });
       }
 
@@ -176,7 +184,6 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
         };
         console.log('[PUBLIC_API][FEEDBACK][LINK_CONTEXT]', {
           client_id: client.clientId,
-          id_reserva: reservation.idReserva,
           url: maskFeedbackUrl(buildFeedbackUrl(messageParams, safeLanguage)),
           idioma: safeLanguage,
         });
@@ -185,7 +192,6 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
         const code = getSafeErrorCode(error);
         console.error('[PUBLIC_API][FEEDBACK_DISPATCH][SEND_FAILED]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
           error: code,
         });
         messagesFailed += 1;
@@ -194,18 +200,13 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
       }
 
       try {
-        await updateSheetCell(
-          client.sheetId,
-          `RESERVAS!${reservation.feedbackEnviadoColumn}${reservation.rowNumber}`,
-          'TRUE',
-          accessToken,
-        );
+        if (supabaseStore) await supabaseStore.markFeedbackSent(reservation.idReserva);
+        else await updateSheetCell(client.sheetId, `RESERVAS!${reservation.feedbackEnviadoColumn}${reservation.rowNumber}`, 'TRUE', accessToken);
         messagesSent += 1;
       } catch (error) {
         const code = getSafeErrorCode(error);
         console.error('[PUBLIC_API][FEEDBACK_DISPATCH][MARK_FAILED]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
           error: code,
         });
         messagesFailed += 1;

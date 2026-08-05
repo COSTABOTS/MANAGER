@@ -8,6 +8,8 @@ import {
   normalizePendingReservationReminders,
 } from '../lib/reservationRemindersDispatch.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
+import { selectSupabaseReminders } from '../lib/supabaseSecondaryFlows.ts';
 import { buildReservationReminderEN } from '../templates/reservationReminderEN.ts';
 import { buildReservationReminderES } from '../templates/reservationReminderES.ts';
 
@@ -81,7 +83,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone, reservation_store')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -135,9 +137,18 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       });
     }
 
-    let reservationsData: { values?: unknown[][] };
+    let reservationsData: { values?: unknown[][] } = {};
+    let supabaseStore: SupabaseReservationStore | null = null;
+    let reservations: ReturnType<typeof normalizePendingReservationReminders> | undefined;
+    const skipStats = { lateCreation: 0, alreadySent: 0, balinesa: 0 };
     try {
-      reservationsData = await fetchSheetValues(client.sheetId, 'RESERVAS!A:Z', accessToken);
+      if (client.reservationStore === 'supabase') {
+        supabaseStore = new SupabaseReservationStore({ clientId: client.clientId, sheetId: client.sheetId, reservationStore: 'supabase' }, dbClient);
+        const pending = await supabaseStore.listPendingReminderReservations(clock.date);
+        reservations = selectSupabaseReminders(pending, clock, preDinnerConfig.minutes, force, skipStats);
+      } else {
+        reservationsData = await fetchSheetValues(client.sheetId, 'RESERVAS!A:Z', accessToken);
+      }
     } catch (error) {
       console.error('[PUBLIC_API][RESERVATION_REMINDERS][SHEETS_READ_FAILED]', {
         clientId: client.clientId,
@@ -148,20 +159,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       continue;
     }
 
-    const skipStats = { lateCreation: 0, alreadySent: 0, balinesa: 0 };
-    const reservations = normalizePendingReservationReminders(
-      reservationsData.values,
-      clock,
-      preDinnerConfig.minutes,
-      force,
-      skipStats,
-      (entry) => {
-        console.log('[PRE_DINNER][RESERVATION]', {
-          client_id: client.clientId,
-          ...entry,
-        });
-      },
-    );
+    reservations ??= normalizePendingReservationReminders(reservationsData.values, clock, preDinnerConfig.minutes, force, skipStats);
     reservationsFound += reservations.length;
     reservationsSkippedLateCreation += skipStats.lateCreation;
     reservationsSkippedAlreadySent += skipStats.alreadySent;
@@ -172,7 +170,6 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       if (reservation.languageFallback) {
         console.warn('[PUBLIC_API][RESERVATION_REMINDERS][LANGUAGE_FALLBACK]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
         });
       }
 
@@ -189,7 +186,6 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
         }));
         console.log('[PRE_DINNER][SEND]', {
           client_id: client.clientId,
-          id_reserva: reservation.idReserva,
           evolution_called: true,
           evolution_status: 'sent',
           sheet_updated: false,
@@ -197,7 +193,6 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       } catch (error) {
         console.error('[PUBLIC_API][RESERVATION_REMINDERS][SEND_FAILED]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
           error: getSafeErrorCode(error),
         });
         messagesFailed += 1;
@@ -206,16 +201,11 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       }
 
       try {
-        await updateSheetCell(
-          client.sheetId,
-          `RESERVAS!${reservation.precenaEnviadoColumn}${reservation.rowNumber}`,
-          'TRUE',
-          accessToken,
-        );
+        if (supabaseStore) await supabaseStore.markPreDinnerSent(reservation.idReserva);
+        else await updateSheetCell(client.sheetId, `RESERVAS!${reservation.precenaEnviadoColumn}${reservation.rowNumber}`, 'TRUE', accessToken);
         messagesSent += 1;
         console.log('[PRE_DINNER][SEND]', {
           client_id: client.clientId,
-          id_reserva: reservation.idReserva,
           evolution_called: true,
           evolution_status: 'sent',
           sheet_updated: true,
@@ -224,7 +214,6 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       } catch (error) {
         console.error('[PUBLIC_API][RESERVATION_REMINDERS][MARK_FAILED]', {
           clientId: client.clientId,
-          reservationId: reservation.idReserva,
           error: getSafeErrorCode(error),
         });
         messagesFailed += 1;
