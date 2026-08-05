@@ -10,9 +10,6 @@ import {
 import { createGoogleAccessToken, fetchSheetValues } from '../lib/googleSheets.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { normalizeDateKey, toNumberValue, toStringValue } from '../lib/normalization.ts';
-import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
-import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
-import { runAvailabilityShadow } from '../../_shared/reservation-store/shadowComparison.ts';
 
 function pickBodyValue(body: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -73,70 +70,36 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
   }
 
   try {
-    const store = resolveReservationStore({
-      clientId: context.clientId,
-      sheetId: context.sheetId,
-      reservationStore: 'sheets',
-    }, {
-      getAvailability: async (query) => {
-        const accessToken = await createGoogleAccessToken();
-        const [capacityData, reservationsData] = await Promise.all([
-          fetchSheetValues(context.sheetId, 'CAPACIDAD!A:C', accessToken),
-          fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken),
-        ]);
+    const accessToken = await createGoogleAccessToken();
+    const [capacityData, reservationsData] = await Promise.all([
+      fetchSheetValues(context.sheetId, 'CAPACIDAD!A:C', accessToken),
+      fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken),
+    ]);
 
-        const headerIssues = getAvailabilitySheetHeaderIssues(capacityData.values, reservationsData.values);
-        if (headerIssues.length > 0) {
-          throw Object.assign(new Error('MISSING_SHEET_HEADERS'), { headerIssues });
-        }
-
-        const currentResult = getAvailableHoursByCapacity(
-          normalizeCapacitySlots(capacityData.values),
-          normalizeReservationsForAvailability(reservationsData.values),
-          query.date,
-          query.requestedPax,
-        );
-
-        const requestedTime = query.requestedTime ?? '';
-        return {
-          requestedPax: currentResult.pax_solicitados,
-          availableTimes: currentResult.horas_disponibles,
-          requestedTimeAvailable: Boolean(requestedTime)
-            && currentResult.horas_disponibles.includes(requestedTime),
-        };
-      },
-    });
-    const result = await store.getAvailability({ date: fecha, requestedPax: pax, requestedTime: horaSolicitada });
-    await runAvailabilityShadow({
-      enabled: context.reservationShadowRead,
-      requestId: crypto.randomUUID(),
-      clientId: context.clientId,
-      sheetsResult: result,
-      readSupabase: () => new SupabaseReservationStore({
-        clientId: context.clientId,
-        sheetId: context.sheetId,
-        reservationStore: 'supabase',
-        reservationShadowRead: context.reservationShadowRead,
-      }, dbClient).getAvailability({ date: fecha, requestedPax: pax, requestedTime: horaSolicitada }),
-    });
-
-    return jsonResponse(request, {
-      ok: true,
-      pax_solicitados: result.requestedPax,
-      horas_disponibles: result.availableTimes,
-      horas_disponibles_texto: result.availableTimes.join(', '),
-      DISPONIBLE: result.requestedTimeAvailable,
-      resultado: result.requestedTimeAvailable ? 'TRUE' : 'FALSE',
-    });
-  } catch (error) {
-    const headerIssues = (error as { headerIssues?: unknown }).headerIssues;
-    if (error instanceof Error && error.message === 'MISSING_SHEET_HEADERS' && Array.isArray(headerIssues)) {
+    const headerIssues = getAvailabilitySheetHeaderIssues(capacityData.values, reservationsData.values);
+    if (headerIssues.length > 0) {
       console.error('[PUBLIC_API][AVAILABILITY_BY_HOUR][MISSING_SHEET_HEADERS]', {
         clientId: context.clientId,
         issues: headerIssues,
       });
       return errorResponse(request, 'MISSING_SHEET_HEADERS', 500, { issues: headerIssues });
     }
+
+    const result = getAvailableHoursByCapacity(
+      normalizeCapacitySlots(capacityData.values),
+      normalizeReservationsForAvailability(reservationsData.values),
+      fecha,
+      pax,
+    );
+
+    const disponible = Boolean(horaSolicitada) && result.horas_disponibles.includes(horaSolicitada);
+
+    return jsonResponse(request, {
+      ...result,
+      DISPONIBLE: disponible,
+      resultado: disponible ? 'TRUE' : 'FALSE',
+    });
+  } catch (error) {
     console.error('[PUBLIC_API][AVAILABILITY_BY_HOUR][INTERNAL_ERROR]', {
       clientId: context.clientId,
       error: error instanceof Error ? error.message : String(error),

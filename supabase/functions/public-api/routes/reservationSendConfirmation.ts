@@ -21,8 +21,6 @@ import {
   buildReservationConfirmationMessage,
   maskReservationCancellationUrl,
 } from '../templates/reservationConfirmation.ts';
-import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
-import { toConfirmationReservation } from '../lib/supabaseSecondaryFlows.ts';
 
 type ReservationRow = {
   rowNumber: number;
@@ -145,27 +143,23 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
     return context.error;
   }
 
-  const useSupabase = context.reservationStore.toLowerCase() === 'supabase';
-  if (!useSupabase && !context.sheetId) {
+  if (!context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
-  let accessToken = '';
-  const supabaseStore = useSupabase
-    ? new SupabaseReservationStore({ clientId: context.clientId, sheetId: context.sheetId, reservationStore: 'supabase' }, dbClient)
-    : null;
-  let reservations: ReservationRow[];
+  const accessToken = await createGoogleAccessToken();
+  let sheetsData: { values?: unknown[][] };
   try {
-    if (supabaseStore) reservations = (await supabaseStore.listReservations()).map(toConfirmationReservation);
-    else {
-      accessToken = await createGoogleAccessToken();
-      const sheetsData = await fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken);
-      reservations = normalizeReservationRows(sheetsData.values);
-    }
+    sheetsData = await fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken);
   } catch (error) {
-    console.error('[PUBLIC_API][SEND_CONFIRMATION][RESERVATION_READ_FAILED]', { clientId: context.clientId });
+    console.error('[PUBLIC_API][SEND_CONFIRMATION][SHEETS_READ_FAILED]', {
+      clientId: context.clientId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return errorResponse(request, 'SHEETS_READ_FAILED', 502);
   }
+
+  const reservations = normalizeReservationRows(sheetsData.values);
   const matches = findMatchingReservations(reservations, body);
 
   if (matches.length === 0) {
@@ -182,17 +176,18 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
     console.warn('[PUBLIC_API][SEND_CONFIRMATION][AMBIGUOUS_RESERVATION]', {
       clientId: context.clientId,
       count: matches.length,
+      reservationIds: matches.map((match) => match.idReserva),
     });
     return errorResponse(request, 'AMBIGUOUS_RESERVATION', 409);
   }
 
   const reservation = matches[0];
   try {
-    if (supabaseStore) await supabaseStore.updateReservationPhone(reservation.idReserva, phone);
-    else await updateSheetCell(context.sheetId, `RESERVAS!E${reservation.rowNumber}`, phone, accessToken);
+    await updateSheetCell(context.sheetId, `RESERVAS!E${reservation.rowNumber}`, phone, accessToken);
   } catch (error) {
     console.error('[PUBLIC_API][SEND_CONFIRMATION][PHONE_UPDATE_FAILED]', {
       clientId: context.clientId,
+      reservationId: reservation.idReserva,
       error: error instanceof Error ? error.message : String(error),
     });
     return errorResponse(request, 'PHONE_UPDATE_FAILED', 502);
@@ -214,6 +209,7 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
   } catch (error) {
     console.error('[PUBLIC_API][SEND_CONFIRMATION][WHATSAPP_SEND_FAILED]', {
       clientId: context.clientId,
+      reservationId: reservation.idReserva,
       error: error instanceof Error ? error.message : String(error),
     });
     return jsonResponse(request, {
