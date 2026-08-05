@@ -274,3 +274,50 @@ test('the Supabase store exposes the approved mutating methods', () => {
     assert.equal(typeof (store as unknown as Record<string, unknown>)[method], 'function');
   }
 });
+
+for (const activeReservation of [
+  { label: 'confirmed', status: 'confirmed', legacy_status: null },
+  { label: 'pending', status: 'pending', legacy_status: null },
+]) {
+  test(`capacity 20 plus ${activeReservation.label} reservation of 20 exhausts the slot`, async () => {
+    const client = new FixtureClient({
+      booking_capacity_slots: [{ client_id: context.clientId, slot_time: '18:00:00', capacity: 20, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null }],
+      reservations: [reservation({ booking_date: '2026-08-15', booking_time: '18:00:00', service: 'CENA', pax: 20, status: activeReservation.status, legacy_status: activeReservation.legacy_status })],
+    });
+    assert.deepEqual(await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-15', requestedPax: 1, requestedTime: '18:00', service: 'CENA' }), {
+      requestedPax: 1, availableTimes: [], requestedTimeAvailable: false,
+    });
+  });
+}
+
+test('cancelled reservation does not consume the slot', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [{ client_id: context.clientId, slot_time: '18:00:00', capacity: 20, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null }],
+    reservations: [reservation({ booking_date: '2026-08-15', booking_time: '18:00:00', service: 'CENA', pax: 20, status: 'cancelled', legacy_status: null })],
+  });
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-15', requestedPax: 20, requestedTime: '18:00', service: 'CENA' });
+  assert.deepEqual(result.availableTimes, ['18:00']);
+  assert.equal(result.requestedTimeAvailable, true);
+});
+
+test('day controls, blocks, weekday, validity and service match creation RPC rules', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '18:00:00', capacity: 20, active: true, service: 'CENA', weekday: 6, valid_from: '2026-08-01', valid_until: '2026-08-31' },
+      { client_id: context.clientId, slot_time: '19:00:00', capacity: 99, active: true, service: 'ALMUERZO', weekday: 6, valid_from: null, valid_until: null },
+    ],
+    booking_day_controls: [{ client_id: context.clientId, booking_date: '2026-08-15', service: 'CENA', status: 'open', fully_booked: false, capacity_override: 10 }],
+    booking_blocks: [{ client_id: context.clientId, booking_date: '2026-08-15', service: 'CENA', active: true, starts_at: '17:00:00', ends_at: '19:00:00', capacity_reduction: 4 }],
+  });
+  const store = new SupabaseReservationStore(context, client);
+  assert.deepEqual((await store.getAvailability({ date: '2026-08-15', requestedPax: 6, service: 'CENA' })).availableTimes, ['18:00']);
+  assert.deepEqual((await store.getAvailability({ date: '2026-08-15', requestedPax: 7, service: 'CENA' })).availableTimes, []);
+});
+
+test('closed or fully booked day returns no availability', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [{ client_id: context.clientId, slot_time: '18:00:00', capacity: 20, active: true, service: null, weekday: null, valid_from: null, valid_until: null }],
+    booking_day_controls: [{ client_id: context.clientId, booking_date: '2026-08-15', service: null, status: 'closed', fully_booked: false }],
+  });
+  assert.deepEqual((await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-15', requestedPax: 1 })).availableTimes, []);
+});

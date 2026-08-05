@@ -79,6 +79,26 @@ function normalizeLegacyDate(value: unknown) {
   return isoMatch ? `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}` : raw;
 }
 
+function normalizeService(value: unknown) {
+  return toStringValue(value).toUpperCase() || 'CENA';
+}
+
+function isApplicableService(value: unknown, requestedService: string) {
+  const service = toStringValue(value);
+  return !service || service.toUpperCase() === requestedService;
+}
+
+function isDateWithinRule(date: string, from: unknown, until: unknown) {
+  const validFrom = normalizeDatabaseDate(from);
+  const validUntil = normalizeDatabaseDate(until);
+  return (!validFrom || validFrom <= date) && (!validUntil || validUntil >= date);
+}
+
+function getIsoWeekday(date: string) {
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
 function normalizeStatus(row: DatabaseRow) {
   const legacyStatus = toStringValue(row.legacy_status).toUpperCase();
   if (legacyStatus) {
@@ -160,33 +180,74 @@ export class SupabaseReservationStore implements ReservationStore {
 
   async getAvailability(query: AvailabilityQuery): Promise<AvailabilityResult> {
     const bookingDate = normalizeDatabaseDate(query.date);
+    const requestedService = normalizeService(query.service);
     const capacityResult = await this.dbClient
       .from('booking_capacity_slots')
-      .select('slot_time,capacity,active')
+      .select('slot_time,capacity,active,service,weekday,valid_from,valid_until')
       .eq('client_id', this.context.clientId)
       .eq('active', true)
-      .is('service', null)
-      .is('weekday', null)
-      .is('valid_from', null)
-      .is('valid_until', null)
       .order('slot_time', { ascending: true });
     const reservationResult = await this.dbClient
       .from('reservations')
-      .select('booking_date,booking_time,pax,status,legacy_status')
+      .select('booking_date,booking_time,service,pax,status,legacy_status')
       .eq('client_id', this.context.clientId)
       .eq('booking_date', bookingDate);
+    const dayControlResult = await this.dbClient
+      .from('booking_day_controls')
+      .select('service,status,fully_booked,capacity_override')
+      .eq('client_id', this.context.clientId)
+      .eq('booking_date', bookingDate);
+    const blockResult = await this.dbClient
+      .from('booking_blocks')
+      .select('service,starts_at,ends_at,capacity_reduction,active')
+      .eq('client_id', this.context.clientId)
+      .eq('booking_date', bookingDate)
+      .eq('active', true);
 
     const capacityRows = requireRows(capacityResult, 'GET_AVAILABILITY_CAPACITY_FAILED');
     const reservationRows = requireRows(reservationResult, 'GET_AVAILABILITY_RESERVATIONS_FAILED');
-    const activeReservations = reservationRows.filter(isReservationActiveForCapacity);
+    const dayControlRows = requireRows(dayControlResult, 'GET_AVAILABILITY_DAY_CONTROLS_FAILED')
+      .filter((row) => isApplicableService(row.service, requestedService));
+    const blockRows = requireRows(blockResult, 'GET_AVAILABILITY_BLOCKS_FAILED')
+      .filter((row) => isApplicableService(row.service, requestedService) && row.active === true);
+    const weekday = getIsoWeekday(bookingDate);
+    const applicableCapacityRows = capacityRows.filter((row) => {
+      const ruleWeekday = row.weekday === null || row.weekday === undefined ? null : toNumberValue(row.weekday);
+      return row.active === true
+        && isApplicableService(row.service, requestedService)
+        && (ruleWeekday === null || ruleWeekday === weekday)
+        && isDateWithinRule(bookingDate, row.valid_from, row.valid_until);
+    });
+    const activeReservations = reservationRows.filter((row) =>
+      normalizeService(row.service) === requestedService && isReservationActiveForCapacity(row)
+    );
     const availableTimes: string[] = [];
 
-    for (const slot of capacityRows) {
-      const slotTime = normalizeTime(slot.slot_time);
-      const capacity = toNumberValue(slot.capacity);
-      if (!slotTime || capacity <= 0 || slot.active !== true) {
-        continue;
-      }
+    if (dayControlRows.some((row) => toStringValue(row.status).toLowerCase() === 'closed' || row.fully_booked === true)) {
+      return { requestedPax: query.requestedPax, availableTimes, requestedTimeAvailable: false };
+    }
+
+    const capacityOverride = dayControlRows.reduce<number | null>((maximum, row) => {
+      if (row.capacity_override === null || row.capacity_override === undefined) return maximum;
+      const value = toNumberValue(row.capacity_override);
+      return maximum === null ? value : Math.max(maximum, value);
+    }, null);
+
+    const slots = [...new Set(applicableCapacityRows.map((row) => normalizeTime(row.slot_time)).filter(Boolean))];
+
+    for (const slotTime of slots) {
+      const slotCapacity = applicableCapacityRows
+        .filter((row) => normalizeTime(row.slot_time) === slotTime)
+        .reduce((maximum, row) => Math.max(maximum, toNumberValue(row.capacity)), 0);
+      const reduction = blockRows
+        .filter((row) => {
+          const startsAt = normalizeTime(row.starts_at);
+          const endsAt = normalizeTime(row.ends_at);
+          return (!startsAt || startsAt <= slotTime) && (!endsAt || endsAt > slotTime);
+        })
+        .reduce((total, row) => total + toNumberValue(row.capacity_reduction), 0);
+      const capacity = Math.max(0, (capacityOverride ?? slotCapacity) - reduction);
+      if (capacity <= 0) continue;
 
       const occupied = activeReservations
         .filter((reservation) => normalizeTime(reservation.booking_time) === slotTime)

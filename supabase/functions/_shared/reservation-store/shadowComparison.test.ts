@@ -148,8 +148,19 @@ test('HTTP response remains legacy-only and internal client flags are not expose
   assert.match(responseBlock, /pax_solicitados: result\.requestedPax/);
   assert.match(responseBlock, /horas_disponibles: result\.availableTimes/);
   assert.match(responseBlock, /DISPONIBLE: result\.requestedTimeAvailable/);
-  assert.match(route, /reservationStore: 'sheets'/);
+  assert.match(route, /reservationStore: context\.reservationStore/);
+  assert.match(route, /if \(!useSupabase\) \{[\s\S]*runAvailabilityShadow/);
+  assert.match(route, /}, dbClient\)/);
+  assert.doesNotMatch(route, /catch[\s\S]{0,180}reservationStore: 'sheets'/);
   const clients = readFileSync(new URL('../../public-api/lib/clients.ts', import.meta.url), 'utf8');
   assert.match(clients, /reservation_shadow_read/);
   assert.match(clients, /reservationShadowRead:.*=== true/);
+});
+
+test('Supabase official availability keeps the exact legacy response contract', () => {
+  const route = readFileSync(new URL('../../public-api/routes/availabilityByHour.ts', import.meta.url), 'utf8');
+  for (const field of ['ok', 'pax_solicitados', 'horas_disponibles', 'horas_disponibles_texto', 'DISPONIBLE', 'resultado']) {
+    assert.match(route, new RegExp(`${field}:`));
+  }
+  assert.match(route, /return errorResponse\(request, 'INTERNAL_ERROR', 500\)/);
 });

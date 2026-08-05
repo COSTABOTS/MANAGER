@@ -11,6 +11,7 @@ export interface AvailabilityQuery {
   date: string;
   requestedPax: number;
   requestedTime?: string;
+  service?: string;
 }
 
 export interface AvailabilityResult {
