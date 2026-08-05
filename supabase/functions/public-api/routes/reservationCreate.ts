@@ -61,7 +61,8 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     return context.error;
   }
 
-  if (!context.sheetId) {
+  const usesSheets = context.reservationStore.trim().toLowerCase() !== 'supabase';
+  if (usesSheets && !context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
