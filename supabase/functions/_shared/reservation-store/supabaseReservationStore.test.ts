@@ -300,6 +300,19 @@ test('cancelled reservation does not consume the slot', async () => {
   assert.equal(result.requestedTimeAvailable, true);
 });
 
+test('missing service is global and is not forced to CENA', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '13:00:00', capacity: 5, active: true, service: 'ALMUERZO', weekday: null, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '18:00:00', capacity: 5, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null },
+    ],
+    reservations: [reservation({ booking_date: '2026-08-15', booking_time: '18:00:00', service: 'CENA', pax: 5, status: 'confirmed', legacy_status: null })],
+  });
+
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-15', requestedPax: 1 });
+  assert.deepEqual(result.availableTimes, ['13:00']);
+});
+
 test('day controls, blocks, weekday, validity and service match creation RPC rules', async () => {
   const client = new FixtureClient({
     booking_capacity_slots: [

@@ -69,7 +69,7 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
     return context.error;
   }
 
-  const useSupabase = context.reservationStore.toLowerCase() === 'supabase';
+  const useSupabase = (context.reservationStore ?? 'sheets').toLowerCase() === 'supabase';
   if (!useSupabase && !context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }

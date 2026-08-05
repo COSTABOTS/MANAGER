@@ -80,12 +80,12 @@ function normalizeLegacyDate(value: unknown) {
 }
 
 function normalizeService(value: unknown) {
-  return toStringValue(value).toUpperCase() || 'CENA';
+  return toStringValue(value).toUpperCase();
 }
 
 function isApplicableService(value: unknown, requestedService: string) {
   const service = toStringValue(value);
-  return !service || service.toUpperCase() === requestedService;
+  return !requestedService || !service || service.toUpperCase() === requestedService;
 }
 
 function isDateWithinRule(date: string, from: unknown, until: unknown) {
@@ -219,7 +219,8 @@ export class SupabaseReservationStore implements ReservationStore {
         && isDateWithinRule(bookingDate, row.valid_from, row.valid_until);
     });
     const activeReservations = reservationRows.filter((row) =>
-      normalizeService(row.service) === requestedService && isReservationActiveForCapacity(row)
+      (!requestedService || normalizeService(row.service) === requestedService)
+      && isReservationActiveForCapacity(row)
     );
     const availableTimes: string[] = [];
 
