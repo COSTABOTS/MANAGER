@@ -3889,6 +3889,29 @@ button:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada) td,
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada):nth-child(even) td {
+  color: rgba(243, 238, 229, 0.72);
+  background: linear-gradient(90deg, rgba(43, 48, 58, 0.92), rgba(29, 33, 40, 0.94));
+  border-bottom-color: rgba(232, 221, 198, 0.1);
+  opacity: 1;
+}
+
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada):hover td,
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada):focus-within td,
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada):active td {
+  color: rgba(243, 238, 229, 0.8);
+  background: linear-gradient(90deg, rgba(53, 58, 68, 0.95), rgba(35, 39, 46, 0.96));
+}
+
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada) td:first-child {
+  border-left: 4px solid rgba(232, 203, 126, 0.22);
+}
+
+.reservations-table tbody tr.reservation-row.is-past:not(.is-cancelada) td:not(:last-child) {
+  opacity: 1;
+}
+
 .service-book-badge,
 .donut-legend-item,
 .service-legend-item {
