@@ -25,8 +25,13 @@ test('Sheets append is only the SheetsReservationStore operation and there is no
 });
 
 test('Supabase tenants do not require sheet_id and legacy success is returned only after creation', () => {
-  assert(source.includes("const usesSheets = context.reservationStore.trim().toLowerCase() !== 'supabase'"));
+  assert(source.includes("const usesSheets = (context.reservationStore ?? 'sheets').trim().toLowerCase() !== 'supabase'"));
   assert(source.includes('if (usesSheets && !context.sheetId)'));
   assert(source.indexOf('await store.createReservation(command)') < source.indexOf('reservation_created: true'));
   assert(source.includes('id_reserva: result.idReserva'));
+});
+
+test('missing reservation store defaults safely to Sheets', () => {
+  assert(source.includes("(context.reservationStore ?? 'sheets').trim().toLowerCase()"));
+  assert.equal(/context\.reservationStore\.trim\(\)/.test(source), false);
 });

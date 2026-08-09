@@ -6,6 +6,8 @@ import {
   normalizeCreateReservationInput,
 } from '../lib/reservations.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
+import type { CreateReservationCommand } from '../../_shared/reservation-store/types.ts';
 
 const MAX_PUBLIC_RESTAURANT_PAX = 8;
 
@@ -61,16 +63,47 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     return context.error;
   }
 
-  const usesSheets = context.reservationStore.trim().toLowerCase() !== 'supabase';
+  const usesSheets = (context.reservationStore ?? 'sheets').trim().toLowerCase() !== 'supabase';
   if (usesSheets && !context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
   const result = buildCreateReservationResult(normalized);
+  const command: CreateReservationCommand = {
+    id: result.idReserva,
+    date: result.normalized.fecha,
+    time: result.normalized.hora,
+    name: result.normalized.nombre,
+    phone: result.normalized.telefono,
+    pax: result.normalized.personas,
+    language: result.normalized.idioma,
+    specialRequest: result.normalized.peticion,
+    status: 'CONFIRMADA',
+    origin: result.normalized.origen,
+    table: '',
+    arrived: false,
+    feedbackSent: false,
+    room: result.normalized.habitacion,
+    service: result.normalized.servicio,
+    balinesePackage: '',
+    resource: '',
+    createdAt: result.row[14],
+    updatedAt: result.row[15],
+  };
 
   try {
-    const accessToken = await createGoogleAccessToken();
-    await appendSheetValues(context.sheetId, 'RESERVAS!A:S', [result.row], accessToken);
+    const store = resolveReservationStore({
+      clientId: context.clientId,
+      sheetId: context.sheetId,
+      reservationStore: context.reservationStore,
+    }, {
+      createReservation: async (reservation) => {
+        const accessToken = await createGoogleAccessToken();
+        await appendSheetValues(context.sheetId, 'RESERVAS!A:S', [result.row], accessToken);
+        return { reservation };
+      },
+    }, dbClient);
+    await store.createReservation(command);
   } catch (error) {
     const errorCode = getSafeErrorCode(error);
     console.error('[PUBLIC_API][RESERVATION_CREATE][APPEND_FAILED]', {
