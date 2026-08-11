@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
+import { readOfficialReservationList } from './reservationListSource.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -1011,6 +1013,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'GOOGLE_SHEET_ID',
   ]));
   const resolvedReservationStore = toSheetString(pickRecordValue(resolvedClient, ['reservation_store', 'reservationStore'])) || 'sheets';
+  const reservationShadowRead = normalizeBoolean(pickRecordValue(resolvedClient, ['reservation_shadow_read', 'reservationShadowRead']));
 
   debug.hasSheetId = Boolean(resolvedSheetId);
   console.log('[MANAGER_API][SHEET_ID_DIAGNOSTIC]', {
@@ -1033,7 +1036,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
   });
 
   const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save'].includes(String(action))
-    && resolvedReservationStore.toLowerCase() !== 'supabase';
+    && !(String(action) === 'reservations.list' && resolvedReservationStore.toLowerCase() === 'supabase');
   if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
@@ -1067,6 +1070,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     clientId: targetClientId,
     sheetId: resolvedSheetId,
     reservationStore: resolvedReservationStore,
+    reservationShadowRead,
     role: profileRole,
     serviceRoleAvailable: Boolean(supabaseServiceRoleKey),
     license: {
@@ -1652,25 +1656,37 @@ async function deleteResource(request: Request, sheetId: string, body: Record<st
   });
 }
 
-async function listReservations(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function listReservations(request: Request, clientId: string, sheetId: string, reservationStore: unknown, reservationShadowRead: boolean, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
-  console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-
-  const accessToken = await createGoogleAccessToken();
-  const sheetsResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-
-  if (!sheetsResponse.ok) {
-    const errorBody = await sheetsResponse.text();
-    throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
-  }
-
-  const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
-  debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
-  const reservations = normalizeReservations(sheetsData.values);
-  console.log(`[MANAGER_API] reservations=${reservations.length}`);
+  const readSheets = async () => {
+    console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+    const accessToken = await createGoogleAccessToken();
+    const sheetsResponse = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RESERVAS!A:Z')}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!sheetsResponse.ok) {
+      const errorBody = await sheetsResponse.text();
+      throw new Error(`GOOGLE_SHEETS_ERROR: ${sheetsResponse.status}: ${errorBody}`);
+    }
+    const sheetsData = await sheetsResponse.json() as { values?: unknown[][] };
+    debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
+    const reservations = normalizeReservations(sheetsData.values);
+    console.log(`[MANAGER_API] reservations=${reservations.length}`);
+    return reservations;
+  };
+  const readSupabase = async () => {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    return await store.listReservations();
+  };
+  const officialReservations = await readOfficialReservationList({
+    reservationStore: String(reservationStore || 'sheets'),
+    reservationShadowRead,
+    readSheets,
+    readSupabase,
+    runShadow: async () => undefined,
+  });
+  const reservations = officialReservations.map(toManagerReservation);
 
   return jsonResponse(request, {
     ok: true,
@@ -1678,6 +1694,10 @@ async function listReservations(request: Request, clientId: string, sheetId: str
     client_id: clientId,
     reservations,
   });
+}
+
+function toManagerReservation(reservation: unknown) {
+  return reservation;
 }
 
 async function listCapacity(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
@@ -2484,7 +2504,7 @@ Deno.serve(async (request) => {
         return await deleteResource(request, context.sheetId, body as Record<string, unknown>);
 
       case 'reservations.list':
-        return await listReservations(request, context.clientId, context.sheetId, debug);
+        return await listReservations(request, context.clientId, context.sheetId, context.reservationStore, context.reservationShadowRead, context.dbClient, debug);
 
       case 'feedbacks.list':
         return await listFeedbacks(request, context.clientId, context.sheetId, debug);
