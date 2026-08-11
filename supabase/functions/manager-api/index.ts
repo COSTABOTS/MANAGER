@@ -1010,6 +1010,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'google_sheet_id',
     'GOOGLE_SHEET_ID',
   ]));
+  const resolvedReservationStore = toSheetString(pickRecordValue(resolvedClient, ['reservation_store', 'reservationStore'])) || 'sheets';
 
   debug.hasSheetId = Boolean(resolvedSheetId);
   console.log('[MANAGER_API][SHEET_ID_DIAGNOSTIC]', {
@@ -1031,7 +1032,8 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     sheet_id: resolvedSheetId,
   });
 
-  const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save'].includes(String(action));
+  const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save'].includes(String(action))
+    && resolvedReservationStore.toLowerCase() !== 'supabase';
   if (!resolvedSheetId && actionRequiresSheetId) {
     const sheetDebug = {
       ...debug,
@@ -1064,6 +1066,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     dbClient,
     clientId: targetClientId,
     sheetId: resolvedSheetId,
+    reservationStore: resolvedReservationStore,
     role: profileRole,
     serviceRoleAvailable: Boolean(supabaseServiceRoleKey),
     license: {
@@ -1799,8 +1802,15 @@ async function listFeedbacks(request: Request, clientId: string, sheetId: string
   });
 }
 
-async function getSettings(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function getSettings(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data, error } = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', clientId).order('id', { ascending: true });
+    if (error) throw new Error(`SUPABASE_SETTINGS_READ_FAILED: ${error.message}`);
+    debug.rowsRead = Array.isArray(data) ? data.length : 0;
+    const settings = normalizeSettings((data ?? []).map((row: Record<string, unknown>) => [row.CLAVE, row.VALOR]));
+    return jsonResponse(request, { ok: true, action: 'settings.get', client_id: clientId, settings });
+  }
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const accessToken = await createGoogleAccessToken();
@@ -1827,8 +1837,23 @@ async function getSettings(request: Request, clientId: string, sheetId: string, 
   });
 }
 
-async function saveSettings(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function saveSettings(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const settingsMap = normalizeSettingsInput(body.settings);
+    const variables = Object.keys(settingsMap);
+    if (variables.length === 0) return errorResponse(request, 'SETTINGS_REQUIRED', 'No se recibieron SETTINGS para guardar', 400);
+    for (const variable of variables) {
+      const value = settingsMap[variable];
+      const { data, error } = await dbClient.from('SETTINGS').update({ VALOR: value }).eq('CLIENTE_ID', clientId).eq('CLAVE', variable).select('id');
+      if (error) throw new Error(`SUPABASE_SETTINGS_WRITE_FAILED: ${error.message}`);
+      if (!Array.isArray(data) || data.length === 0) {
+        const { error: insertError } = await dbClient.from('SETTINGS').insert({ CLIENTE_ID: clientId, CLAVE: variable, VALOR: value });
+        if (insertError) throw new Error(`SUPABASE_SETTINGS_WRITE_FAILED: ${insertError.message}`);
+      }
+    }
+    return jsonResponse(request, { ok: true, action: 'settings.save', client_id: clientId });
+  }
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const settingsMap = normalizeSettingsInput(body.settings);
@@ -2471,10 +2496,10 @@ Deno.serve(async (request) => {
         return await saveCapacity(request, context.clientId, context.sheetId, body as Record<string, unknown>);
 
       case 'settings.get':
-        return await getSettings(request, context.clientId, context.sheetId, debug);
+        return await getSettings(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
 
       case 'settings.save':
-        return await saveSettings(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await saveSettings(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'fullybooked.get':
         return await getFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
