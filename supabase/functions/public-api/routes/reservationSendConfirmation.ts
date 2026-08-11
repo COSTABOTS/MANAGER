@@ -16,6 +16,8 @@ import {
   toStringValue,
 } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
+import type { ReservationRecord } from '../../_shared/reservation-store/types.ts';
 import {
   buildReservationCancellationUrl,
   buildReservationConfirmationMessage,
@@ -143,24 +145,50 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
     return context.error;
   }
 
-  if (!context.sheetId) {
+  const useSupabase = (context.reservationStore ?? 'sheets').toString().trim().toLowerCase() === 'supabase';
+  if (!useSupabase && !context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
-  const accessToken = await createGoogleAccessToken();
-  let sheetsData: { values?: unknown[][] };
-  try {
-    sheetsData = await fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken);
-  } catch (error) {
-    console.error('[PUBLIC_API][SEND_CONFIRMATION][SHEETS_READ_FAILED]', {
+  let accessToken = '';
+  let store: ReturnType<typeof resolveReservationStore> | null = null;
+  let matches: ReservationRow[];
+  if (useSupabase) {
+    store = resolveReservationStore({
       clientId: context.clientId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return errorResponse(request, 'SHEETS_READ_FAILED', 502);
+      sheetId: context.sheetId,
+      reservationStore: context.reservationStore,
+    }, {}, dbClient);
+    const reservations = await store.listReservations();
+    matches = findMatchingReservations(reservations.map((reservation: ReservationRecord) => ({
+      rowNumber: 0,
+      idReserva: reservation.id,
+      fecha: reservation.date,
+      hora: reservation.time,
+      nombre: reservation.name,
+      telefono: reservation.phone,
+      pax: String(reservation.pax || ''),
+      idioma: reservation.language,
+      peticionEspecial: reservation.specialRequest,
+      estado: reservation.status,
+      habitacion: reservation.room,
+      servicio: reservation.service,
+      paqueteBalinesa: reservation.balinesePackage,
+    })), body);
+  } else {
+    accessToken = await createGoogleAccessToken();
+    let sheetsData: { values?: unknown[][] };
+    try {
+      sheetsData = await fetchSheetValues(context.sheetId, 'RESERVAS!A:Z', accessToken);
+    } catch (error) {
+      console.error('[PUBLIC_API][SEND_CONFIRMATION][SHEETS_READ_FAILED]', {
+        clientId: context.clientId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return errorResponse(request, 'SHEETS_READ_FAILED', 502);
+    }
+    matches = findMatchingReservations(normalizeReservationRows(sheetsData.values), body);
   }
-
-  const reservations = normalizeReservationRows(sheetsData.values);
-  const matches = findMatchingReservations(reservations, body);
 
   if (matches.length === 0) {
     console.warn('[PUBLIC_API][SEND_CONFIRMATION][RESERVATION_NOT_FOUND]', {
@@ -183,7 +211,12 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
 
   const reservation = matches[0];
   try {
-    await updateSheetCell(context.sheetId, `RESERVAS!E${reservation.rowNumber}`, phone, accessToken);
+    if (useSupabase) {
+      if (!store?.updateReservationPhone) throw new Error('SUPABASE_PHONE_UPDATE_UNAVAILABLE');
+      await store.updateReservationPhone(reservation.idReserva, phone);
+    } else {
+      await updateSheetCell(context.sheetId, `RESERVAS!E${reservation.rowNumber}`, phone, accessToken);
+    }
   } catch (error) {
     console.error('[PUBLIC_API][SEND_CONFIRMATION][PHONE_UPDATE_FAILED]', {
       clientId: context.clientId,
