@@ -1300,7 +1300,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       if (shouldUseManagerApiReservations) {
         try {
           const nextReservations = await loadReservationsFromManagerApi();
-          setAllReservations(nextReservations);
+          setAllReservations(normalizeDemoReservations(nextReservations as unknown as Array<Record<string, unknown>>));
           setHasLoadedReservations(true);
           setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
           setLastSync('Datos actualizados correctamente');
