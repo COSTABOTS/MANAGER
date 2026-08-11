@@ -444,15 +444,14 @@ function normalizeDemoService(value: unknown): BookingService {
 
 function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reservation[] {
   return rows.flatMap((row) => {
-    const idReserva = toDemoString(pickDemoReservationValue(row, [
+    const idReserva = toDemoString(row.id ?? row.ID_RESERVA ?? pickDemoReservationValue(row, [
       'idReserva',
       'id_reserva',
-      'id',
       'ID_RESERVA',
       'publicReference',
       'public_reference',
       '0',
-    ])) || `reservation-${toDemoString(row.date)}-${toDemoString(row.time)}-${toDemoString(row.name)}`;
+    ]));
     if (!idReserva) {
       console.warn('[DEMO] Reserva sin ID_RESERVA', row);
       return [];
@@ -478,17 +477,6 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
       resource: toDemoString(pickDemoReservationValue(row, ['recurso', 'RECURSO', 'resource', '18'])),
     }];
   });
-}
-
-function reservationDebugSnapshot(reservations: Array<Partial<Reservation>>) {
-  return reservations.map((reservation) => ({
-    id: reservation.id ?? reservation.idReserva,
-    date: reservation.date,
-    time: reservation.time,
-    pax: reservation.pax,
-    status: reservation.status,
-    service: reservation.service,
-  }));
 }
 
 async function loadSupabaseClientConfig(userId: string, selectedClientId?: string) {
@@ -829,7 +817,6 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const filteredReservations = allReservations
       .filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation))
       .sort((a, b) => a.time.localeCompare(b.time));
-    console.log('[RES_DEBUG_TODAY]', { length: filteredReservations.length, reservations: reservationDebugSnapshot(filteredReservations) });
     return filteredReservations;
   }, [allReservations, dayStatus.date]);
 
@@ -1311,10 +1298,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       if (shouldUseManagerApiReservations) {
         try {
           const nextReservations = await loadReservationsFromManagerApi();
-          console.log('[RES_DEBUG_RAW]', { length: nextReservations.length, reservations: reservationDebugSnapshot(nextReservations) });
           const normalizedReservations = normalizeDemoReservations(nextReservations as unknown as Array<Record<string, unknown>>);
-          console.log('[RES_DEBUG_NORMALIZED]', { length: normalizedReservations.length, reservations: reservationDebugSnapshot(normalizedReservations) });
-          console.log('[RES_DEBUG_ALL]', { length: normalizedReservations.length, reservations: reservationDebugSnapshot(normalizedReservations) });
           setAllReservations(normalizedReservations);
           setHasLoadedReservations(true);
           setLastUpdatedAt(getCurrentTime({ includeSeconds: true }));
@@ -2598,7 +2582,6 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       );
     }
 
-    console.log('[RES_DEBUG_RENDER]', { length: todayReservations.length, reservations: reservationDebugSnapshot(todayReservations) });
     return (
       <Today
         dayStatus={{
