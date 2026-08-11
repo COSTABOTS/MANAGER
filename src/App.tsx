@@ -444,7 +444,15 @@ function normalizeDemoService(value: unknown): BookingService {
 
 function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reservation[] {
   return rows.flatMap((row) => {
-    const idReserva = toDemoString(pickDemoReservationValue(row, ['idReserva', 'ID_RESERVA', '0']));
+    const idReserva = toDemoString(pickDemoReservationValue(row, [
+      'idReserva',
+      'id_reserva',
+      'id',
+      'ID_RESERVA',
+      'publicReference',
+      'public_reference',
+      '0',
+    ])) || `reservation-${toDemoString(row.date)}-${toDemoString(row.time)}-${toDemoString(row.name)}`;
     if (!idReserva) {
       console.warn('[DEMO] Reserva sin ID_RESERVA', row);
       return [];
