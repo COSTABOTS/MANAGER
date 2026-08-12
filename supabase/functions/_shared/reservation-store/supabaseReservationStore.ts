@@ -321,6 +321,26 @@ export class SupabaseReservationStore implements ReservationStore {
     return { reservation: command };
   }
 
+  async createBalineseReservation(command: CreateReservationCommand): Promise<CreateReservationResult> {
+    if (!this.dbClient.rpc) throw new Error('SUPABASE_RESERVATION_STORE_RPC_UNAVAILABLE');
+    const result = await this.dbClient.rpc('create_hospitality_balinese_reservation', {
+      p_client_id: this.context.clientId,
+      p_idempotency_key: command.id,
+      p_reservation: await this.toDatabasePayload(command, 'typebot'),
+    });
+    if (result.error) {
+      const message = String(result.error.message ?? '');
+      if (message.includes('NO_RESOURCE_AVAILABLE') || message.includes('NO_RESOURCE_WITH_CAPACITY')) {
+        throw new Error(message.includes('NO_RESOURCE_AVAILABLE') ? 'NO_RESOURCE_AVAILABLE' : 'NO_RESOURCE_WITH_CAPACITY');
+      }
+      throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${message}`);
+    }
+    const assignedResource = result.data && typeof result.data === 'object' && 'resource_label' in result.data
+      ? String((result.data as Record<string, unknown>).resource_label ?? '')
+      : command.resource;
+    return { reservation: { ...command, resource: assignedResource } };
+  }
+
   async createManualReservation(command: CreateReservationCommand) {
     await this.insertDirect(command, 'manager_manual');
     return { reservation: command };

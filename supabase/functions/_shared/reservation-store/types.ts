@@ -84,6 +84,7 @@ export interface ReservationStore {
   listReservations(): Promise<ReservationRecord[]>;
   getReservation(id: string): Promise<ReservationRecord | null>;
   createReservation(command: CreateReservationCommand): Promise<CreateReservationResult>;
+  createBalineseReservation?(command: CreateReservationCommand): Promise<CreateReservationResult>;
   createManualReservation(command: CreateReservationCommand): Promise<CreateReservationResult>;
   createWalkIn(command: CreateReservationCommand): Promise<CreateReservationResult>;
   cancelReservation?(id: string): Promise<ReservationMutationResult>;
