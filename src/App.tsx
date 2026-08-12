@@ -2009,7 +2009,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setLastSync('Configuracion guardada correctamente');
     let settingsSavedByManagerApi = false;
 
-    const brandingSaved = await syncClientBranding(settingsToSave);
+    const brandingSaved = isBalineseSettingsTrial ? true : await syncClientBranding(settingsToSave);
     if (!brandingSaved) {
       return 'error';
     }
