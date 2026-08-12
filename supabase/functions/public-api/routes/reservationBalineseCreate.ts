@@ -76,6 +76,14 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     return errorResponse(request, 'INVALID_REQUEST', 400, { missing_fields: ['body'] });
   }
 
+  console.log('[PUBLIC_API][BALINESE_CREATE][ENTER]', {
+    clientId: toStringValue(body.client_id ?? body.clientId),
+    hasPublicToken: Boolean(toStringValue(body.public_token ?? body.publicToken)),
+    hasDate: Boolean(toStringValue(body.fecha ?? body.FECHA)),
+    hasPax: Boolean(toStringValue(body.personas ?? body.pax ?? body.PAX)),
+    hasPackage: Boolean(toStringValue(body.paquete ?? body.paquete_balinesa ?? body.PAQUETE_BALINESA)),
+  });
+
   const { normalized, missingFields, invalidFields } = normalizeBalineseCreateInput(body);
   if (invalidFields.includes('servicio')) {
     return errorResponse(request, 'INVALID_SERVICE', 400);
@@ -96,20 +104,36 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     return context.error;
   }
 
+  console.log('[PUBLIC_API][BALINESE_CREATE][CONTEXT_OK]', {
+    clientId: context.clientId,
+    reservationStore: context.reservationStore,
+  });
+
   const usesSupabase = String(context.reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase';
   if (usesSupabase) {
+    console.log('[PUBLIC_API][BALINESE_CREATE][PAYLOAD_OK]', {
+      clientId: context.clientId,
+      normalizedDate: normalized.fecha,
+      pax: normalized.personas,
+      service: normalized.servicio,
+      hasPackage: Boolean(normalized.paquete),
+    });
     const { data: resourcesData, error: resourcesError } = await dbClient.from('reservable_resources').select('id,label,capacity,active').eq('client_id', context.clientId).eq('active', true).order('display_order', { ascending: true });
     if (resourcesError) return errorResponse(request, 'INTERNAL_ERROR', 500);
+    console.log('[PUBLIC_API][BALINESE_CREATE][RESOURCES_FOUND]', { clientId: context.clientId, count: resourcesData?.length ?? 0 });
     const { data: reservationsData, error: reservationsError } = await dbClient.from('reservations').select('resource_id').eq('client_id', context.clientId).eq('booking_date', normalized.fecha).eq('service', 'BALINESA').not('status', 'in', '(cancelled,no_show)');
     if (reservationsError) return errorResponse(request, 'INTERNAL_ERROR', 500);
     const occupiedIds = new Set((reservationsData ?? []).map((row: Record<string, unknown>) => String(row.resource_id ?? '')).filter(Boolean));
+    console.log('[PUBLIC_API][BALINESE_CREATE][OCCUPIED_RESOURCES]', { clientId: context.clientId, normalizedDate: normalized.fecha, count: occupiedIds.size });
     const resources = (resourcesData ?? []).map((row: Record<string, unknown>) => ({ recurso: String(row.label ?? ''), capacidad: Number(row.capacity ?? 0), id: String(row.id ?? '') }));
     const freeResources = resources.filter((resource) => !occupiedIds.has(resource.id));
     const resource = freeResources.find((item) => item.capacidad <= 0 || item.capacidad >= normalized.personas);
     if (!resource) return jsonResponse(request, { ok: false, code: freeResources.length ? 'NO_RESOURCE_WITH_CAPACITY' : 'NO_RESOURCE_AVAILABLE', error: freeResources.length ? 'NO_RESOURCE_WITH_CAPACITY' : 'NO_RESOURCE_AVAILABLE', available: false }, 409);
+    console.log('[PUBLIC_API][BALINESE_CREATE][RESOURCE_SELECTED]', { clientId: context.clientId, resourceId: resource.id, capacity: resource.capacidad, pax: normalized.personas });
     const result = buildBalineseReservationResult(normalized, resource.recurso);
     try {
       const store = resolveReservationStore({ clientId: context.clientId, sheetId: '', reservationStore: context.reservationStore }, {}, dbClient);
+      console.log('[PUBLIC_API][BALINESE_CREATE][BEFORE_STORE_CREATE]', { clientId: context.clientId, service: 'BALINESA', hasResource: Boolean(resource.recurso), hasPackage: Boolean(normalized.paquete) });
       await store.createReservation({ id: result.idReserva, date: normalized.fecha, time: normalized.hora, name: normalized.nombre, phone: normalized.telefono, pax: normalized.personas, language: normalized.idioma, specialRequest: normalized.peticion, status: 'CONFIRMADA', origin: normalized.origen, table: '', arrived: false, feedbackSent: false, room: normalized.habitacion, service: 'BALINESA', balinesePackage: normalized.paquete, resource: resource.recurso });
     } catch (error) {
       const failure = getSafeBalineseStoreFailure(error);
