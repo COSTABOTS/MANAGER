@@ -19,6 +19,7 @@ export interface DispatchClient {
   bookingUrl: string;
   sheetId: string;
   publicToken: string;
+  reservationStore: string;
 }
 
 export interface PendingFeedbackReservation {
@@ -147,13 +148,14 @@ export function normalizeDispatchClients(rows: Array<Record<string, unknown>> | 
     const bookingUrl = getClientBookingUrl(client);
     const sheetId = toStringValue(client.sheet_id ?? client.sheetId);
     const publicToken = toStringValue(client.public_token ?? client.publicToken);
+    const reservationStore = toStringValue(client.reservation_store ?? client.reservationStore).toLowerCase() || 'sheets';
     const status = toStringValue(client.status).toUpperCase() || 'ACTIVE';
 
-    if (!clientId || !sheetId || !['ACTIVE', 'TRIAL'].includes(status)) {
+    if (!clientId || (!sheetId && reservationStore !== 'supabase') || !['ACTIVE', 'TRIAL'].includes(status)) {
       return [];
     }
 
-    return [{ clientId, restaurantName, bookingUrl, sheetId, publicToken }];
+    return [{ clientId, restaurantName, bookingUrl, sheetId, publicToken, reservationStore }];
   });
 }
 

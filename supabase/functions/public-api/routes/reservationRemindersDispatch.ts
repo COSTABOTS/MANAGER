@@ -10,6 +10,7 @@ import {
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildReservationReminderEN } from '../templates/reservationReminderEN.ts';
 import { buildReservationReminderES } from '../templates/reservationReminderES.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 
 function constantTimeEqual(left: string, right: string) {
   if (!left || !right || left.length !== right.length) {
@@ -81,7 +82,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
 
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
-    .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
+    .select('client_id, rest_name, status, sheet_id, public_token, reservation_store, booking_url, public_url, bot_url, contact_phone')
     .not('sheet_id', 'is', null);
 
   if (clientsError) {
@@ -133,6 +134,27 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
       console.warn('[PUBLIC_API][RESERVATION_REMINDERS][MINUTES_FALLBACK]', {
         clientId: client.clientId,
       });
+    }
+
+    if (client.reservationStore === 'supabase') {
+      const store = resolveReservationStore({ clientId: client.clientId, sheetId: client.sheetId, reservationStore: 'supabase' }, {}, dbClient);
+      const records = await store.listPendingReminderReservations(clock.date);
+      const rows = records.flatMap((record) => normalizePendingReservationReminders([
+        ['ID_RESERVA', 'FECHA', 'HORA', 'NOMBRE', 'TELEFONO', 'PAX', 'IDIOMA', 'ESTADO', 'SERVICIO', 'CREATED_AT', 'PRECENA_ENVIADO'],
+        [record.id, record.date, record.time, record.name, record.phone, record.pax, record.language, record.status, record.service, record.createdAt ?? '', record.preDinnerSent ? 'TRUE' : 'FALSE'],
+      ], clock, preDinnerConfig.minutes, force, { lateCreation: 0, alreadySent: 0, balinesa: 0 }));
+      reservationsFound += rows.length;
+      for (const reservation of rows) {
+        try {
+          await sendEvolutionText(reservation.telefono, buildReminderMessage({ idReserva: reservation.idReserva, clientId: client.clientId, publicToken: client.publicToken, nombre: reservation.nombre || 'Cliente', hora: reservation.hora, personas: reservation.personas, restaurantName: client.restaurantName || 'el restaurante', idioma: reservation.idioma === 'en' ? 'en' : 'es' }));
+          await store.markPreDinnerSent(reservation.idReserva);
+          messagesSent += 1;
+        } catch (error) {
+          messagesFailed += 1;
+          errors.push({ client_id: client.clientId, id_reserva: reservation.idReserva, code: 'EVOLUTION_SEND_FAILED' });
+        }
+      }
+      continue;
     }
 
     let reservationsData: { values?: unknown[][] };
