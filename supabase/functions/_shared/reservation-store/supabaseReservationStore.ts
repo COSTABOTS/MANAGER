@@ -405,10 +405,20 @@ export class SupabaseReservationStore implements ReservationStore {
 
   private async toDatabasePayload(command: CreateReservationCommand, channel: string) {
     let tableId: string | null = null;
+    let resourceId: string | null = null;
     if (command.table) {
       const result = await (this.dbClient.from('restaurant_tables') as any).select('id').eq('client_id', this.context.clientId).eq('label', command.table).limit(1).maybeSingle();
       if (result.error || !result.data) throw new Error('SUPABASE_RESERVATION_STORE_TABLE_NOT_FOUND');
       tableId = String(result.data.id);
+    }
+    if (command.resource) {
+      const resourceValue = String(command.resource).trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(resourceValue);
+      const result = isUuid
+        ? await (this.dbClient.from('reservable_resources') as any).select('id').eq('client_id', this.context.clientId).eq('id', resourceValue).limit(1).maybeSingle()
+        : await (this.dbClient.from('reservable_resources') as any).select('id').eq('client_id', this.context.clientId).eq('label', resourceValue).limit(1).maybeSingle();
+      if (result.error || !result.data) throw new Error('SUPABASE_RESERVATION_STORE_RESOURCE_NOT_FOUND');
+      resourceId = String(result.data.id);
     }
     return {
       client_id: this.context.clientId, legacy_reservation_id: command.id, public_reference: command.id,
@@ -416,7 +426,7 @@ export class SupabaseReservationStore implements ReservationStore {
       customer_name: command.name || null, customer_phone: command.phone || null, pax: command.pax,
       locale: command.language.toLowerCase(), legacy_locale: command.language, special_request: command.specialRequest || null,
       status: command.status === 'CANCELADA' ? 'cancelled' : 'confirmed', legacy_status: command.status,
-      source_channel: channel, legacy_source: command.origin, table_id: tableId, room: command.room || null,
+      source_channel: channel, legacy_source: command.origin, table_id: tableId, resource_id: resourceId, room: command.room || null,
       arrived: command.arrived, feedback_sent: command.feedbackSent, balinese_package: command.balinesePackage || null,
       legacy_created_at: command.createdAt || null, legacy_updated_at: command.updatedAt || null,
     };
