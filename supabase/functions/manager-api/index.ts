@@ -2370,12 +2370,17 @@ async function updateReservationArrival(request: Request, clientId: string, shee
   });
 }
 
-async function assignReservationTable(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function assignReservationTable(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   const mesa = toSheetString(body.mesa ?? body.table);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.assignTable(idReserva, mesa);
+    return jsonResponse(request, { ok: true, action: 'reservation.assignTable', client_id: clientId, idReserva, mesa });
+  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
   const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
@@ -2546,7 +2551,7 @@ Deno.serve(async (request) => {
         return await updateReservationArrival(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.assignTable':
-        return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await assignReservationTable(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.cancel':
         return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
