@@ -2211,7 +2211,7 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   });
 }
 
-async function createWalkIn(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+async function createWalkIn(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
@@ -2238,6 +2238,12 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
 
   if (!pax) {
     return errorResponse(request, 'WALKIN_REQUIRED_FIELDS', 'Faltan pax para crear el walk-in', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.createWalkIn({ id: idReserva, date: fecha, time: hora, name: nombre, phone: '', pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'WALK-IN', table: mesa, arrived: true, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: '', resource: '' });
+    return jsonResponse(request, { ok: true, action: 'walkin.create', client_id: clientId, idReserva });
   }
 
   const rowToAppend = [
@@ -2557,7 +2563,7 @@ Deno.serve(async (request) => {
         return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'walkin.create':
-        return await createWalkIn(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+        return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'shows.list':
         return await listShows(request, context);
