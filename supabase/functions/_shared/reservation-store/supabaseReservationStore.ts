@@ -449,11 +449,14 @@ export class SupabaseReservationStore implements ReservationStore {
       .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,pre_dinner_sent,service,balinese_package,created_at')
       .eq('client_id', this.context.clientId)
       .eq('booking_date', normalizeDatabaseDate(date))
-      .in('status', ['confirmed']);
+      .eq('feedback_sent', false);
     if (requireArrival) query = query.eq('arrived', true);
     const rows = requireRows(await query.order('booking_time', { ascending: true }), 'LIST_PENDING_FAILED');
     const mapped = await this.mapReservations(rows, true);
-    return mapped.filter((row) => sentColumn === 'feedback_sent' ? !row.feedbackSent : !row.preDinnerSent);
+    return mapped.filter((row) => {
+      const active = ['CONFIRMADA', 'CONFIRMED', 'PENDIENTE', 'PENDING'].includes(row.status.toUpperCase());
+      return active && (sentColumn === 'feedback_sent' ? !row.feedbackSent : !row.preDinnerSent);
+    });
   }
 
   private async mapReservations(rows: DatabaseRow[], includeDeliveryState = false): Promise<ReservationRecord[]> {
