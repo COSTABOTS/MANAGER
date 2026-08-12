@@ -14,6 +14,7 @@ import { toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildReservationCancellationEN } from '../templates/reservationCancellationEN.ts';
 import { buildReservationCancellationES } from '../templates/reservationCancellationES.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 
 type CancellationRouteMode = 'details' | 'confirm';
 
@@ -90,6 +91,52 @@ export async function handleReservationCancellation(request: Request, dbClient: 
   });
   if ('error' in context) {
     return context.error;
+  }
+
+  if (context.reservationStore === 'supabase') {
+    const store = resolveReservationStore({
+      clientId: context.clientId,
+      sheetId: context.sheetId,
+      reservationStore: context.reservationStore,
+    }, {}, dbClient);
+    const record = await store.getReservation(getIdReserva(body));
+    const reservation = record ? {
+      rowNumber: 0,
+      idReserva: record.id,
+      nombre: record.name,
+      fecha: record.date,
+      hora: record.time,
+      telefono: record.phone,
+      personas: record.pax,
+      idioma: record.language.toLowerCase() === 'en' ? 'en' as const : 'es' as const,
+      estado: record.status,
+      servicio: record.service,
+      paqueteBalinesa: record.balinesePackage,
+      recurso: record.resource,
+    } : null;
+
+    if (mode === 'details') {
+      if (!isConfirmedReservation(reservation)) return jsonResponse(request, { encontrada: false });
+      const clientMessageData = getPublicClientMessageData(context.client, reservation.idioma);
+      return jsonResponse(request, {
+        encontrada: true, restaurante: clientMessageData.restaurantName, nombre: reservation.nombre,
+        fecha: reservation.fecha, hora: reservation.hora, telefono: reservation.telefono,
+        personas: reservation.personas, idioma: reservation.idioma.toUpperCase(), servicio: reservation.servicio,
+        paquete_balinesa: reservation.paqueteBalinesa, recurso: reservation.recurso,
+        logo_url: toStringValue(context.client.logo_url), primaryColor: toStringValue(context.client.primary_color),
+      });
+    }
+
+    if (isCancelledReservation(reservation)) return jsonResponse(request, { ok: false, already_cancelled: true });
+    if (!isConfirmedReservation(reservation)) return jsonResponse(request, { ok: false, encontrada: false });
+    await store.cancelReservation(getIdReserva(body));
+    const phone = getCancellationPhone(reservation);
+    if (phone) {
+      try { await sendEvolutionText(phone, buildCancellationMessage(reservation, context.client)); } catch (error) {
+        console.error('[PUBLIC_API][CANCELLATION][WHATSAPP_SEND_FAILED]', { error: getSafeGoogleError(error) });
+      }
+    }
+    return jsonResponse(request, { ok: true, cancelled: true });
   }
 
   if (!context.sheetId) {
