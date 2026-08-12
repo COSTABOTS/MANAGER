@@ -1179,6 +1179,11 @@ button:disabled {
   box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
 }
 
+.control-toolbar input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  cursor: pointer;
+}
+
 .reservations-filter-toolbar {
   grid-template-columns:
     minmax(220px, 1.3fr)
@@ -4005,6 +4010,15 @@ button:active:not(:disabled) {
 }
 
 @media (max-width: 1180px) {
+  .control-toolbar {
+    grid-template-columns: minmax(220px, 1fr) minmax(170px, 0.7fr) auto;
+    gap: 18px;
+  }
+
+  .control-toolbar .segmented-control {
+    justify-self: end;
+  }
+
   .reservations-filter-toolbar {
     grid-template-columns: repeat(3, minmax(160px, 1fr));
   }
