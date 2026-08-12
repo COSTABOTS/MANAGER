@@ -14,6 +14,7 @@ import { normalizeDateKey, toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildFeedbackInvitationEN } from '../templates/feedbackInvitationEN.ts';
 import { buildFeedbackInvitationES, buildFeedbackUrl, maskFeedbackUrl } from '../templates/feedbackInvitationES.ts';
+import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
 
 function constantTimeEqual(left: string, right: string) {
   if (!left || !right || left.length !== right.length) {
@@ -90,7 +91,7 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
     .select('client_id, rest_name, status, sheet_id, public_token, booking_url, public_url, bot_url, contact_phone')
-    .not('sheet_id', 'is', null);
+    ;
 
   if (clientsError) {
     console.error('[PUBLIC_API][FEEDBACK_DISPATCH][CLIENTS_FAILED]', {
@@ -102,20 +103,21 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
   const clients = normalizeDispatchClients(rawClients as Array<Record<string, unknown>> | null | undefined);
 
   let accessToken = '';
-  try {
-    accessToken = await createGoogleAccessToken();
-  } catch (error) {
-    console.error('[PUBLIC_API][FEEDBACK_DISPATCH][GOOGLE_AUTH_FAILED]', {
-      error: getSafeErrorCode(error),
-    });
-    return errorResponse(request, 'GOOGLE_AUTH_ERROR', 500);
+  if (clients.some((client) => client.reservationStore !== 'supabase')) {
+    try {
+      accessToken = await createGoogleAccessToken();
+    } catch (error) {
+      console.error('[PUBLIC_API][FEEDBACK_DISPATCH][GOOGLE_AUTH_FAILED]', { error: getSafeErrorCode(error) });
+      return errorResponse(request, 'GOOGLE_AUTH_ERROR', 500);
+    }
   }
 
   for (const client of clients) {
     let values: unknown[][] | undefined;
     try {
-      const settingsData = await fetchSheetValues(client.sheetId, 'SETTINGS!A:Z', accessToken);
-      const postDinnerConfig = getPostDinnerMessageConfig(settingsData.values);
+      const postDinnerConfig = client.reservationStore === 'supabase'
+        ? getPostDinnerMessageConfig((await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', client.clientId)).data?.map((row: Record<string, unknown>) => [row.CLAVE, row.VALOR]))
+        : getPostDinnerMessageConfig((await fetchSheetValues(client.sheetId, 'SETTINGS!A:Z', accessToken)).values);
       if (!postDinnerConfig.enabled) {
         clientsSkippedDisabled += 1;
         continue;
@@ -136,6 +138,25 @@ export async function handleFeedbackDispatch(request: Request, dbClient: DbClien
         error: code,
       });
       errors.push({ client_id: client.clientId, code: 'SETTINGS_READ_FAILED' });
+      continue;
+    }
+
+    if (client.reservationStore === 'supabase') {
+      const store = new SupabaseReservationStore({ clientId: client.clientId, sheetId: client.sheetId, reservationStore: 'supabase' }, dbClient);
+      const reservations = await store.listPendingFeedbackReservations(targetDate);
+      reservationsFound += reservations.length;
+      for (const reservation of reservations) {
+        const safeLanguage = reservation.language === 'en' ? 'en' : 'es';
+        try {
+          const messageParams = { idReserva: reservation.id, clientId: client.clientId, publicToken: client.publicToken, nombre: reservation.name || 'Cliente', restaurantName: client.restaurantName || (safeLanguage === 'en' ? 'the restaurant' : 'el restaurante'), idioma: safeLanguage };
+          await sendEvolutionText(reservation.phone, buildInvitationMessage(messageParams));
+          await store.markFeedbackSent(reservation.id);
+          messagesSent += 1;
+        } catch {
+          messagesFailed += 1;
+          errors.push({ client_id: client.clientId, id_reserva: reservation.id, code: 'EVOLUTION_SEND_FAILED' });
+        }
+      }
       continue;
     }
 
