@@ -2135,7 +2135,7 @@ async function createReservation(request: Request, clientId: string, sheetId: st
 
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
     const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
-    await store.createReservation({ id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL', table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: paqueteBalinesa, resource: recurso });
+    await store.createManualReservation({ id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL', table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: paqueteBalinesa, resource: recurso });
     return jsonResponse(request, { ok: true, action: 'reservation.create', client_id: clientId, idReserva });
   }
 
