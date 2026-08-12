@@ -87,7 +87,7 @@ function normalizeService(service: string): BookingService {
 }
 
 export function normalizeReservationFromSheet(row: SheetReservationRow): Reservation | null {
-  const idReserva = toStringValue(pick(row, ['id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)', '8']));
+  const idReserva = toStringValue(pick(row, ['id', 'id_reserva', 'idReserva', 'ID_RESERVA', 'ID_RESERVA (I)', '8']));
 
   if (!idReserva) {
     console.warn('Reserva sin ID_RESERVA', row);
