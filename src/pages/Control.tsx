@@ -72,6 +72,17 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
     localStorage.setItem(CONTROL_VIEW_MODE_KEY, nextView);
   }
 
+  function openDatePicker() {
+    const input = dateInputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.focus();
+      input.click();
+    }
+  }
+
   return (
     <main className="app-shell">
       <PageHeader eyebrow="CONTROL RESERVAS" title="CONTROL" />
@@ -80,16 +91,10 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
         <label className="control-date-field">
           Fecha inicio
           <input ref={dateInputRef} type="date" value={rangeStart} onChange={(event) => updateRangeStart(event.target.value)} />
-          <button className="control-date-icon" type="button" aria-label="Abrir calendario" onClick={() => {
-            const input = dateInputRef.current;
-            if (!input) return;
-            if (typeof input.showPicker === 'function') {
-              input.showPicker();
-            } else {
-              input.focus();
-              input.click();
-            }
-          }}>📅</button>
+          <button className="control-date-icon" type="button" aria-label="Abrir calendario" onPointerDown={(event) => {
+            event.preventDefault();
+            openDatePicker();
+          }} onClick={openDatePicker}>📅</button>
         </label>
         <label>
           Dias visibles

@@ -1209,6 +1209,8 @@ button:disabled {
   font-size: 18px;
   line-height: 18px;
   cursor: pointer;
+  z-index: 2;
+  touch-action: manipulation;
   background: transparent;
   box-shadow: none;
 }
