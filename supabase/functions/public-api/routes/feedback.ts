@@ -21,6 +21,7 @@ import {
 import { toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { buildFeedbackAlertMessage } from '../templates/feedbackAlert.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 
 type FeedbackRouteMode = 'details' | 'submit';
 
@@ -102,6 +103,35 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
   });
   if ('error' in context) {
     return context.error;
+  }
+
+  if (context.reservationStore === 'supabase') {
+    const store = resolveReservationStore({ clientId: context.clientId, sheetId: context.sheetId, reservationStore: context.reservationStore }, {}, dbClient);
+    const record = await store.getReservation(getIdReserva(body));
+    const reservation = record ? {
+      idReserva: record.id, nombre: record.name, fecha: record.date, hora: record.time,
+      telefono: record.phone, personas: record.pax, habitacion: record.room,
+      idioma: record.language.toLowerCase() === 'en' ? 'en' as const : 'es' as const,
+      servicio: record.service,
+    } : null;
+    const alreadySubmitted = record ? await store.getFeedbackByReservation(record.id) : false;
+    const branding = buildBranding(context.client);
+    const reviewLinks = buildReviewLinks();
+
+    if (mode === 'details') {
+      return jsonResponse(request, reservation ? {
+        ok: true, encontrada: true, already_submitted: alreadySubmitted,
+        reservation: { id_reserva: reservation.idReserva, nombre: reservation.nombre, fecha: reservation.fecha, hora: reservation.hora, telefono: reservation.telefono, personas: reservation.personas, habitacion: reservation.habitacion, idioma: reservation.idioma.toUpperCase(), servicio: reservation.servicio },
+        branding, review_links: reviewLinks,
+      } : { ok: true, encontrada: false });
+    }
+    if (!reservation) return errorResponse(request, 'RESERVATION_NOT_FOUND', 404);
+    const { normalized, missingFields: submitMissingFields, invalidFields } = normalizeFeedbackSubmit(body, reservation);
+    if (!normalized || submitMissingFields.length > 0 || invalidFields.length > 0) return errorResponse(request, 'INVALID_REQUEST', 400, { ...(submitMissingFields.length ? { missing_fields: submitMissingFields } : {}), ...(invalidFields.length ? { invalid_fields: invalidFields } : {}) });
+    if (alreadySubmitted) return jsonResponse(request, { ok: false, already_submitted: true }, 409);
+    const result = await store.createFeedback({ reservationId: reservation.idReserva, rating: normalized.puntuacion, comment: normalized.comentario, submittedAt: normalized.timestamp });
+    if (!result.created) return jsonResponse(request, { ok: false, already_submitted: true }, 409);
+    return jsonResponse(request, { ok: true, feedback_saved: true, positive: normalized.puntuacion >= 4, ...(normalized.puntuacion >= 4 ? { redirect_options: reviewLinks } : { alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' }) });
   }
 
   if (!context.sheetId) {
