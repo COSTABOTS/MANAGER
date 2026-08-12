@@ -1180,8 +1180,26 @@ button:disabled {
 }
 
 .control-toolbar input[type='date']::-webkit-calendar-picker-indicator {
-  opacity: 1;
+  opacity: 0.01;
   cursor: pointer;
+}
+
+.control-date-field {
+  position: relative;
+}
+
+.control-date-field input[type='date'] {
+  padding-right: 42px;
+}
+
+.control-date-icon {
+  position: absolute;
+  right: 13px;
+  bottom: 13px;
+  color: var(--premium-accent);
+  font-size: 18px;
+  line-height: 18px;
+  pointer-events: none;
 }
 
 .reservations-filter-toolbar {
@@ -4026,6 +4044,17 @@ button:active:not(:disabled) {
   .reservations-filter-toolbar .segmented-control {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+}
+
+@media (max-width: 980px) {
+  .control-toolbar {
+    grid-template-columns: minmax(0, 1.2fr) minmax(110px, 0.8fr) auto;
+    gap: 14px;
+  }
+
+  .control-toolbar .segmented-control {
+    justify-self: stretch;
   }
 }
 

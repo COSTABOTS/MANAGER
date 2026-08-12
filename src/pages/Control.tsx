@@ -76,9 +76,10 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
       <PageHeader eyebrow="CONTROL RESERVAS" title="CONTROL" />
 
       <section className="toolbar-card control-toolbar">
-        <label>
+        <label className="control-date-field">
           Fecha inicio
           <input type="date" value={rangeStart} onChange={(event) => updateRangeStart(event.target.value)} />
+          <span className="control-date-icon" aria-hidden="true">📅</span>
         </label>
         <label>
           Dias visibles
