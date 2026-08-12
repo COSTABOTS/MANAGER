@@ -1961,11 +1961,22 @@ async function saveSettings(request: Request, clientId: string, sheetId: string,
   });
 }
 
-async function getFullyBooked(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function getFullyBooked(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const date = toSheetString(body.date ?? body.fecha);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data, error } = await dbClient
+      .from('booking_day_controls')
+      .select('fully_booked,status')
+      .eq('client_id', clientId)
+      .eq('booking_date', normalizeDateKey(date))
+      .is('service', null)
+      .maybeSingle();
+    if (error) throw new Error(`SUPABASE_FULLY_BOOKED_READ_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'fullybooked.get', client_id: clientId, date, fullyBooked: Boolean(data?.fully_booked) || String(data?.status ?? '').toLowerCase() === 'closed' });
+  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, "'CONTROL RESERVAS'!A:D", accessToken);
   debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
@@ -1982,7 +1993,7 @@ async function getFullyBooked(request: Request, clientId: string, sheetId: strin
   });
 }
 
-async function setFullyBooked(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function setFullyBooked(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
@@ -1991,6 +2002,24 @@ async function setFullyBooked(request: Request, clientId: string, sheetId: strin
 
   if (!date) {
     return errorResponse(request, 'DATE_REQUIRED', 'Fecha requerida', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const bookingDate = normalizeDateKey(date);
+    const { data: existing, error: readError } = await dbClient
+      .from('booking_day_controls')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('booking_date', bookingDate)
+      .is('service', null)
+      .maybeSingle();
+    if (readError) throw new Error(`SUPABASE_FULLY_BOOKED_READ_FAILED: ${readError.message}`);
+    const values = { client_id: clientId, service: null, booking_date: bookingDate, status: fullyBooked ? 'closed' : 'open', fully_booked: fullyBooked };
+    const result = existing?.id
+      ? await dbClient.from('booking_day_controls').update(values).eq('client_id', clientId).eq('id', existing.id)
+      : await dbClient.from('booking_day_controls').insert(values);
+    if (result.error) throw new Error(`SUPABASE_FULLY_BOOKED_WRITE_FAILED: ${result.error.message}`);
+    return jsonResponse(request, { ok: true, action: 'fullybooked.set', client_id: clientId, date, fullyBooked });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -2545,10 +2574,10 @@ Deno.serve(async (request) => {
         return await saveSettings(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'fullybooked.get':
-        return await getFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await getFullyBooked(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'fullybooked.set':
-        return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await setFullyBooked(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.create':
         return await createReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
