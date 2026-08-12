@@ -2104,7 +2104,7 @@ async function updateReservationCell(
   return null;
 }
 
-async function createReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+async function createReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
@@ -2313,13 +2313,29 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   });
 }
 
-async function updateReservationArrival(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function updateReservationArrival(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   const rawArrival = body.llego ?? body.arrived;
   const llego = typeof rawArrival === 'boolean' ? rawArrival : normalizeBoolean(rawArrival);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.updateArrival(idReserva, llego);
+    return jsonResponse(request, { ok: true, action: 'reservation.arrive', client_id: clientId, idReserva, llego });
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.createReservation({
+      id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax,
+      language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL',
+      table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio,
+      balinesePackage: paqueteBalinesa, resource: recurso,
+    });
+    return jsonResponse(request, { ok: true, action: 'reservation.create', client_id: clientId, idReserva });
+  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
   const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
@@ -2528,10 +2544,10 @@ Deno.serve(async (request) => {
         return await setFullyBooked(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
 
       case 'reservation.create':
-        return await createReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+        return await createReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'reservation.arrive':
-        return await updateReservationArrival(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await updateReservationArrival(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.assignTable':
         return await assignReservationTable(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
