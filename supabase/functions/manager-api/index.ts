@@ -2133,6 +2133,12 @@ async function createReservation(request: Request, clientId: string, sheetId: st
     return errorResponse(request, 'RESERVATION_REQUIRED_FIELDS', 'Faltan datos obligatorios para crear la reserva', 400);
   }
 
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.createReservation({ id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL', table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: paqueteBalinesa, resource: recurso });
+    return jsonResponse(request, { ok: true, action: 'reservation.create', client_id: clientId, idReserva });
+  }
+
   const rowToAppend = [
     idReserva,
     fecha,
@@ -2326,16 +2332,6 @@ async function updateReservationArrival(request: Request, clientId: string, shee
     return jsonResponse(request, { ok: true, action: 'reservation.arrive', client_id: clientId, idReserva, llego });
   }
 
-  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
-    await store.createReservation({
-      id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax,
-      language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL',
-      table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio,
-      balinesePackage: paqueteBalinesa, resource: recurso,
-    });
-    return jsonResponse(request, { ok: true, action: 'reservation.create', client_id: clientId, idReserva });
-  }
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RESERVAS!A:Z', accessToken);
   const { rowIndex, headers } = findReservationRow(sheetsData.values, idReserva);
