@@ -1081,9 +1081,17 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
   };
 }
 
-async function listTables(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function listTables(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data, error } = await dbClient.from('restaurant_tables').select('id,legacy_table_id,label,zone,capacity,active,display_order').eq('client_id', clientId).order('display_order', { ascending: true });
+    if (error) throw new Error(`SUPABASE_TABLES_READ_FAILED: ${error.message}`);
+    const tables = (data ?? []).map((row: Record<string, unknown>) => ({ id: String(row.id ?? ''), mesaId: String(row.legacy_table_id ?? row.id ?? ''), mesa_id: String(row.legacy_table_id ?? row.id ?? ''), mesa: String(row.label ?? ''), name: String(row.label ?? ''), zona: String(row.zone ?? ''), type: String(row.zone ?? ''), capacidad: Number(row.capacity ?? 0), capacity: Number(row.capacity ?? 0), activa: Boolean(row.active), active: Boolean(row.active), orden: Number(row.display_order ?? 0), order: Number(row.display_order ?? 0) }));
+    if (!tables.length) return errorResponse(request, 'TABLES_EMPTY', 'No hay mesas activas en MESAS', 404, debug);
+    return jsonResponse(request, { ok: true, action: 'tables.list', client_id: clientId, tables });
+  }
 
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'MESAS!A:Z', accessToken);
@@ -1316,10 +1324,15 @@ async function listClients(request: Request, context: { dbClient: ReturnType<typ
   });
 }
 
-async function createTable(request: Request, sheetId: string, body: Record<string, unknown>) {
-  const accessToken = await createGoogleAccessToken();
+async function createTable(request: Request, sheetId: string, reservationStore: unknown, dbClient: any, clientId: string, body: Record<string, unknown>) {
   const mesaId = makeTableId();
   const table = normalizeTableInput(body.table as Record<string, unknown> | undefined, mesaId);
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { error } = await dbClient.from('restaurant_tables').insert({ client_id: clientId, legacy_table_id: table.mesaId, label: table.mesa, zone: table.zona, capacity: table.capacidad, active: table.activa, display_order: table.orden });
+    if (error) throw new Error(`SUPABASE_TABLE_CREATE_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'tables.create', mesaId });
+  }
+  const accessToken = await createGoogleAccessToken();
 
   const appendResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('MESAS!A:F')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
@@ -1345,11 +1358,21 @@ async function createTable(request: Request, sheetId: string, body: Record<strin
   });
 }
 
-async function updateTable(request: Request, sheetId: string, body: Record<string, unknown>) {
+async function updateTable(request: Request, sheetId: string, reservationStore: unknown, dbClient: any, clientId: string, body: Record<string, unknown>) {
   const mesaId = toSheetString(body.mesaId ?? body.mesa_id ?? body.id_mesa);
   console.log('[MANAGER_API][tables.update] mesaId', mesaId);
   if (!mesaId) {
     return errorResponse(request, 'MESA_ID_REQUIRED', 'MESA_ID requerido', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data: existing, error: lookupError } = await dbClient.from('restaurant_tables').select('id').eq('client_id', clientId).or(`id.eq.${mesaId},legacy_table_id.eq.${mesaId}`).maybeSingle();
+    if (lookupError) throw new Error(`SUPABASE_TABLE_READ_FAILED: ${lookupError.message}`);
+    if (!existing) return errorResponse(request, 'TABLE_NOT_FOUND', 'Mesa no encontrada', 404, { mesaId });
+    const table = normalizeTableInput(body.table as Record<string, unknown> | undefined, mesaId);
+    const { error } = await dbClient.from('restaurant_tables').update({ label: table.mesa, zone: table.zona, capacity: table.capacidad, active: table.activa, display_order: table.orden }).eq('client_id', clientId).eq('id', existing.id);
+    if (error) throw new Error(`SUPABASE_TABLE_UPDATE_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'tables.update' });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -1387,10 +1410,19 @@ async function updateTable(request: Request, sheetId: string, body: Record<strin
   });
 }
 
-async function deleteTable(request: Request, sheetId: string, body: Record<string, unknown>) {
+async function deleteTable(request: Request, sheetId: string, reservationStore: unknown, dbClient: any, clientId: string, body: Record<string, unknown>) {
   const mesaId = toSheetString(body.mesaId ?? body.mesa_id ?? body.id_mesa);
   if (!mesaId) {
     return errorResponse(request, 'MESA_ID_REQUIRED', 'MESA_ID requerido', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data: existing, error: lookupError } = await dbClient.from('restaurant_tables').select('id').eq('client_id', clientId).or(`id.eq.${mesaId},legacy_table_id.eq.${mesaId}`).maybeSingle();
+    if (lookupError) throw new Error(`SUPABASE_TABLE_READ_FAILED: ${lookupError.message}`);
+    if (!existing) return errorResponse(request, 'TABLE_NOT_FOUND', 'Mesa no encontrada', 404, { mesaId });
+    const { error } = await dbClient.from('restaurant_tables').delete().eq('client_id', clientId).eq('id', existing.id);
+    if (error) throw new Error(`SUPABASE_TABLE_DELETE_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'tables.delete' });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -2563,16 +2595,16 @@ Deno.serve(async (request) => {
 
     switch (action) {
       case 'tables.list':
-        return await listTables(request, context.clientId, context.sheetId, debug);
+        return await listTables(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
 
       case 'tables.create':
-        return await createTable(request, context.sheetId, body as Record<string, unknown>);
+        return await createTable(request, context.sheetId, context.reservationStore, context.dbClient, context.clientId, body as Record<string, unknown>);
 
       case 'tables.update':
-        return await updateTable(request, context.sheetId, body as Record<string, unknown>);
+        return await updateTable(request, context.sheetId, context.reservationStore, context.dbClient, context.clientId, body as Record<string, unknown>);
 
       case 'tables.delete':
-        return await deleteTable(request, context.sheetId, body as Record<string, unknown>);
+        return await deleteTable(request, context.sheetId, context.reservationStore, context.dbClient, context.clientId, body as Record<string, unknown>);
 
       case 'resources.list':
         return await listResources(request, context.clientId, context.sheetId, debug);
