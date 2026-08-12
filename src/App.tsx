@@ -1216,8 +1216,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     return reservation.idReserva || reservation.id;
   }
 
-  function blockProtectedDemoAction(message = 'Modo demo: esta accion esta bloqueada') {
-    if (!isProtectedDemoUser) {
+  function blockProtectedDemoAction(message = 'Modo demo: esta accion esta bloqueada', temporaryAllowedClientId?: string) {
+    if (!isProtectedDemoUser || (temporaryAllowedClientId && String(clientConfig?.client_id ?? '').trim() === temporaryAllowedClientId)) {
       return false;
     }
 
@@ -1759,7 +1759,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncTable(action: 'create' | 'update' | 'deactivate' | 'delete', table: RestaurantTable) {
-    if (blockProtectedDemoAction('Modo demo: la gestion de mesas esta bloqueada')) {
+    if (blockProtectedDemoAction('Modo demo: la gestion de mesas esta bloqueada', 'CB-DEMO-002')) {
       return;
     }
 
@@ -1828,7 +1828,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function syncResource(action: 'create' | 'update' | 'delete', resource: ReservableResource) {
-    if (blockProtectedDemoAction('Modo demo: la gestion de recursos esta bloqueada')) {
+    if (blockProtectedDemoAction('Modo demo: la gestion de recursos esta bloqueada', 'CB-DEMO-002')) {
       return;
     }
 
