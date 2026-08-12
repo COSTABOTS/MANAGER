@@ -11,6 +11,7 @@ import {
 } from '../lib/balineseResources.ts';
 import { normalizeService, toNumberValue, toStringValue } from '../lib/normalization.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
+import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 
 function getSafeErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -82,6 +83,26 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     return context.error;
   }
 
+  const usesSupabase = String(context.reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase';
+  if (usesSupabase) {
+    const { data: resourcesData, error: resourcesError } = await dbClient.from('reservable_resources').select('id,label,capacity,active').eq('client_id', context.clientId).eq('active', true).order('display_order', { ascending: true });
+    if (resourcesError) return errorResponse(request, 'INTERNAL_ERROR', 500);
+    const { data: reservationsData, error: reservationsError } = await dbClient.from('reservations').select('resource_id').eq('client_id', context.clientId).eq('booking_date', normalized.fecha).eq('service', 'BALINESA').not('status', 'in', '(cancelled,no_show)');
+    if (reservationsError) return errorResponse(request, 'INTERNAL_ERROR', 500);
+    const occupiedIds = new Set((reservationsData ?? []).map((row: Record<string, unknown>) => String(row.resource_id ?? '')).filter(Boolean));
+    const resources = (resourcesData ?? []).map((row: Record<string, unknown>) => ({ recurso: String(row.label ?? ''), capacidad: Number(row.capacity ?? 0), id: String(row.id ?? '') }));
+    const freeResources = resources.filter((resource) => !occupiedIds.has(resource.id));
+    const resource = freeResources.find((item) => item.capacidad <= 0 || item.capacidad >= normalized.personas);
+    if (!resource) return jsonResponse(request, { ok: false, code: freeResources.length ? 'NO_RESOURCE_WITH_CAPACITY' : 'NO_RESOURCE_AVAILABLE', error: freeResources.length ? 'NO_RESOURCE_WITH_CAPACITY' : 'NO_RESOURCE_AVAILABLE', available: false }, 409);
+    const result = buildBalineseReservationResult(normalized, resource.recurso);
+    try {
+      const store = resolveReservationStore({ clientId: context.clientId, sheetId: '', reservationStore: context.reservationStore }, {}, dbClient);
+      await store.createReservation({ id: result.idReserva, date: normalized.fecha, time: normalized.hora, name: normalized.nombre, phone: normalized.telefono, pax: normalized.personas, language: normalized.idioma, specialRequest: normalized.peticion, status: 'CONFIRMADA', origin: normalized.origen, table: '', arrived: false, feedbackSent: false, room: normalized.habitacion, service: 'BALINESA', balinesePackage: normalized.paquete, resource: resource.recurso });
+    } catch (_error) {
+      return errorResponse(request, 'RESERVATION_CREATE_FAILED', 500);
+    }
+    return jsonResponse(request, { ok: true, reservation_created: true, id_reserva: result.idReserva, recurso: resource.recurso, reservation: { fecha: normalized.fecha, nombre: normalized.nombre, personas: normalized.personas, servicio: 'BALINESA', paquete_balinesa: normalized.paquete, recurso: resource.recurso, estado: 'CONFIRMADA' } }, 201);
+  }
   if (!context.sheetId) {
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
