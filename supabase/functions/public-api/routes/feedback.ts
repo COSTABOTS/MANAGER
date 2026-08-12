@@ -131,7 +131,23 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     if (alreadySubmitted) return jsonResponse(request, { ok: false, already_submitted: true }, 409);
     const result = await store.createFeedback({ reservationId: reservation.idReserva, rating: normalized.puntuacion, comment: normalized.comentario, submittedAt: normalized.timestamp });
     if (!result.created) return jsonResponse(request, { ok: false, already_submitted: true }, 409);
-    return jsonResponse(request, { ok: true, feedback_saved: true, positive: normalized.puntuacion >= 4, ...(normalized.puntuacion >= 4 ? { redirect_options: reviewLinks } : { alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' }) });
+    const positive = normalized.puntuacion >= 4;
+    if (positive) return jsonResponse(request, { ok: true, feedback_saved: true, positive: true, redirect_options: reviewLinks });
+    const { data: settingsRows, error: settingsError } = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', context.clientId);
+    if (settingsError) throw new Error(`SUPABASE_SETTINGS_READ_FAILED: ${settingsError.message}`);
+    const settings = (settingsRows ?? []).reduce((values: Record<string, string>, row: Record<string, unknown>) => {
+      const key = toStringValue(row.CLAVE).toUpperCase();
+      if (key) values[key] = toStringValue(row.VALOR);
+      return values;
+    }, {});
+    const alertPhone = getFeedbackAlertPhone(settings);
+    if (!alertPhone) return jsonResponse(request, { ok: true, feedback_saved: true, positive: false, alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' });
+    try {
+      await sendEvolutionText(alertPhone, buildFeedbackAlertMessage(reservation, normalized));
+    } catch {
+      return jsonResponse(request, { ok: true, feedback_saved: true, positive: false, alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' });
+    }
+    return jsonResponse(request, { ok: true, feedback_saved: true, positive: false, alert_sent: true });
   }
 
   if (!context.sheetId) {
