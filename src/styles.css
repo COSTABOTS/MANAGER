@@ -1190,6 +1190,7 @@ button:disabled {
 
 .control-date-field input[type='date'] {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
   padding-right: 42px;
@@ -4051,6 +4052,24 @@ button:active:not(:disabled) {
 
   .control-toolbar .segmented-control {
     justify-self: end;
+  }
+
+  .control-date-field input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+    overflow: hidden;
+  }
+
+  .control-date-field input[type='date']::-webkit-date-and-time-value {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .control-date-field input[type='date']::-webkit-datetime-edit {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .reservations-filter-toolbar {
