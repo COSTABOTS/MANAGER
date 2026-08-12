@@ -1989,7 +1989,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
-    if (blockProtectedDemoAction('Modo demo: guardar configuracion esta bloqueado')) {
+    const isBalineseSettingsTrial = isProtectedDemoUser
+      && String(clientConfig?.client_id ?? '').trim() === 'CB-DEMO-002'
+      && Object.keys(nextSettings).filter((key) => !['servicesEnabled', 'serviceHours'].includes(key)).every((key) => JSON.stringify(nextSettings[key as keyof ManagerSettings]) === JSON.stringify(settings[key as keyof ManagerSettings]));
+    if (!isBalineseSettingsTrial && blockProtectedDemoAction('Modo demo: guardar configuracion esta bloqueado')) {
       return 'skipped';
     }
 
