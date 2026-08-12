@@ -152,7 +152,7 @@ export function Settings({
   const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [settingsValidationMessage, setSettingsValidationMessage] = useState('');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
-  const configurationLocked = isDemoUser;
+  const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
