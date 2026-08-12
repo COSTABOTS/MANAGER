@@ -41,6 +41,11 @@ function getSafeBalineseStoreFailure(error: unknown) {
   return { category, code: knownCode };
 }
 
+function toSupabaseDate(value: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : value;
+}
+
 function getDebugPayload(
   body: Record<string, unknown>,
   normalized: { fecha: string; personas: number; servicio: string },
@@ -111,9 +116,10 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
 
   const usesSupabase = String(context.reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase';
   if (usesSupabase) {
+    const supabaseDate = toSupabaseDate(normalized.fecha);
     console.log('[PUBLIC_API][BALINESE_CREATE][PAYLOAD_OK]', {
       clientId: context.clientId,
-      normalizedDate: normalized.fecha,
+      normalizedDate: supabaseDate,
       pax: normalized.personas,
       service: normalized.servicio,
       hasPackage: Boolean(normalized.paquete),
@@ -121,10 +127,13 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     const { data: resourcesData, error: resourcesError } = await dbClient.from('reservable_resources').select('id,label,capacity,active').eq('client_id', context.clientId).eq('active', true).order('display_order', { ascending: true });
     if (resourcesError) return errorResponse(request, 'INTERNAL_ERROR', 500);
     console.log('[PUBLIC_API][BALINESE_CREATE][RESOURCES_FOUND]', { clientId: context.clientId, count: resourcesData?.length ?? 0 });
-    const { data: reservationsData, error: reservationsError } = await dbClient.from('reservations').select('resource_id').eq('client_id', context.clientId).eq('booking_date', normalized.fecha).eq('service', 'BALINESA').not('status', 'in', '(cancelled,no_show)');
-    if (reservationsError) return errorResponse(request, 'INTERNAL_ERROR', 500);
+    const { data: reservationsData, error: reservationsError } = await dbClient.from('reservations').select('resource_id').eq('client_id', context.clientId).eq('booking_date', supabaseDate).eq('service', 'BALINESA').not('status', 'in', '(cancelled,no_show)');
+    if (reservationsError) {
+      console.error('[PUBLIC_API][BALINESE_CREATE][RESERVATIONS_QUERY_FAILED]', { clientId: context.clientId, code: getSafeBalineseStoreFailure(reservationsError).code });
+      return errorResponse(request, 'INTERNAL_ERROR', 500);
+    }
     const occupiedIds = new Set((reservationsData ?? []).map((row: Record<string, unknown>) => String(row.resource_id ?? '')).filter(Boolean));
-    console.log('[PUBLIC_API][BALINESE_CREATE][OCCUPIED_RESOURCES]', { clientId: context.clientId, normalizedDate: normalized.fecha, count: occupiedIds.size });
+    console.log('[PUBLIC_API][BALINESE_CREATE][OCCUPIED_RESOURCES]', { clientId: context.clientId, normalizedDate: supabaseDate, count: occupiedIds.size });
     const resources = (resourcesData ?? []).map((row: Record<string, unknown>) => ({ recurso: String(row.label ?? ''), capacidad: Number(row.capacity ?? 0), id: String(row.id ?? '') }));
     const freeResources = resources.filter((resource) => !occupiedIds.has(resource.id));
     const resource = freeResources.find((item) => item.capacidad <= 0 || item.capacidad >= normalized.personas);
@@ -134,7 +143,7 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     try {
       const store = resolveReservationStore({ clientId: context.clientId, sheetId: '', reservationStore: context.reservationStore }, {}, dbClient);
       console.log('[PUBLIC_API][BALINESE_CREATE][BEFORE_STORE_CREATE]', { clientId: context.clientId, service: 'BALINESA', hasResource: Boolean(resource.recurso), hasPackage: Boolean(normalized.paquete) });
-      await store.createReservation({ id: result.idReserva, date: normalized.fecha, time: normalized.hora, name: normalized.nombre, phone: normalized.telefono, pax: normalized.personas, language: normalized.idioma, specialRequest: normalized.peticion, status: 'CONFIRMADA', origin: normalized.origen, table: '', arrived: false, feedbackSent: false, room: normalized.habitacion, service: 'BALINESA', balinesePackage: normalized.paquete, resource: resource.recurso });
+      await store.createReservation({ id: result.idReserva, date: supabaseDate, time: normalized.hora, name: normalized.nombre, phone: normalized.telefono, pax: normalized.personas, language: normalized.idioma, specialRequest: normalized.peticion, status: 'CONFIRMADA', origin: normalized.origen, table: '', arrived: false, feedbackSent: false, room: normalized.habitacion, service: 'BALINESA', balinesePackage: normalized.paquete, resource: resource.recurso });
     } catch (error) {
       const failure = getSafeBalineseStoreFailure(error);
       console.error('[PUBLIC_API][BALINESE_CREATE][SUPABASE_CREATE_FAILED]', {
