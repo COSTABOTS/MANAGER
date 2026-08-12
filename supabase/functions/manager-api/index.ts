@@ -1616,7 +1616,10 @@ async function updateResource(request: Request, sheetId: string, reservationStor
   }
 
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(recursoId);
+    const { data: existing, error: lookupError } = isUuid
+      ? await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).eq('id', recursoId).maybeSingle()
+      : await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).eq('legacy_resource_id', recursoId).maybeSingle();
     if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
     if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
     const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
@@ -1666,7 +1669,10 @@ async function deleteResource(request: Request, sheetId: string, reservationStor
   }
 
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(recursoId);
+    const { data: existing, error: lookupError } = isUuid
+      ? await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).eq('id', recursoId).maybeSingle()
+      : await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).eq('legacy_resource_id', recursoId).maybeSingle();
     if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
     if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
     const { error } = await dbClient.from('reservable_resources').delete().eq('client_id', clientId).eq('id', existing.id);
