@@ -1804,9 +1804,40 @@ async function saveCapacity(request: Request, clientId: string, sheetId: string,
   });
 }
 
-async function listFeedbacks(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function listFeedbacks(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data: feedbackRows, error: feedbackError } = await dbClient
+      .from('feedbacks')
+      .select('id,reservation_id,legacy_reservation_id,rating,comment,submitted_at,created_at')
+      .eq('client_id', clientId)
+      .order('submitted_at', { ascending: false });
+    if (feedbackError) throw new Error(`SUPABASE_FEEDBACKS_READ_FAILED: ${feedbackError.message}`);
+    const { data: reservationRows, error: reservationError } = await dbClient
+      .from('reservations')
+      .select('id,legacy_reservation_id,customer_name,room')
+      .eq('client_id', clientId);
+    if (reservationError) throw new Error(`SUPABASE_FEEDBACK_RESERVATIONS_READ_FAILED: ${reservationError.message}`);
+    const reservationsById = new Map((reservationRows ?? []).map((row: Record<string, unknown>) => [String(row.id ?? ''), row]));
+    const reservationsByLegacyId = new Map((reservationRows ?? []).filter((row: Record<string, unknown>) => row.legacy_reservation_id).map((row: Record<string, unknown>) => [String(row.legacy_reservation_id), row]));
+    const feedbacks = (feedbackRows ?? []).map((row: Record<string, unknown>) => {
+      const reservation = reservationsById.get(String(row.reservation_id ?? '')) ?? reservationsByLegacyId.get(String(row.legacy_reservation_id ?? ''));
+      const submittedAt = String(row.submitted_at ?? row.created_at ?? '');
+      const date = submittedAt ? submittedAt.slice(0, 10) : '';
+      return {
+        id: String(row.id ?? row.legacy_reservation_id ?? ''), date, fecha: date, FECHA: date,
+        rating: Number(row.rating ?? 0), puntuacion: Number(row.rating ?? 0), PUNTUACION: Number(row.rating ?? 0),
+        comment: String(row.comment ?? ''), comentario: String(row.comment ?? ''), COMENTARIO: String(row.comment ?? ''),
+        client: String(reservation?.customer_name ?? ''), cliente: String(reservation?.customer_name ?? ''), CLIENTE: String(reservation?.customer_name ?? ''),
+        room: String(reservation?.room ?? ''), habitacion: String(reservation?.room ?? ''), HABITACION: String(reservation?.room ?? ''),
+        timestamp: submittedAt, TIMESTAMP: submittedAt,
+      };
+    });
+    debug.rowsRead = feedbacks.length;
+    return jsonResponse(request, { ok: true, action: 'feedbacks.list', client_id: clientId, feedbacks });
+  }
 
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'FEEDBACKS!A:Z', accessToken);
@@ -2559,7 +2590,7 @@ Deno.serve(async (request) => {
         return await listReservations(request, context.clientId, context.sheetId, context.reservationStore, context.reservationShadowRead, context.dbClient, debug);
 
       case 'feedbacks.list':
-        return await listFeedbacks(request, context.clientId, context.sheetId, debug);
+        return await listFeedbacks(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
 
       case 'capacity.list':
         return await listCapacity(request, context.clientId, context.sheetId, debug);
