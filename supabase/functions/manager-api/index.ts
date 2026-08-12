@@ -1475,6 +1475,13 @@ async function listResources(request: Request, clientId: string, sheetId: string
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data, error } = await dbClient.from('reservable_resources').select('id,legacy_resource_id,label,zone,capacity,active,display_order').eq('client_id', clientId).order('display_order', { ascending: true });
+    if (error) throw new Error(`SUPABASE_RESOURCES_READ_FAILED: ${error.message}`);
+    const resources = (data ?? []).map((row: Record<string, unknown>) => ({ id: String(row.id ?? ''), recursoId: String(row.legacy_resource_id ?? row.id ?? ''), recurso_id: String(row.legacy_resource_id ?? row.id ?? ''), name: String(row.label ?? ''), recurso: String(row.label ?? ''), zona: String(row.zone ?? ''), zone: String(row.zone ?? ''), capacidad: Number(row.capacity ?? 0), capacity: Number(row.capacity ?? 0), activa: Boolean(row.active), active: Boolean(row.active), orden: Number(row.display_order ?? 0), order: Number(row.display_order ?? 0) }));
+    return jsonResponse(request, { ok: true, action: 'resources.list', client_id: clientId, resources });
+  }
+
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RECURSOS!A:F', accessToken);
   debug.rowsRead = Math.max(0, (sheetsData.values?.length ?? 0) - 1);
@@ -1608,6 +1615,16 @@ async function updateResource(request: Request, sheetId: string, reservationStor
     return errorResponse(request, 'RECURSO_ID_REQUIRED', 'RECURSO_ID requerido', 400);
   }
 
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
+    if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
+    if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
+    const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
+    const { error } = await dbClient.from('reservable_resources').update({ label: resource.recurso, zone: resource.zona, capacity: resource.capacidad, active: resource.activa, display_order: resource.orden || 0 }).eq('client_id', clientId).eq('id', existing.id);
+    if (error) throw new Error(`SUPABASE_RESOURCE_UPDATE_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'resources.update' });
+  }
+
   const accessToken = await createGoogleAccessToken();
   const sheetsData = await fetchSheetValues(sheetId, 'RECURSOS!A:F', accessToken);
   const rowIndex = findResourceRowIndex(sheetsData.values, recursoId);
@@ -1646,6 +1663,15 @@ async function deleteResource(request: Request, sheetId: string, reservationStor
   const recursoId = toSheetString(body.recursoId ?? body.recurso_id ?? body.id_recurso);
   if (!recursoId) {
     return errorResponse(request, 'RECURSO_ID_REQUIRED', 'RECURSO_ID requerido', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
+    if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
+    if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
+    const { error } = await dbClient.from('reservable_resources').delete().eq('client_id', clientId).eq('id', existing.id);
+    if (error) throw new Error(`SUPABASE_RESOURCE_DELETE_FAILED: ${error.message}`);
+    return jsonResponse(request, { ok: true, action: 'resources.delete' });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -1844,30 +1870,6 @@ async function saveCapacity(request: Request, clientId: string, sheetId: string,
 async function listFeedbacks(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
-  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const { data, error } = await dbClient.from('reservable_resources').select('id,legacy_resource_id,label,zone,capacity,active,display_order').eq('client_id', clientId).order('display_order', { ascending: true });
-    if (error) throw new Error(`SUPABASE_RESOURCES_READ_FAILED: ${error.message}`);
-    const resources = (data ?? []).map((row: Record<string, unknown>) => ({ id: String(row.id ?? ''), recursoId: String(row.legacy_resource_id ?? row.id ?? ''), recurso_id: String(row.legacy_resource_id ?? row.id ?? ''), name: String(row.label ?? ''), recurso: String(row.label ?? ''), zona: String(row.zone ?? ''), zone: String(row.zone ?? ''), capacidad: Number(row.capacity ?? 0), capacity: Number(row.capacity ?? 0), activa: Boolean(row.active), active: Boolean(row.active), orden: Number(row.display_order ?? 0), order: Number(row.display_order ?? 0) }));
-    return jsonResponse(request, { ok: true, action: 'resources.list', client_id: clientId, resources });
-  }
-  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
-    if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
-    if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
-    const { error } = await dbClient.from('reservable_resources').delete().eq('client_id', clientId).eq('id', existing.id);
-    if (error) throw new Error(`SUPABASE_RESOURCE_DELETE_FAILED: ${error.message}`);
-    return jsonResponse(request, { ok: true, action: 'resources.delete' });
-  }
-  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const { data: existing, error: lookupError } = await dbClient.from('reservable_resources').select('id').eq('client_id', clientId).or(`id.eq.${recursoId},legacy_resource_id.eq.${recursoId}`).maybeSingle();
-    if (lookupError) throw new Error(`SUPABASE_RESOURCE_READ_FAILED: ${lookupError.message}`);
-    if (!existing) return errorResponse(request, 'RESOURCE_NOT_FOUND', 'Recurso no encontrado', 404, { recursoId });
-    const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
-    const { error } = await dbClient.from('reservable_resources').update({ label: resource.recurso, zone: resource.zona, capacity: resource.capacidad, active: resource.activa, display_order: resource.orden || 0 }).eq('client_id', clientId).eq('id', existing.id);
-    if (error) throw new Error(`SUPABASE_RESOURCE_UPDATE_FAILED: ${error.message}`);
-    return jsonResponse(request, { ok: true, action: 'resources.update' });
-  }
-
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
     const { data: feedbackRows, error: feedbackError } = await dbClient
       .from('feedbacks')
