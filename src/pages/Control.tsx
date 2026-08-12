@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { DateBookingStatus, DateBookingStatusValue, Reservation } from '../types';
 import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation } from '../utils/reservationStatus';
@@ -27,6 +27,7 @@ function getDayName(date: string) {
 }
 
 export function Control({ dateBookingStatus, reservations, totalCapacity, onDateBookingStatusChange }: ControlProps) {
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? getLocalDateString(new Date()));
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
   const [view, setView] = useState<ControlView>(() => {
@@ -78,8 +79,17 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
       <section className="toolbar-card control-toolbar">
         <label className="control-date-field">
           Fecha inicio
-          <input type="date" value={rangeStart} onChange={(event) => updateRangeStart(event.target.value)} />
-          <span className="control-date-icon" aria-hidden="true">📅</span>
+          <input ref={dateInputRef} type="date" value={rangeStart} onChange={(event) => updateRangeStart(event.target.value)} />
+          <button className="control-date-icon" type="button" aria-label="Abrir calendario" onClick={() => {
+            const input = dateInputRef.current;
+            if (!input) return;
+            if (typeof input.showPicker === 'function') {
+              input.showPicker();
+            } else {
+              input.focus();
+              input.click();
+            }
+          }}>📅</button>
         </label>
         <label>
           Dias visibles
