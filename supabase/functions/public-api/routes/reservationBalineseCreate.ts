@@ -28,6 +28,19 @@ function getSafeErrorCode(error: unknown) {
   return 'INTERNAL_ERROR';
 }
 
+function getSafeBalineseStoreFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toUpperCase();
+  const category = normalized.includes('CAPACITY') ? 'CAPACITY'
+    : normalized.includes('DAY_CLOSED') || normalized.includes('FULLY_BOOKED') ? 'DAY_CONTROL'
+    : normalized.includes('BLOCK') ? 'BOOKING_BLOCK'
+    : normalized.includes('SERVICE') ? 'SERVICE'
+    : normalized.includes('RESOURCE') ? 'RESOURCE'
+    : 'STORE_RPC';
+  const knownCode = message.match(/^(SUPABASE_[A-Z0-9_]+)/)?.[1] ?? 'SUPABASE_RESERVATION_STORE_CREATE_FAILED';
+  return { category, code: knownCode };
+}
+
 function getDebugPayload(
   body: Record<string, unknown>,
   normalized: { fecha: string; personas: number; servicio: string },
@@ -98,7 +111,13 @@ export async function handleReservationBalineseCreate(request: Request, dbClient
     try {
       const store = resolveReservationStore({ clientId: context.clientId, sheetId: '', reservationStore: context.reservationStore }, {}, dbClient);
       await store.createReservation({ id: result.idReserva, date: normalized.fecha, time: normalized.hora, name: normalized.nombre, phone: normalized.telefono, pax: normalized.personas, language: normalized.idioma, specialRequest: normalized.peticion, status: 'CONFIRMADA', origin: normalized.origen, table: '', arrived: false, feedbackSent: false, room: normalized.habitacion, service: 'BALINESA', balinesePackage: normalized.paquete, resource: resource.recurso });
-    } catch (_error) {
+    } catch (error) {
+      const failure = getSafeBalineseStoreFailure(error);
+      console.error('[PUBLIC_API][BALINESE_CREATE][SUPABASE_CREATE_FAILED]', {
+        clientId: context.clientId,
+        category: failure.category,
+        code: failure.code,
+      });
       return errorResponse(request, 'RESERVATION_CREATE_FAILED', 500);
     }
     return jsonResponse(request, { ok: true, reservation_created: true, id_reserva: result.idReserva, recurso: resource.recurso, reservation: { fecha: normalized.fecha, nombre: normalized.nombre, personas: normalized.personas, servicio: 'BALINESA', paquete_balinesa: normalized.paquete, recurso: resource.recurso, estado: 'CONFIRMADA' } }, 201);
