@@ -2551,13 +2551,24 @@ async function assignReservationTable(request: Request, clientId: string, sheetI
   });
 }
 
-async function cancelReservation(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>, debug: ManagerApiDebug) {
+async function cancelReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
   const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
   if (!idReserva) {
     return errorResponse(request, 'ID_RESERVA_REQUIRED', 'ID_RESERVA requerido', 400);
+  }
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+    await store.cancelReservation(idReserva);
+    return jsonResponse(request, {
+      ok: true,
+      action: 'reservation.cancel',
+      client_id: clientId,
+      idReserva,
+    });
   }
 
   const accessToken = await createGoogleAccessToken();
@@ -2688,7 +2699,7 @@ Deno.serve(async (request) => {
         return await assignReservationTable(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'reservation.cancel':
-        return await cancelReservation(request, context.clientId, context.sheetId, body as Record<string, unknown>, debug);
+        return await cancelReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
