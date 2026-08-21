@@ -419,7 +419,15 @@ export function Reports({ reservations, feedbacks, restaurantLogoUrl, restaurant
   const hourChart = buildHourChartData(stats.activeReservations);
   const originTotal = stats.confirmedReservations;
   const languageTotal = stats.languageCounts.spanish + stats.languageCounts.english;
-  void feedbacks;
+  const feedbackRatings = feedbacks.filter((feedback) => Number.isFinite(feedback.rating) && feedback.rating >= 1 && feedback.rating <= 5);
+  const feedbackAverage = feedbackRatings.length > 0
+    ? feedbackRatings.reduce((total, feedback) => total + feedback.rating, 0) / feedbackRatings.length
+    : 0;
+  const feedbackDistribution = [1, 2, 3, 4, 5].map((rating) => ({
+    label: `${rating}★`,
+    value: feedbackRatings.filter((feedback) => feedback.rating === rating).length,
+    color: rating <= 2 ? REPORT_COLORS.red : rating === 3 ? REPORT_COLORS.amber : REPORT_COLORS.green,
+  }));
   const servicePaxTotal = serviceStats.totalPax > 0 ? serviceStats.totalPax : serviceStats.totalReservations;
   const servicePaxDonut = serviceStats.rows.map((service) => ({
     label: service.label,
@@ -896,8 +904,18 @@ export function Reports({ reservations, feedbacks, restaurantLogoUrl, restaurant
 
         <ReportCard title="Idiomas">
           <div className="report-card-split">
-            <DonutChart centerText={`${languageTotal}`} centerSubtext="Feedback" segments={languageDonut} />
+            <DonutChart centerText={`${languageTotal}`} centerSubtext="Reservas" segments={languageDonut} />
             <LegendList data={languageDonut.map((item) => ({ ...item, percent: percentage(item.value, languageTotal) }))} />
+          </div>
+        </ReportCard>
+
+        <ReportCard title="Feedback">
+          <div className="report-card-split">
+            <div>
+              <Metric label="Valoraciones" value={feedbackRatings.length} compact />
+              <Metric label="Puntuación media" value={feedbackRatings.length > 0 ? feedbackAverage.toFixed(1) : '-'} compact />
+            </div>
+            <LegendList data={feedbackDistribution.map((item) => ({ ...item, percent: percentage(item.value, feedbackRatings.length) }))} />
           </div>
         </ReportCard>
       </section>
