@@ -15,6 +15,7 @@ import {
 } from './lib/normalization.ts';
 import { errorResponse, getCorsHeaders, jsonResponse } from './lib/responses.ts';
 import { handleAvailabilityByHour } from './routes/availabilityByHour.ts';
+import { handleAvailabilityByDay } from './routes/availabilityByDay.ts';
 import { handleFeedback } from './routes/feedback.ts';
 import { handleFeedbackDispatch } from './routes/feedbackDispatch.ts';
 import { handleReservationCancellation } from './routes/reservationCancellation.ts';
@@ -263,6 +264,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/availability/by-hour')) {
       return await handleAvailabilityByHour(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/availability/by-day')) {
+      return await handleAvailabilityByDay(request, db.dbClient);
     }
 
     if (pathname.endsWith('/feedback/details')) {
