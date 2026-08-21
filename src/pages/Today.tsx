@@ -575,9 +575,13 @@ export function Today({
                         <span>Nombre: {reservedReservation.name || '-'}</span>
                         <span>Hab: {reservedReservation.room || '-'}</span>
                         <span>Paquete: {reservedReservation.balinesePackage || '-'}</span>
-                        <span className={reservedReservation.balinesePaid ? 'balinese-paid-badge is-paid' : 'balinese-paid-badge'}>{reservedReservation.balinesePaid ? 'PAGADO' : 'NO PAGADO'}</span>
-                        <button className="secondary-button compact-action" type="button" onClick={() => void onBalinesePayment(reservedReservation.id, !reservedReservation.balinesePaid)}>
-                          Marcar {reservedReservation.balinesePaid ? 'no pagado' : 'pagado'}
+                        <button
+                          className={`balinese-paid-badge ${reservedReservation.balinesePaid ? 'is-paid' : 'is-pending'}`}
+                          type="button"
+                          onClick={() => void onBalinesePayment(reservedReservation.id, !reservedReservation.balinesePaid)}
+                          aria-label={reservedReservation.balinesePaid ? 'Marcar como no pagado' : 'Marcar como pagado'}
+                        >
+                          {reservedReservation.balinesePaid ? '● PAGADO' : '○ NO PAGADO'}
                         </button>
                         <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservedReservation)}>
                           Cancelar
