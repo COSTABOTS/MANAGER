@@ -561,6 +561,16 @@ export function Today({
                 const reservedReservation = balineseReservationsByResource.get(normalizeResourceName(resource.name));
                 const isReserved = Boolean(reservedReservation);
 
+                if (reservedReservation) {
+                  console.log('[TODAY_BALINESE_RUNTIME]', {
+                    resource: reservedReservation?.resource,
+                    service: reservedReservation?.service,
+                    balinesePackage: reservedReservation?.balinesePackage,
+                    balinese_package: reservedReservation?.balinese_package,
+                    keys: Object.keys(reservedReservation || {}),
+                  });
+                }
+
                 return (
                   <article className={`balinese-resource-card ${isReserved ? 'is-reserved' : 'is-free'}`} key={resource.id}>
                     <div className="balinese-resource-header">
