@@ -83,7 +83,7 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
   const { data: rawClients, error: clientsError } = await dbClient
     .from('CLIENTES')
     .select('client_id, rest_name, status, sheet_id, public_token, reservation_store, booking_url, public_url, bot_url, contact_phone')
-    .not('sheet_id', 'is', null);
+    ;
 
   if (clientsError) {
     console.error('[PUBLIC_API][RESERVATION_REMINDERS][CLIENTS_FAILED]', {
@@ -94,25 +94,25 @@ export async function handleReservationRemindersDispatch(request: Request, dbCli
 
   const clients = normalizeDispatchClients(rawClients as Array<Record<string, unknown>> | null | undefined);
 
-  let accessToken = '';
-  try {
-    accessToken = await createGoogleAccessToken();
-  } catch (error) {
-    console.error('[PUBLIC_API][RESERVATION_REMINDERS][GOOGLE_AUTH_FAILED]', {
-      error: getSafeErrorCode(error),
-    });
-    return errorResponse(request, 'GOOGLE_AUTH_ERROR', 500);
-  }
-
   for (const client of clients) {
     let settingsData: { values?: unknown[][] };
+    let accessToken = '';
     try {
-      settingsData = await fetchSheetValues(client.sheetId, 'SETTINGS!A:Z', accessToken);
+      if (client.reservationStore === 'supabase') {
+        const { data, error } = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', client.clientId);
+        if (error) throw new Error(`SUPABASE_SETTINGS_READ_FAILED: ${error.message}`);
+        settingsData = {
+          values: [
+            ['CLAVE', 'VALOR'],
+            ...(data ?? []).map((row: Record<string, unknown>) => [row.CLAVE, row.VALOR]),
+          ],
+        };
+      } else {
+        accessToken = await createGoogleAccessToken();
+        settingsData = await fetchSheetValues(client.sheetId, 'SETTINGS!A:Z', accessToken);
+      }
     } catch (error) {
-      console.error('[PUBLIC_API][RESERVATION_REMINDERS][SETTINGS_READ_FAILED]', {
-        clientId: client.clientId,
-        error: getSafeErrorCode(error),
-      });
+      console.error('[PUBLIC_API][RESERVATION_REMINDERS][SETTINGS_READ_FAILED]', { clientId: client.clientId, error: getSafeErrorCode(error) });
       errors.push({ client_id: client.clientId, code: 'SETTINGS_READ_FAILED' });
       continue;
     }
