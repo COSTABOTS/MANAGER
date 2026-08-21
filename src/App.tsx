@@ -473,7 +473,7 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
       arrived: toDemoBoolean(pickDemoReservationValue(row, ['arrived', 'llego', 'LLEGO', '11'])),
       room: toDemoString(pickDemoReservationValue(row, ['room', 'habitacion', 'HABITACION', '12'])),
       service: normalizeDemoService(pickDemoReservationValue(row, ['servicio', 'SERVICIO', 'service', '16'])),
-      balinesePackage: toDemoString(pickDemoReservationValue(row, ['paqueteBalinesa', 'PAQUETE_BALINESA', 'PAQUETE BALINESA', '17'])),
+      balinesePackage: toDemoString(pickDemoReservationValue(row, ['balinesePackage', 'balinese_package', 'paqueteBalinesa', 'PAQUETE_BALINESA', 'PAQUETE BALINESA', '17'])),
       resource: toDemoString(pickDemoReservationValue(row, ['recurso', 'RECURSO', 'resource', '18'])),
     }];
   });
