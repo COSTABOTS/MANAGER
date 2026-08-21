@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DateBookingStatus, DateBookingStatusValue, Reservation } from '../types';
 import { formatDisplayDate, getLocalDateString, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation } from '../utils/reservationStatus';
@@ -8,6 +8,7 @@ interface ControlProps {
   reservations: Reservation[];
   totalCapacity: number;
   onDateBookingStatusChange: (date: string, status: DateBookingStatusValue) => void;
+  onVisibleDatesChange?: (dates: string[]) => void;
 }
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
@@ -26,7 +27,7 @@ function getDayName(date: string) {
   return DAY_NAMES[new Date(`${date}T12:00:00`).getDay()];
 }
 
-export function Control({ dateBookingStatus, reservations, totalCapacity, onDateBookingStatusChange }: ControlProps) {
+export function Control({ dateBookingStatus, reservations, totalCapacity, onDateBookingStatusChange, onVisibleDatesChange }: ControlProps) {
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [rangeStart, setRangeStart] = useState(() => localStorage.getItem(CONTROL_START_DATE_KEY) ?? getLocalDateString(new Date()));
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
@@ -34,9 +35,13 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
     const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);
     return stored === 'cards' ? 'cards' : 'list';
   });
+  const visibleDates = useMemo(
+    () => Array.from({ length: rangeDays }, (_, index) => addDays(rangeStart, index)),
+    [rangeDays, rangeStart],
+  );
   const cards = useMemo(
     () =>
-      Array.from({ length: rangeDays }, (_, index) => addDays(rangeStart, index)).map((date) => {
+      visibleDates.map((date) => {
         const pax = reservations
           .filter((reservation) => normalizeDateForCompare(reservation.date) === date && isActiveReservation(reservation))
           .reduce((total, reservation) => total + reservation.pax, 0);
@@ -48,8 +53,12 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
           fullyBooked: dateBookingStatus[date] === 'fully_booked',
         };
       }),
-    [dateBookingStatus, totalCapacity, rangeDays, rangeStart, reservations],
+    [dateBookingStatus, totalCapacity, visibleDates, reservations],
   );
+
+  useEffect(() => {
+    onVisibleDatesChange?.(visibleDates);
+  }, [visibleDates]);
 
   function updateDateBookingStatus(date: string, status: boolean) {
     onDateBookingStatusChange(date, status ? 'fully_booked' : 'open');

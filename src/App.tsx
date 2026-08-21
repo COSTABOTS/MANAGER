@@ -715,6 +715,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     return sessionConfig ? populateAdminFromClientConfig(storedSettings, sessionConfig) : storedSettings;
   });
   const [dateBookingStatus, setDateBookingStatus] = useState<DateBookingStatus>(() => (clientConfig ? {} : loadDateBookingStatusFromStorage()));
+  const fullyBookedGenerationRef = useRef<Record<string, number>>({});
   const [lastSync, setLastSync] = useState('Datos mock cargados');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const isLoadingReservationsRef = useRef(false);
@@ -1270,8 +1271,13 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
+    const requestGeneration = fullyBookedGenerationRef.current[date] ?? 0;
+
     try {
       const fullyBooked = await loadFullyBookedFromManagerApi(date);
+      if ((fullyBookedGenerationRef.current[date] ?? 0) !== requestGeneration) {
+        return;
+      }
       setDateBookingStatus((current) => {
         const nextStatus = {
           ...current,
@@ -1284,6 +1290,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.warn('[DEMO][FULLYBOOKED] fallback local status', error);
     }
   }
+
+  const loadVisibleFullyBookedStatuses = (dates: string[]) => {
+    const uniqueDates = [...new Set(dates)];
+    void Promise.all(uniqueDates.map((date) => loadFullyBookedStatus(date)));
+  };
 
   async function loadReservations() {
     const demoReservationListWebhook = typeof clientConfig?.webhooks?.RESERVATION_LIST === 'string' ? clientConfig.webhooks.RESERVATION_LIST : '';
@@ -2163,6 +2174,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function updateDateBookingStatus(date: string, status: DateBookingStatusValue) {
+    fullyBookedGenerationRef.current[date] = (fullyBookedGenerationRef.current[date] ?? 0) + 1;
     setDateBookingStatus((current) => {
       const nextStatus = {
         ...current,
@@ -2523,6 +2535,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           reservations={allReservations}
           totalCapacity={settings.totalCapacity}
           onDateBookingStatusChange={updateDateBookingStatus}
+          onVisibleDatesChange={loadVisibleFullyBookedStatuses}
         />
       );
     }
