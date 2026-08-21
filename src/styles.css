@@ -4709,3 +4709,5 @@ button:active:not(:disabled) {
     font-size: 23px;
   }
 }
+.balinese-paid-badge { color: #9a6700; font-weight: 700; }
+.balinese-paid-badge.is-paid { color: #16794c; }

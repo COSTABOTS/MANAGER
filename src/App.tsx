@@ -36,7 +36,7 @@ import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } 
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
 import { requireNameOrRoom, requireWebhookFields } from './services/webhookValidation';
-import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi } from './services/reservations';
+import { assignTableWithManagerApi, cancelReservationWithManagerApi, createManualReservationWithManagerApi, createWalkInWithManagerApi, saveArrivalWithManagerApi, setBalinesePaymentWithManagerApi } from './services/reservations';
 import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './services/resources';
 import { saveClientLicenseWithManagerApi } from './services/clientLicense';
 import { saveClientBrandingWithManagerApi } from './services/clientBranding';
@@ -475,6 +475,7 @@ function normalizeDemoReservations(rows: Array<Record<string, unknown>>): Reserv
       service: normalizeDemoService(pickDemoReservationValue(row, ['servicio', 'SERVICIO', 'service', '16'])),
       balinesePackage: toDemoString(pickDemoReservationValue(row, ['balinesePackage', 'balinese_package', 'paqueteBalinesa', 'PAQUETE_BALINESA', 'PAQUETE BALINESA', '17'])),
       resource: toDemoString(pickDemoReservationValue(row, ['recurso', 'RECURSO', 'resource', '18'])),
+      balinesePaid: toDemoBoolean(pickDemoReservationValue(row, ['balinesePaid', 'balinese_paid'])),
     }];
   });
 }
@@ -2515,6 +2516,21 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     setLastSync('No se pudo cancelar la reserva');
   }
 
+  async function handleBalinesePayment(id: string, paid: boolean) {
+    const current = allReservations.find((reservation) => reservation.id === id);
+    if (!current || current.service !== 'BALINESA' || !shouldUseManagerApiForReservations()) return;
+    setAllReservations((items) => items.map((reservation) => reservation.id === id ? { ...reservation, balinesePaid: paid } : reservation));
+    setLastSync('Guardando pago...');
+    try {
+      await setBalinesePaymentWithManagerApi(getReservationSyncId(current), paid);
+      setLastSync('Pago actualizado');
+    } catch (error) {
+      console.warn('[MANAGER_API] reservation.balinesePayment.set failed', error);
+      setAllReservations((items) => items.map((reservation) => reservation.id === id ? { ...reservation, balinesePaid: current.balinesePaid } : reservation));
+      setLastSync('No se pudo guardar el pago');
+    }
+  }
+
   function renderPage() {
     if (activePage === 'reservations') {
       return (
@@ -2630,6 +2646,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         onUpdateReservation={handleUpdateReservation}
         onEnsureTables={ensureTablesForAssignment}
         onCancelReservation={setReservationToCancel}
+        onBalinesePayment={handleBalinesePayment}
         onRefreshReservations={refreshReservationsOnly}
         isRefreshingReservations={isLoadingReservations}
         lastUpdatedAt={lastUpdatedAt}

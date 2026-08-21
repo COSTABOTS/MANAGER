@@ -271,7 +271,7 @@ export class SupabaseReservationStore implements ReservationStore {
     // booking_time, created_at, id and confirm the external ordering contract.
     const result = await this.dbClient
       .from('reservations')
-      .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,service,balinese_package,created_at')
+      .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,service,balinese_package,balinese_paid,created_at')
       .eq('client_id', this.context.clientId)
       .order('created_at', { ascending: true })
       .order('id', { ascending: true });
@@ -296,7 +296,7 @@ export class SupabaseReservationStore implements ReservationStore {
     for (const [column, value] of candidates) {
       const result = await this.dbClient
         .from('reservations')
-        .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,service,balinese_package,created_at')
+        .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,service,balinese_package,balinese_paid,created_at')
         .eq('client_id', this.context.clientId)
         .eq(column, value)
         .limit(1)
@@ -409,6 +409,13 @@ export class SupabaseReservationStore implements ReservationStore {
     return await this.updateLogical(id, { feedback_sent: true });
   }
 
+  async updateBalinesePaid(id: string, paid: boolean): Promise<ReservationMutationResult> {
+    const reservation = await this.getReservation(id);
+    if (!reservation) throw new Error('SUPABASE_RESERVATION_STORE_RESERVATION_NOT_FOUND');
+    if (reservation.service.toUpperCase() !== 'BALINESA') throw new Error('SUPABASE_RESERVATION_STORE_NOT_BALINESE');
+    return await this.updateLogical(id, { balinese_paid: paid });
+  }
+
   async listPendingReminderReservations(date: string): Promise<ReservationRecord[]> {
     return await this.listPending(date, 'pre_dinner_sent', false);
   }
@@ -476,7 +483,7 @@ export class SupabaseReservationStore implements ReservationStore {
 
   private async listPending(date: string, sentColumn: 'pre_dinner_sent' | 'feedback_sent', requireArrival: boolean) {
     let query = (this.dbClient.from('reservations') as any)
-      .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,pre_dinner_sent,service,balinese_package,created_at')
+      .select('id,legacy_reservation_id,public_reference,booking_date,booking_time,customer_name,customer_phone,pax,locale,legacy_locale,special_request,status,legacy_status,source_channel,legacy_source,table_id,resource_id,room,arrived,feedback_sent,pre_dinner_sent,service,balinese_package,balinese_paid,created_at')
       .eq('client_id', this.context.clientId)
       .eq('booking_date', normalizeDatabaseDate(date))
       .eq(sentColumn, false);
@@ -518,6 +525,7 @@ export class SupabaseReservationStore implements ReservationStore {
       room: toStringValue(row.room),
       service: toStringValue(row.service).toUpperCase(),
       balinesePackage: toStringValue(row.balinese_package),
+      balinesePaid: toBooleanValue(row.balinese_paid),
       resource: resourceLabels.get(toStringValue(row.resource_id)) ?? '',
       sourceChannel: toStringValue(row.source_channel).toLowerCase(),
       ...(includeDeliveryState ? {

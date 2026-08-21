@@ -23,6 +23,7 @@ type ManagerAction =
   | 'reservation.arrive'
   | 'reservation.assignTable'
   | 'reservation.cancel'
+  | 'reservation.balinesePayment.set'
   | 'walkin.create'
   | 'shows.list'
   | 'shows.save'
@@ -2608,6 +2609,23 @@ async function cancelReservation(request: Request, clientId: string, sheetId: st
   });
 }
 
+async function setBalinesePayment(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>) {
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() !== 'supabase') {
+    return errorResponse(request, 'ACTION_NOT_SUPPORTED', 'Acción no soportada para este tenant', 409);
+  }
+  const idReserva = toSheetString(body.idReserva ?? body.id_reserva ?? body.ID_RESERVA);
+  if (!idReserva) {
+    return errorResponse(request, 'ID_RESERVA_REQUIRED', 'ID_RESERVA requerido', 400);
+  }
+  if (typeof body.paid !== 'boolean') {
+    return errorResponse(request, 'PAID_BOOLEAN_REQUIRED', 'paid debe ser boolean', 400);
+  }
+  const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
+  if (!store.updateBalinesePaid) throw new Error('SUPABASE_BALINESE_PAYMENT_UNAVAILABLE');
+  await store.updateBalinesePaid(idReserva, body.paid);
+  return jsonResponse(request, { ok: true, action: 'reservation.balinesePayment.set', client_id: clientId, idReserva, paid: body.paid });
+}
+
 Deno.serve(async (request) => {
   console.log(
     '[MANAGER_API] KEY MODE:',
@@ -2700,6 +2718,9 @@ Deno.serve(async (request) => {
 
       case 'reservation.cancel':
         return await cancelReservation(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);
+
+      case 'reservation.balinesePayment.set':
+        return await setBalinesePayment(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'walkin.create':
         return await createWalkIn(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);

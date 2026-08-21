@@ -41,7 +41,7 @@ export async function updateBookingStatus(date: string, status: DateBookingStatu
   };
 }
 
-async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'reservation.cancel' | 'walkin.create', payload: Record<string, unknown>) {
+async function callReservationAction(action: 'reservation.create' | 'reservation.arrive' | 'reservation.assignTable' | 'reservation.cancel' | 'reservation.balinesePayment.set' | 'walkin.create', payload: Record<string, unknown>) {
   const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string }>({
     action,
     ...payload,
@@ -112,6 +112,10 @@ export async function cancelReservationWithManagerApi(idReserva: string) {
   const response = await callReservationAction('reservation.cancel', { idReserva });
   console.log('[DEMO][RESERVATION] cancelled');
   return response;
+}
+
+export async function setBalinesePaymentWithManagerApi(idReserva: string, paid: boolean) {
+  return await callReservationAction('reservation.balinesePayment.set', { idReserva, paid });
 }
 
 export async function createWalkInWithManagerApi(walkin: {

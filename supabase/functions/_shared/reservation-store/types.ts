@@ -37,6 +37,7 @@ export interface ReservationRecord {
   room: string;
   service: string;
   balinesePackage: string;
+  balinesePaid?: boolean;
   resource: string;
   sourceChannel?: string;
   createdAt?: string;
@@ -95,6 +96,7 @@ export interface ReservationStore {
   createFeedback?(command: CreateFeedbackCommand): Promise<{ created: boolean }>;
   markPreDinnerSent?(id: string): Promise<ReservationMutationResult>;
   markFeedbackSent?(id: string): Promise<ReservationMutationResult>;
+  updateBalinesePaid?(id: string, paid: boolean): Promise<ReservationMutationResult>;
   listPendingReminderReservations?(date: string): Promise<ReservationRecord[]>;
   listPendingFeedbackReservations?(date: string): Promise<ReservationRecord[]>;
 }

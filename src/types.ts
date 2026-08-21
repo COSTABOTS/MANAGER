@@ -22,6 +22,7 @@ export interface Reservation {
   arrived: boolean;
   service?: BookingService;
   balinesePackage?: string;
+  balinesePaid?: boolean;
   resource?: string;
   rowNumber?: number;
 }
