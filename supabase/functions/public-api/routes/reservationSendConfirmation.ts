@@ -123,14 +123,17 @@ export async function handleReservationSendConfirmation(request: Request, dbClie
   }
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-  const requiredFields = ['client_id', 'public_token', 'nombre', 'telefono', 'fecha', 'servicio', 'idioma'];
+  const requiredFields = ['client_id', 'public_token', 'nombre', 'telefono', 'fecha', 'servicio'];
   const missingFields = requiredFields.filter((field) => !getRequiredString(body, field));
+  if (!getRequiredString(body, 'idioma') && !getRequiredString(body, 'language') && !getRequiredString(body, 'lang')) {
+    missingFields.push('idioma');
+  }
 
   if (missingFields.length > 0) {
     return errorResponse(request, 'INVALID_REQUEST', 400, { missing_fields: missingFields });
   }
 
-  const language = normalizeLanguage(body.idioma);
+  const language = normalizeLanguage(body.idioma ?? body.language ?? body.lang);
   const phone = normalizePhone(body.telefono);
   if (!phone) {
     return errorResponse(request, 'INVALID_PHONE', 400);

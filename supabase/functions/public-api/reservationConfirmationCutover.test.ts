@@ -18,3 +18,9 @@ test('confirmation has no Supabase-to-Sheets fallback or new PII logging', () =>
   assert.equal(source.includes('console.log(message'), false);
   assert(source.includes('WHATSAPP_SEND_FAILED'));
 });
+
+test('confirmation accepts language aliases and preserves English/Spanish template selection', () => {
+  assert(source.includes('body.idioma ?? body.language ?? body.lang'));
+  assert(source.includes('buildReservationConfirmationMessage(messageData, language, isBalinese)'));
+  assert(source.includes('normalizeLanguage'));
+});
