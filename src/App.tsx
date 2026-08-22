@@ -737,6 +737,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [settingsMessage, setSettingsMessage] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
+  const cancelResolverRef = useRef<((result: boolean) => void) | null>(null);
   const selectedTodayServiceWasManualRef = useRef(false);
   const [selectedTodayService, setSelectedTodayService] = useState<BookingService>(() => {
     const initialServices = getTodayTabServices(normalizeEnabledServices(settings.servicesEnabled));
@@ -2498,10 +2499,14 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         } catch (refreshError) {
           console.warn('[DEMO][RESERVATION] refresh after cancel failed', refreshError);
         }
+        cancelResolverRef.current?.(true);
+        cancelResolverRef.current = null;
         return;
       } catch (error) {
         console.warn('[MANAGER_API] reservation.cancel failed', error);
         setLastSync('No se pudo cancelar con manager-api');
+        cancelResolverRef.current?.(false);
+        cancelResolverRef.current = null;
         return;
       }
     }
@@ -2510,6 +2515,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     if (!cancelWebhook.trim()) {
       setLastSync('Webhook cancelar reserva no configurado');
+      cancelResolverRef.current?.(false);
+      cancelResolverRef.current = null;
       return;
     }
 
@@ -2530,6 +2537,21 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     setLastSync('No se pudo cancelar la reserva');
+    cancelResolverRef.current?.(false);
+    cancelResolverRef.current = null;
+  }
+
+  function requestCancelReservation(reservation: Reservation) {
+    return new Promise<boolean>((resolve) => {
+      cancelResolverRef.current = resolve;
+      setReservationToCancel(reservation);
+    });
+  }
+
+  function rejectCancelReservation() {
+    cancelResolverRef.current?.(false);
+    cancelResolverRef.current = null;
+    setReservationToCancel(null);
   }
 
   async function handleBalinesePayment(id: string, paid: boolean) {
@@ -2556,7 +2578,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           onRefreshReservations={refreshReservationsOnly}
           isRefreshingReservations={isLoadingReservations}
           lastUpdatedAt={lastUpdatedAt}
-          onCancelReservation={setReservationToCancel}
+          onCancelReservation={requestCancelReservation}
           onBalinesePayment={handleBalinesePayment}
         />
       );
@@ -2710,7 +2732,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       {isProtectedDemoUser && <div className="demo-banner">Modo demo: algunas opciones estan bloqueadas.</div>}
       {renderPage()}
       {reservationToCancel && (
-        <div className="modal-backdrop" role="presentation" onPointerDown={() => setReservationToCancel(null)}>
+        <div className="modal-backdrop" role="presentation" onPointerDown={rejectCancelReservation}>
           <div className="show-modal cancel-modal" role="dialog" aria-modal="true" onPointerDown={(event) => event.stopPropagation()}>
             <div className="section-title compact">
               <div>
@@ -2723,7 +2745,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
               <span>{reservationToCancel.date} · {reservationToCancel.time} · {reservationToCancel.pax} pax</span>
             </div>
             <div className="modal-actions">
-              <button className="secondary-button" type="button" onClick={() => setReservationToCancel(null)}>
+              <button className="secondary-button" type="button" onClick={rejectCancelReservation}>
                 No, mantener
               </button>
               <button className="danger-button" type="button" onClick={() => void confirmCancelReservation()}>

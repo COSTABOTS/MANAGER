@@ -11,7 +11,7 @@ interface ReservationsProps {
   onRefreshReservations: () => Promise<void>;
   isRefreshingReservations: boolean;
   lastUpdatedAt: string;
-  onCancelReservation: (reservation: Reservation) => void;
+  onCancelReservation: (reservation: Reservation) => Promise<boolean>;
   onBalinesePayment: (id: string, paid: boolean) => Promise<void>;
 }
 
@@ -145,19 +145,14 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                 <th>Hora</th>
                 <th>Nombre</th>
                 <th>Habitacion</th>
-                <th>Telefono</th>
                 <th>Pax</th>
-                <th>Peticion especial</th>
-                <th>Origen</th>
+                <th>Pago</th>
                 <th>Estado</th>
-                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {visibleReservations.map((reservation) => {
-                const pastReservation = isPastReservation(reservation, today);
                 const canceledReservation = isCanceledReservation(reservation);
-                const canCancel = isActiveReservation(reservation) && !pastReservation && Boolean(reservation.idReserva);
                 const service = getReservationService(reservation);
 
                 return (
@@ -165,34 +160,14 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
                     <td data-label="Servicio">
                       <span className={`service-book-badge service-book-badge-${service.toLowerCase()}`}>{service}</span>
-                      {service === 'BALINESA' && (
-                        <span className={`reservation-payment-status ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`}>
-                          {reservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
-                        </span>
-                      )}
                     </td>
                     <td data-label="Hora">{reservation.time}</td>
                     <td data-label="Nombre">{reservation.name}</td>
                     <td data-label="Habitacion">{reservation.room || '-'}</td>
-                    <td data-label="Telefono">{reservation.phone || '-'}</td>
                     <td data-label="Pax">{reservation.pax}</td>
-                    <td data-label="Peticion especial">{reservation.specialRequest}</td>
-                    <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
+                    <td data-label="Pago"><span className={`reservation-payment-status ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`}>{service === 'BALINESA' ? (reservation.balinesePaid ? 'PAGADO' : 'NO PAGADO') : '—'}</span></td>
                     <td data-label="Estado">
                       <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
-                    </td>
-                    <td data-label="Acciones">
-                      {canCancel ? (
-                        <button className="danger-button compact-action" type="button" onClick={(event) => { event.stopPropagation(); onCancelReservation(reservation); }}>
-                          Cancelar
-                        </button>
-                      ) : canceledReservation ? (
-                        <span className="muted-cell">Cancelada</span>
-                      ) : pastReservation ? (
-                        <span className="muted-cell">Historico</span>
-                      ) : (
-                        <span className="muted-cell">Sin acciones</span>
-                      )}
                     </td>
                   </tr>
                 );
@@ -207,6 +182,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
             <div className="section-title compact"><div><p className="eyebrow">{selectedReservation.service === 'BALINESA' ? 'Detalle de balinesa' : 'Detalle de reserva'}</p><h2>{selectedReservation.name || selectedReservation.room || selectedReservation.service}</h2></div><button className="icon-button" type="button" onClick={() => setSelectedReservation(null)} aria-label="Cerrar">×</button></div>
             <div className="reservation-detail-grid"><span>Fecha: {formatDisplayDate(selectedReservation.date)}</span><span>Hora: {selectedReservation.time}</span><span>Nombre: {selectedReservation.name || '-'}</span><span>Habitación: {selectedReservation.room || '-'}</span><span>Teléfono: {selectedReservation.phone || '-'}</span><span>Pax: {selectedReservation.pax}</span><span>Petición: {selectedReservation.specialRequest || '-'}</span><span>Origen: {getReservationOrigin(selectedReservation.source)}</span><span>Estado: {selectedReservation.status}</span><span>Servicio: {selectedReservation.service}</span>{selectedReservation.service === 'BALINESA' && <><span>Paquete: {selectedReservation.balinesePackage || '-'}</span><span>Recurso: {selectedReservation.resource || '-'}</span></>}</div>
             {selectedReservation.service === 'BALINESA' && (isCanceledReservation(selectedReservation) ? <p className="muted-cell">Pago: {selectedReservation.balinesePaid ? 'PAGADO' : 'NO PAGADO'}</p> : <button className={`balinese-paid-badge ${selectedReservation.balinesePaid ? 'is-paid' : 'is-pending'}`} type="button" disabled={isSavingPayment} onClick={async () => { const previous = selectedReservation.balinesePaid === true; const next = !previous; setIsSavingPayment(true); setPaymentError(''); setSelectedReservation({ ...selectedReservation, balinesePaid: next }); try { await onBalinesePayment(selectedReservation.id, next); } catch (error) { setSelectedReservation({ ...selectedReservation, balinesePaid: previous }); setPaymentError(error instanceof Error ? error.message : 'No se pudo guardar el pago'); } finally { setIsSavingPayment(false); } }}>{selectedReservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}</button>)}
+            {canCancelReservation(selectedReservation, today) && <button className="danger-button compact-action" type="button" onClick={async () => { const cancelled = await onCancelReservation(selectedReservation); if (cancelled) setSelectedReservation(null); }}>Cancelar reserva</button>}
             {paymentError && <p className="form-error">{paymentError}</p>}
           </div>
         </div>
@@ -217,6 +193,10 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
 
 function isPastReservation(reservation: Reservation, today: string) {
   return normalizeDateForCompare(reservation.date) < today;
+}
+
+function canCancelReservation(reservation: Reservation, today: string) {
+  return isActiveReservation(reservation) && !isPastReservation(reservation, today) && Boolean(reservation.idReserva);
 }
 
 function getReservationService(reservation: Reservation): BookingService {
