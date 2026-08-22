@@ -581,7 +581,7 @@ export function Today({
                           onClick={() => void onBalinesePayment(reservedReservation.id, !reservedReservation.balinesePaid)}
                           aria-label={reservedReservation.balinesePaid ? 'Marcar como no pagado' : 'Marcar como pagado'}
                         >
-                          {reservedReservation.balinesePaid ? '● PAGADO' : '○ NO PAGADO'}
+                          {reservedReservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
                         </button>
                         <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservedReservation)}>
                           Cancelar
