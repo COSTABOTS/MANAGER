@@ -165,6 +165,11 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Fecha">{formatDisplayDate(reservation.date)}</td>
                     <td data-label="Servicio">
                       <span className={`service-book-badge service-book-badge-${service.toLowerCase()}`}>{service}</span>
+                      {service === 'BALINESA' && (
+                        <button className={`reservation-payment-status ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`} type="button" onClick={() => { setPaymentError(''); setSelectedBalinese(reservation); }}>
+                          {reservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
+                        </button>
+                      )}
                     </td>
                     <td data-label="Hora">{reservation.time}</td>
                     <td data-label="Nombre">{reservation.name}</td>
@@ -175,11 +180,6 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
                     <td data-label="Estado">
                       <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
-                      {service === 'BALINESA' && (
-                        <button className={`balinese-paid-badge ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`} type="button" onClick={() => { setPaymentError(''); setSelectedBalinese(reservation); }}>
-                          {reservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
-                        </button>
-                      )}
                     </td>
                     <td data-label="Acciones">
                       {canCancel ? (
