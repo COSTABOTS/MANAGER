@@ -163,7 +163,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Servicio">
                       <span className={`service-book-badge service-book-badge-${service.toLowerCase()}`}>{service}</span>
                     </td>
-                    <td data-label="Hora">{reservation.time}</td>
+                    <td data-label="Hora">{service === 'BALINESA' ? '—' : reservation.time}</td>
                     <td data-label="Nombre">{reservation.name}</td>
                     <td data-label="Habitacion">{reservation.room || '-'}</td>
                     <td data-label="Pax">{reservation.pax}</td>
