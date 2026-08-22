@@ -152,6 +152,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
             </thead>
             <tbody>
               {visibleReservations.map((reservation) => {
+                const pastReservation = isPastReservation(reservation, today);
                 const canceledReservation = isCanceledReservation(reservation);
                 const service = getReservationService(reservation);
 
