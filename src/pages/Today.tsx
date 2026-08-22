@@ -63,7 +63,6 @@ const EMPTY_BALINESE_DRAFT = {
   children: '0',
   package: 'BASIC' as 'BASIC' | 'PREMIUM',
   specialRequest: '',
-  paid: false,
 };
 
 const EMPTY_OTHER_DAY_BALINESE_DRAFT = {
@@ -76,6 +75,7 @@ const EMPTY_OTHER_DAY_BALINESE_DRAFT = {
   children: '0',
   package: 'BASIC' as 'BASIC' | 'PREMIUM',
   specialRequest: '',
+  paid: false,
 };
 
 const BALINESE_PACKAGES = {
