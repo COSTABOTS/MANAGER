@@ -4750,10 +4750,19 @@ button:active:not(:disabled) {
 .reservation-payment-status:hover { opacity: .72; }
 .reservations-table tr.reservation-row { cursor: pointer; }
 .reservations-table tr.reservation-row:not(.is-cancelada):hover td { background: rgba(184, 148, 69, 0.06); }
-.reservations-table tr.service-balinesa td { padding-top: 5px; padding-bottom: 5px; }
-.reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 2px; padding-bottom: 2px; }
+.reservations-table tr.service-balinesa td { padding-top: 10px; padding-bottom: 10px; }
+.reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 6px; padding-bottom: 6px; }
 .reservations-table tr.service-balinesa .reservation-payment-status { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; line-height: 1; }
 .reservations-table tr.service-balinesa .service-book-badge { margin-top: 0; margin-bottom: 0; }
 .balinese-paid-badge { padding: 3px 7px; font-size: 10px; }
 .reservation-detail-modal { max-width: 520px; }
 .reservation-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 18px 0; color: #475467; font-size: 13px; }
+.reservations-table th:nth-child(1), .reservations-table td:nth-child(1) { width: 9%; }
+.reservations-table th:nth-child(2), .reservations-table td:nth-child(2) { width: 12%; }
+.reservations-table th:nth-child(3), .reservations-table td:nth-child(3) { width: 8%; }
+.reservations-table th:nth-child(4), .reservations-table td:nth-child(4) { width: 18%; }
+.reservations-table th:nth-child(5), .reservations-table td:nth-child(5) { width: 11%; }
+.reservations-table th:nth-child(6), .reservations-table td:nth-child(6) { width: 6%; }
+.reservations-table th:nth-child(7), .reservations-table td:nth-child(7) { width: 11%; }
+.reservations-table th:nth-child(8), .reservations-table td:nth-child(8) { width: 10%; }
+.reservations-table th:nth-child(9), .reservations-table td:nth-child(9) { width: 15%; }

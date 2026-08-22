@@ -147,6 +147,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                 <th>Habitacion</th>
                 <th>Pax</th>
                 <th>Pago</th>
+                <th>Origen</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -167,6 +168,7 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Habitacion">{reservation.room || '-'}</td>
                     <td data-label="Pax">{reservation.pax}</td>
                     <td data-label="Pago"><span className={`reservation-payment-status ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`}>{service === 'BALINESA' ? (reservation.balinesePaid ? 'PAGADO' : 'NO PAGADO') : '—'}</span></td>
+                    <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
                     <td data-label="Estado">
                       <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
                     </td>
