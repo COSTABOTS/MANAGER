@@ -127,6 +127,7 @@ export function normalizeReservationFromSheet(row: SheetReservationRow): Reserva
     balinesePackage: toStringValue(
       pick(row, ['balinesePackage', 'paqueteBalinesa', 'paquete_balinesa', 'PAQUETE BALINESA', 'PAQUETE_BALINESA', 'PAQUETE BALINESA (R)', '17']),
     ),
+    balinesePaid: toBooleanValue(pick(row, ['balinesePaid', 'balinese_paid'])),
     resource: toStringValue(pick(row, ['resource', 'recurso', 'RECURSO', 'RECURSO (S)', '18'])),
     rowNumber: toNumberValue(pick(row, ['rowNumber', 'Row number', '__ROW_NUMBER__'])),
   };
