@@ -4748,8 +4748,9 @@ button:active:not(:disabled) {
 .reservation-payment-status.is-paid { color: #16794c; }
 .reservation-payment-status.is-pending { color: #b89445; }
 .reservation-payment-status:hover { opacity: .72; }
-.reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 5px; padding-bottom: 5px; }
-.reservations-table tr.service-balinesa td { padding-top: 3px; padding-bottom: 3px; }
+.reservations-table tr.reservation-row { cursor: pointer; }
+.reservations-table tr.reservation-row:not(.is-cancelada):hover td { background: rgba(184, 148, 69, 0.06); }
+.reservations-table tr.service-balinesa td { padding-top: 2px; padding-bottom: 2px; }
 .reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 2px; padding-bottom: 2px; }
 .reservations-table tr.service-balinesa .reservation-payment-status { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; line-height: 1; }
 .reservations-table tr.service-balinesa .service-book-badge { margin-top: 0; margin-bottom: 0; }
