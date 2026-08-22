@@ -12,6 +12,7 @@ interface ReservationsProps {
   isRefreshingReservations: boolean;
   lastUpdatedAt: string;
   onCancelReservation: (reservation: Reservation) => void;
+  onBalinesePayment: (id: string, paid: boolean) => Promise<void>;
 }
 
 function addDays(date: string, days: number) {
@@ -20,12 +21,15 @@ function addDays(date: string, days: number) {
   return baseDate.toISOString().slice(0, 10);
 }
 
-export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations, lastUpdatedAt, onCancelReservation }: ReservationsProps) {
+export function Reservations({ reservations, onRefreshReservations, isRefreshingReservations, lastUpdatedAt, onCancelReservation, onBalinesePayment }: ReservationsProps) {
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const [filter, setFilter] = useState<ReservationFilter>('all');
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all');
   const [showPastReservations, setShowPastReservations] = useState(false);
+  const [selectedBalinese, setSelectedBalinese] = useState<Reservation | null>(null);
+  const [paymentError, setPaymentError] = useState('');
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
   const today = getLocalDateString(new Date());
   const tomorrow = addDays(today, 1);
   const weekEnd = addDays(today, 7);
@@ -171,6 +175,11 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
                     <td data-label="Origen">{getReservationOrigin(reservation.source)}</td>
                     <td data-label="Estado">
                       <span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span>
+                      {service === 'BALINESA' && (
+                        <button className={`balinese-paid-badge ${reservation.balinesePaid ? 'is-paid' : 'is-pending'}`} type="button" onClick={() => { setPaymentError(''); setSelectedBalinese(reservation); }}>
+                          {reservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
+                        </button>
+                      )}
                     </td>
                     <td data-label="Acciones">
                       {canCancel ? (
@@ -192,6 +201,16 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
           </table>
         </div>
       </section>
+      {selectedBalinese && (
+        <div className="modal-backdrop" role="presentation" onPointerDown={() => !isSavingPayment && setSelectedBalinese(null)}>
+          <div className="show-modal reservation-detail-modal" role="dialog" aria-modal="true" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="section-title compact"><div><p className="eyebrow">Detalle de balinesa</p><h2>{selectedBalinese.resource || 'BALINESA'}</h2></div><button className="icon-button" type="button" onClick={() => setSelectedBalinese(null)} aria-label="Cerrar">×</button></div>
+            <div className="reservation-detail-grid"><span>Fecha: {formatDisplayDate(selectedBalinese.date)}</span><span>Nombre: {selectedBalinese.name || '-'}</span><span>Habitación: {selectedBalinese.room || '-'}</span><span>Teléfono: {selectedBalinese.phone || '-'}</span><span>Pax: {selectedBalinese.pax}</span><span>Paquete: {selectedBalinese.balinesePackage || '-'}</span><span>Recurso: {selectedBalinese.resource || '-'}</span><span>Estado: {selectedBalinese.status}</span></div>
+            {isCanceledReservation(selectedBalinese) ? <p className="muted-cell">Pago: {selectedBalinese.balinesePaid ? 'PAGADO' : 'NO PAGADO'}</p> : <button className={`balinese-paid-badge ${selectedBalinese.balinesePaid ? 'is-paid' : 'is-pending'}`} type="button" disabled={isSavingPayment} onClick={async () => { const previous = selectedBalinese.balinesePaid === true; const next = !previous; setIsSavingPayment(true); setPaymentError(''); setSelectedBalinese({ ...selectedBalinese, balinesePaid: next }); try { await onBalinesePayment(selectedBalinese.id, next); } catch (error) { setSelectedBalinese({ ...selectedBalinese, balinesePaid: previous }); setPaymentError(error instanceof Error ? error.message : 'No se pudo guardar el pago'); } finally { setIsSavingPayment(false); } }}>{selectedBalinese.balinesePaid ? '● PAGADO' : 'NO PAGADO'}</button>}
+            {paymentError && <p className="form-error">{paymentError}</p>}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

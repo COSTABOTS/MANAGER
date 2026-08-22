@@ -63,6 +63,7 @@ const EMPTY_BALINESE_DRAFT = {
   children: '0',
   package: 'BASIC' as 'BASIC' | 'PREMIUM',
   specialRequest: '',
+  paid: false,
 };
 
 const EMPTY_OTHER_DAY_BALINESE_DRAFT = {
@@ -427,6 +428,7 @@ export function Today({
         specialRequest: otherDayBalineseDraft.specialRequest.trim(),
         service: 'BALINESA',
         balinesePackage: otherDayBalineseDraft.package,
+        balinesePaid: otherDayBalineseDraft.paid,
         resource: otherDaySelectedResource.name,
       });
 
@@ -578,7 +580,7 @@ export function Today({
                         <button
                           className={`balinese-paid-badge ${reservedReservation.balinesePaid ? 'is-paid' : 'is-pending'}`}
                           type="button"
-                          onClick={() => void onBalinesePayment(reservedReservation.id, !reservedReservation.balinesePaid)}
+                          onClick={() => void onBalinesePayment(reservedReservation.id, !reservedReservation.balinesePaid).catch(() => undefined)}
                           aria-label={reservedReservation.balinesePaid ? 'Marcar como no pagado' : 'Marcar como pagado'}
                         >
                           {reservedReservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
@@ -798,6 +800,13 @@ export function Today({
                 <select value={otherDayBalineseDraft.package} onChange={(event) => updateOtherDayBalineseDraft('package', event.target.value as 'BASIC' | 'PREMIUM')}>
                   <option value="BASIC">BASIC - {BALINESE_PACKAGES.BASIC}</option>
                   <option value="PREMIUM">PREMIUM - {BALINESE_PACKAGES.PREMIUM}</option>
+                </select>
+              </label>
+              <label>
+                Pago inicial
+                <select value={otherDayBalineseDraft.paid ? 'paid' : 'unpaid'} onChange={(event) => updateOtherDayBalineseDraft('paid', event.target.value === 'paid')}>
+                  <option value="unpaid">NO PAGADO</option>
+                  <option value="paid">PAGADO</option>
                 </select>
               </label>
               <label className="manual-form-wide">

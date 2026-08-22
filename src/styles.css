@@ -4733,3 +4733,5 @@ button:active:not(:disabled) {
   color: #b89445;
 }
 .balinese-paid-badge.is-pending:hover { background: rgba(184, 148, 69, 0.08); }
+.reservation-detail-modal { max-width: 520px; }
+.reservation-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 18px 0; color: #475467; font-size: 13px; }

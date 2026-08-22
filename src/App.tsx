@@ -2333,6 +2333,22 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           recurso: reservation.resource ?? '',
           resource: reservation.resource ?? '',
         });
+        if (reservationService === 'BALINESA' && reservation.balinesePaid) {
+          const createdId = String(response.idReserva ?? '');
+          if (createdId) {
+            try {
+              await setBalinesePaymentWithManagerApi(createdId, true);
+            } catch {
+              try {
+                await loadReservations();
+              } catch (refreshError) {
+                console.warn('[MANAGER_API] reservation refresh after payment failure failed', refreshError);
+              }
+              setLastSync('La reserva se ha creado correctamente, pero no se pudo marcar como pagada. Puedes cambiar el estado de pago desde Reservas.');
+              return;
+            }
+          }
+        }
         console.log('[MANAGER_API][RESERVATION_CREATE] append confirmed', response);
         setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
@@ -2528,6 +2544,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       console.warn('[MANAGER_API] reservation.balinesePayment.set failed', error);
       setAllReservations((items) => items.map((reservation) => reservation.id === id ? { ...reservation, balinesePaid: current.balinesePaid } : reservation));
       setLastSync('No se pudo guardar el pago');
+      throw error;
     }
   }
 
@@ -2540,6 +2557,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isRefreshingReservations={isLoadingReservations}
           lastUpdatedAt={lastUpdatedAt}
           onCancelReservation={setReservationToCancel}
+          onBalinesePayment={handleBalinesePayment}
         />
       );
     }
