@@ -4727,3 +4727,9 @@ button:active:not(:disabled) {
 .balinese-paid-badge:hover { background: #eef1f5; }
 .balinese-paid-badge.is-paid { border-color: #b8e0cc; background: #edf9f2; color: #16794c; }
 .balinese-paid-badge.is-paid:hover { background: #e1f5e9; }
+.balinese-paid-badge.is-pending {
+  border-color: #b89445;
+  background: transparent;
+  color: #b89445;
+}
+.balinese-paid-badge.is-pending:hover { background: rgba(184, 148, 69, 0.08); }
