@@ -4749,6 +4749,10 @@ button:active:not(:disabled) {
 .reservation-payment-status.is-pending { color: #b89445; }
 .reservation-payment-status:hover { opacity: .72; }
 .reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 5px; padding-bottom: 5px; }
+.reservations-table tr.service-balinesa td { padding-top: 3px; padding-bottom: 3px; }
+.reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 2px; padding-bottom: 2px; }
+.reservations-table tr.service-balinesa .reservation-payment-status { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; line-height: 1; }
+.reservations-table tr.service-balinesa .service-book-badge { margin-top: 0; margin-bottom: 0; }
 .balinese-paid-badge { padding: 3px 7px; font-size: 10px; }
 .reservation-detail-modal { max-width: 520px; }
 .reservation-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 18px 0; color: #475467; font-size: 13px; }
