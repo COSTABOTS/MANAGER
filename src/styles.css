@@ -4736,18 +4736,19 @@ button:active:not(:disabled) {
 .reservation-payment-status {
   display: block;
   width: fit-content;
-  margin-top: 4px;
+  margin-top: 2px;
   padding: 1px 3px;
   border: 0;
   background: transparent;
   font-size: 10px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1;
   cursor: pointer;
 }
 .reservation-payment-status.is-paid { color: #16794c; }
 .reservation-payment-status.is-pending { color: #b89445; }
 .reservation-payment-status:hover { opacity: .72; }
+.reservations-table tr.service-balinesa td[data-label="Servicio"] { padding-top: 5px; padding-bottom: 5px; }
 .balinese-paid-badge { padding: 3px 7px; font-size: 10px; }
 .reservation-detail-modal { max-width: 520px; }
 .reservation-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 18px 0; color: #475467; font-size: 13px; }
