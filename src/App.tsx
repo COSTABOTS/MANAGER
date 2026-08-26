@@ -2694,6 +2694,10 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     );
   }
 
+  if (isPasswordSetupPath()) {
+    return <SetPasswordScreen />;
+  }
+
   if (!clientConfig) {
     return <LoginScreen error={loginError} isLoading={isLoggingIn} onLogin={handleLogin} />;
   }
@@ -2757,6 +2761,77 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       )}
     </Layout>
   );
+}
+
+function isPasswordSetupPath() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const setupType = params.get('type') || hashParams.get('type');
+  const hasImplicitSessionTokens = Boolean(hashParams.get('access_token') || hashParams.get('refresh_token'));
+  return window.location.pathname === '/set-password'
+    || Boolean(params.get('code'))
+    || setupType === 'invite'
+    || setupType === 'recovery'
+    || hasImplicitSessionTokens;
+}
+
+function SetPasswordScreen() {
+  const [password, setPassword] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [authStatus, setAuthStatus] = useState<'checking' | 'ready' | 'invalid'>('checking');
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (active && nextSession) setAuthStatus('ready');
+    });
+
+    async function initializeAuth() {
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          if (active) setAuthStatus('invalid');
+          return;
+        }
+      }
+
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+      setAuthStatus(!error && Boolean(data.session?.user?.id && data.session.access_token) ? 'ready' : 'invalid');
+    }
+
+    void initializeAuth();
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (authStatus !== 'ready') {
+      setMessage('El enlace no es válido o ha caducado.');
+      return;
+    }
+    if (password.length < 8 || password !== repeat) {
+      setMessage(password.length < 8 ? 'La contraseña debe tener al menos 8 caracteres.' : 'Las contraseñas no coinciden.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    const result = await supabase.auth.updateUser({ password });
+    if (result.error) {
+      console.warn('[AUTH][PASSWORD_SETUP] updateUser failed', { code: result.error.code, status: result.error.status });
+      setMessage('No se pudo establecer la contraseña. El enlace puede haber caducado.');
+    } else {
+      setMessage('Contraseña establecida correctamente. Redirigiendo al login...');
+      window.setTimeout(async () => { await supabase.auth.signOut(); window.location.assign('/'); }, 1200);
+    }
+    setBusy(false);
+  }
+
+  return <main className="login-shell"><section className="login-card"><div className="login-brand"><BrandLogo fallbackUrl={DEFAULT_COSTABOTS_LOGO} fallbackLabel="C" alt="COSTABOTS" variant="restaurant" /><span>COSTABOTS Manager</span></div><h1>Establecer contraseña</h1>{authStatus === 'checking' ? <p>Validando enlace...</p> : <><p>{authStatus === 'ready' ? 'Define una contraseña para acceder a tu cuenta.' : 'El enlace no es válido o ha caducado.'}</p><form className="login-form" onSubmit={submit}><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={authStatus !== 'ready' || busy} required /></label><label>Repetir contraseña<input type="password" autoComplete="new-password" value={repeat} onChange={(event) => setRepeat(event.target.value)} disabled={authStatus !== 'ready' || busy} required /></label>{message && <p className="login-error">{message}</p>}<button className="primary-button login-submit" disabled={busy || authStatus !== 'ready'} type="submit">{busy ? 'Guardando...' : 'Guardar contraseña'}</button></form></>}</section></main>;
 }
 
 function getPublicFeedbackReservationId() {
