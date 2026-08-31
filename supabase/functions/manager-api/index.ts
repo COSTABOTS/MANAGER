@@ -1039,6 +1039,9 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
   const supabaseActionsWithoutSheetId = [
     'tables.list', 'tables.create', 'tables.update', 'tables.delete',
     'resources.list', 'resources.create', 'resources.update', 'resources.delete',
+    'reservations.list', 'reservation.create', 'reservation.arrive',
+    'reservation.assignTable', 'reservation.cancel', 'reservation.balinesePayment.set',
+    'walkin.create', 'feedbacks.list', 'fullybooked.get', 'fullybooked.set',
   ];
   const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save'].includes(String(action))
     && !(String(action) === 'reservations.list' && resolvedReservationStore.toLowerCase() === 'supabase')
