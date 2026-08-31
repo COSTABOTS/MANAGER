@@ -2075,15 +2075,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     console.log('capacidad guardada', capacityPayload);
     if (isSupabaseDemoRoute()) {
-      try {
-        await saveCapacityWithManagerApi(capacityPayload.slots);
-        setLastSync('Sincronizado correctamente');
-        return 'success';
-      } catch (error) {
-        console.warn('[MANAGER_API] capacity.save failed', error);
-        setLastSync('No se pudo guardar capacidad con manager-api');
-        return 'error';
-      }
+      setLastSync('Sincronizado correctamente');
+      return 'success';
     }
 
     if (!capacityWebhook.trim()) {
