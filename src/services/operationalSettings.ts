@@ -11,6 +11,7 @@ interface SettingsResponse {
 }
 
 const DEFAULT_OPERATIONAL_SETTINGS = {
+  MAX_PAX_PER_BOOKING: 8,
   BOOKINGS_ENABLED: true,
   MAX_CAPACITY: 60,
   WHATSAPP_CONFIRMATION: true,
@@ -171,6 +172,7 @@ function toSaveValue(value: boolean | number | string) {
 
 export function buildOperationalSettingsPayload(settings: ManagerSettings) {
   const settingsMap = {
+    MAX_PAX_PER_BOOKING: settings.maxPaxPerBooking,
     BOOKINGS_ENABLED: settings.reservasActivas,
     MAX_CAPACITY: settings.totalCapacity,
     WHATSAPP_CONFIRMATION: settings.whatsappConfirmation,
@@ -218,6 +220,7 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
   const servicesEnabledSetting = (settingsMap as SettingsValueMap).SERVICES_ENABLED ?? (settingsMap as SettingsValueMap).services_enabled;
   const normalizedSettings: ManagerSettings = {
     ...currentSettings,
+    maxPaxPerBooking: Math.max(1, Math.floor(toNumberValue(settingsMap.MAX_PAX_PER_BOOKING, DEFAULT_OPERATIONAL_SETTINGS.MAX_PAX_PER_BOOKING))),
     reservasActivas: toBooleanValue(settingsMap.BOOKINGS_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.BOOKINGS_ENABLED),
     totalCapacity: toNumberValue(settingsMap.MAX_CAPACITY, DEFAULT_OPERATIONAL_SETTINGS.MAX_CAPACITY),
     whatsappConfirmation: toBooleanValue(settingsMap.WHATSAPP_CONFIRMATION, DEFAULT_OPERATIONAL_SETTINGS.WHATSAPP_CONFIRMATION),

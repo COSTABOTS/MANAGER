@@ -24,6 +24,7 @@ import { handleReservationBalineseAvailability } from './routes/reservationBalin
 import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationRemindersDispatch } from './routes/reservationRemindersDispatch.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
+import { handleWidgetConfig } from './routes/widgetConfig.ts';
 
 function normalizeShow(show: Record<string, unknown>) {
   const nombre = toStringValue(show.nombre ?? show.name);
@@ -268,6 +269,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/availability/by-day')) {
       return await handleAvailabilityByDay(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/widget/config')) {
+      return await handleWidgetConfig(request, db.dbClient);
     }
 
     if (pathname.endsWith('/feedback/details')) {

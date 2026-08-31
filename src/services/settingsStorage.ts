@@ -6,6 +6,7 @@ const SETTINGS_STORAGE_KEY = 'manager_settings';
 function normalizeSettings(storedSettings: Partial<ManagerSettings> & { logoUrl?: string }): ManagerSettings {
   return {
     ...mockSettings,
+    maxPaxPerBooking: storedSettings.maxPaxPerBooking ?? mockSettings.maxPaxPerBooking,
     ...storedSettings,
     costabotsLogoUrl: storedSettings.costabotsLogoUrl ?? mockSettings.costabotsLogoUrl,
     restaurantLogoUrl: storedSettings.restaurantLogoUrl ?? storedSettings.logoUrl ?? mockSettings.restaurantLogoUrl,

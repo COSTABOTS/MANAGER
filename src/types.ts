@@ -101,6 +101,7 @@ export interface ClientLicense {
 }
 
 export interface ManagerSettings {
+  maxPaxPerBooking: number;
   totalCapacity: number;
   slotCapacity: Record<string, number>;
   openingTime: string;

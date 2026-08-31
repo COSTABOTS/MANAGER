@@ -711,6 +711,7 @@ export function Settings({
             </div>
           </div>
           <SwitchRow label="Reservas activas" checked={draftSettings.reservasActivas} onChange={(value) => updateDraft('reservasActivas', value)} />
+          <div className="settings-grid inner"><label>Máximo pax por reserva<input type="number" min="1" value={draftSettings.maxPaxPerBooking} onChange={(event) => updateDraft('maxPaxPerBooking', Math.max(1, Number(event.target.value) || 1))} /></label></div>
           <SwitchRow label="WhatsApp confirmacion" checked={draftSettings.whatsappConfirmation} onChange={(value) => updateDraft('whatsappConfirmation', value)} />
           <div className="settings-grid inner">
             <label>

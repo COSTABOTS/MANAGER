@@ -16,6 +16,7 @@ export const mockSlotCapacity = {
 };
 
 export const mockSettings: ManagerSettings = {
+  maxPaxPerBooking: 8,
   totalCapacity: 60,
   openingTime: '18:00',
   closingTime: '23:00',

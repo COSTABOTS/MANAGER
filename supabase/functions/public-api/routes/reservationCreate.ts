@@ -9,7 +9,7 @@ import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 import type { CreateReservationCommand } from '../../_shared/reservation-store/types.ts';
 
-const MAX_PUBLIC_RESTAURANT_PAX = 8;
+const DEFAULT_MAX_PUBLIC_RESTAURANT_PAX = 8;
 
 function getSafeErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -44,13 +44,18 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     });
   }
 
-  if (normalized.personas > MAX_PUBLIC_RESTAURANT_PAX) {
+  const { data: maxPaxSetting } = context.reservationStore === 'supabase'
+    ? await dbClient.from('SETTINGS').select('VALOR').eq('CLIENTE_ID', context.clientId).eq('CLAVE', 'MAX_PAX_PER_BOOKING').maybeSingle()
+    : { data: null };
+  const configuredMaxPax = Number(String(maxPaxSetting?.VALOR ?? '').trim());
+  const maxPublicRestaurantPax = Number.isInteger(configuredMaxPax) && configuredMaxPax > 0 ? configuredMaxPax : DEFAULT_MAX_PUBLIC_RESTAURANT_PAX;
+  if (normalized.personas > maxPublicRestaurantPax) {
     return jsonResponse(request, {
       ok: false,
       code: 'MAX_PAX_EXCEEDED',
       message: normalized.idioma === 'EN'
-        ? 'For reservations of more than 8 people, please contact the restaurant directly.'
-        : 'Para reservas de más de 8 personas, contacta directamente con el restaurante.',
+        ? `For reservations of more than ${maxPublicRestaurantPax} people, please contact the restaurant directly.`
+        : `Para reservas de más de ${maxPublicRestaurantPax} personas, contacta directamente con el restaurante.`,
     }, 400);
   }
 
