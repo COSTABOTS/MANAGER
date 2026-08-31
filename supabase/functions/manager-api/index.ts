@@ -1766,6 +1766,57 @@ async function listReservations(request: Request, clientId: string, sheetId: str
   });
 }
 
+async function provisionDinnerCapacitySlots(dbClient: any, clientId: string, settings: Record<string, string>) {
+  const start = settings.CENA_START?.trim();
+  const end = settings.CENA_END?.trim();
+  const interval = Number(settings.BOOKING_INTERVAL);
+  const toMinutes = (value: string) => {
+    const match = value.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const minutes = Number(match[1]) * 60 + Number(match[2]);
+    return minutes >= 0 && minutes <= 1439 ? minutes : null;
+  };
+  const startMinutes = start ? toMinutes(start) : null;
+  const endMinutes = end ? toMinutes(end) : null;
+  if (startMinutes === null || endMinutes === null || !Number.isInteger(interval) || interval <= 0 || endMinutes < startMinutes) return;
+
+  const { data: existing, error: readError } = await dbClient
+    .from('booking_capacity_slots')
+    .select('slot_time')
+    .eq('client_id', clientId)
+    .eq('service', 'CENA')
+    .is('weekday', null)
+    .is('valid_from', null)
+    .is('valid_until', null);
+  if (readError) throw new Error(`SUPABASE_CAPACITY_PROVISION_READ_FAILED: ${readError.message}`);
+
+  const existingTimes = new Set((existing ?? []).map((row: Record<string, unknown>) => toSheetString(row.slot_time).slice(0, 5)));
+  for (let minutes = startMinutes; minutes <= endMinutes; minutes += interval) {
+    const slotTime = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:00`;
+    if (existingTimes.has(slotTime.slice(0, 5))) continue;
+    const { error } = await dbClient.from('booking_capacity_slots').insert({
+      client_id: clientId,
+      service: 'CENA',
+      weekday: null,
+      slot_time: slotTime,
+      capacity: 20,
+      active: true,
+      valid_from: null,
+      valid_until: null,
+    });
+    if (error) {
+      if (String(error.code ?? '') === '23505') {
+        // Otro proceso pudo crear el mismo slot después de nuestra lectura.
+        // La fila existente y su capacidad se conservan intactas.
+        existingTimes.add(slotTime.slice(0, 5));
+        continue;
+      }
+      throw new Error(`SUPABASE_CAPACITY_PROVISION_WRITE_FAILED: ${error.message}`);
+    }
+    existingTimes.add(slotTime.slice(0, 5));
+  }
+}
+
 function toManagerReservation(reservation: unknown) {
   return reservation;
 }
@@ -1972,6 +2023,7 @@ async function saveSettings(request: Request, clientId: string, sheetId: string,
         if (insertError) throw new Error(`SUPABASE_SETTINGS_WRITE_FAILED: ${insertError.message}`);
       }
     }
+    await provisionDinnerCapacitySlots(dbClient, clientId, settingsMap);
     return jsonResponse(request, { ok: true, action: 'settings.save', client_id: clientId });
   }
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
