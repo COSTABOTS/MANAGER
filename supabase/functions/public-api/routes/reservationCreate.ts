@@ -44,6 +44,15 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     });
   }
 
+  const context = await validatePublicClient(request, dbClient, body, {
+    missingFieldsError: 'INVALID_REQUEST',
+    invalidClientError: 'INVALID_CLIENT',
+    inactiveLicenseError: 'INVALID_CLIENT',
+  });
+  if ('error' in context) {
+    return context.error;
+  }
+
   const { data: maxPaxSetting } = context.reservationStore === 'supabase'
     ? await dbClient.from('SETTINGS').select('VALOR').eq('CLIENTE_ID', context.clientId).eq('CLAVE', 'MAX_PAX_PER_BOOKING').maybeSingle()
     : { data: null };
@@ -57,15 +66,6 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
         ? `For reservations of more than ${maxPublicRestaurantPax} people, please contact the restaurant directly.`
         : `Para reservas de más de ${maxPublicRestaurantPax} personas, contacta directamente con el restaurante.`,
     }, 400);
-  }
-
-  const context = await validatePublicClient(request, dbClient, body, {
-    missingFieldsError: 'INVALID_REQUEST',
-    invalidClientError: 'INVALID_CLIENT',
-    inactiveLicenseError: 'INVALID_CLIENT',
-  });
-  if ('error' in context) {
-    return context.error;
   }
 
   const usesSheets = (context.reservationStore ?? 'sheets').trim().toLowerCase() !== 'supabase';
