@@ -25,6 +25,7 @@ import { handleReservationCreate } from './routes/reservationCreate.ts';
 import { handleReservationRemindersDispatch } from './routes/reservationRemindersDispatch.ts';
 import { handleReservationSendConfirmation } from './routes/reservationSendConfirmation.ts';
 import { handleWidgetConfig } from './routes/widgetConfig.ts';
+import { handleWidgetResolve } from './routes/widgetResolve.ts';
 
 function normalizeShow(show: Record<string, unknown>) {
   const nombre = toStringValue(show.nombre ?? show.name);
@@ -273,6 +274,10 @@ Deno.serve(async (request) => {
 
     if (pathname.endsWith('/widget/config')) {
       return await handleWidgetConfig(request, db.dbClient);
+    }
+
+    if (pathname.endsWith('/widget/resolve')) {
+      return await handleWidgetResolve(request, db.dbClient);
     }
 
     if (pathname.endsWith('/feedback/details')) {
