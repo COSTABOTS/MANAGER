@@ -1576,7 +1576,6 @@ async function saveShow(request: Request, context: { dbClient: ReturnType<typeof
 }
 
 async function createResource(request: Request, sheetId: string, reservationStore: unknown, dbClient: any, clientId: string, body: Record<string, unknown>) {
-  const accessToken = await createGoogleAccessToken();
   const recursoId = makeResourceId();
   const resource = normalizeResourceInput(body.resource as Record<string, unknown> | undefined, recursoId);
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
@@ -1585,6 +1584,7 @@ async function createResource(request: Request, sheetId: string, reservationStor
     return jsonResponse(request, { ok: true, action: 'resources.create', recursoId });
   }
 
+  const accessToken = await createGoogleAccessToken();
   const appendResponse = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent('RECURSOS!A:F')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
