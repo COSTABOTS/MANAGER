@@ -1179,6 +1179,39 @@ button:disabled {
   box-shadow: 0 10px 26px rgba(34, 47, 73, 0.08);
 }
 
+.restaurant-avatar-header,
+.restaurant-avatar-sidebar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 2px solid var(--client-primary-color, #d7b56d);
+  border-radius: 50%;
+  background: rgba(248, 244, 234, 0.94);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .20), inset 0 1px 0 rgba(255, 255, 255, .40);
+}
+
+.restaurant-avatar-header { width: 82px; height: 82px; padding: 8px; }
+.restaurant-avatar-sidebar { width: 58px; height: 58px; padding: 6px; }
+.restaurant-avatar-header .brand-logo-image,
+.restaurant-avatar-sidebar .brand-logo-image { object-fit: contain; }
+
+@media (max-width: 900px) {
+  .restaurant-avatar-header { width: 72px; height: 72px; }
+}
+
+@media (max-width: 640px) {
+  .restaurant-avatar-header { width: 58px; height: 58px; padding: 6px; }
+  .restaurant-avatar-sidebar { width: 52px; height: 52px; padding: 5px; }
+}
+
+.sidebar .restaurant-avatar-sidebar { width: 58px; min-width: 58px; height: 58px; min-height: 58px; }
+@media (max-width: 640px) {
+  .sidebar .restaurant-avatar-sidebar { width: 52px; min-width: 52px; height: 52px; min-height: 52px; }
+}
+
 .control-toolbar input[type='date']::-webkit-calendar-picker-indicator {
   opacity: 0;
   cursor: pointer;

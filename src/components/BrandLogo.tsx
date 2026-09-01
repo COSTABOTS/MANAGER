@@ -7,16 +7,17 @@ interface BrandLogoProps {
   alt: string;
   variant: 'platform' | 'restaurant';
   preferFallback?: boolean;
+  className?: string;
 }
 
-export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant, preferFallback = false }: BrandLogoProps) {
+export function BrandLogo({ logoUrl, fallbackUrl, fallbackLabel, alt, variant, preferFallback = false, className = '' }: BrandLogoProps) {
   const [imageState, setImageState] = useState<'primary' | 'fallback' | 'letter'>('primary');
   const trimmedUrl = logoUrl?.trim() ?? '';
   const primarySrc = !preferFallback && trimmedUrl !== '' ? trimmedUrl : fallbackUrl;
   const currentSrc = imageState === 'letter' ? '' : imageState === 'fallback' ? fallbackUrl : primarySrc;
   const shouldUseImage = Boolean(currentSrc);
   const fallbackText = fallbackLabel.trim().slice(0, 1).toUpperCase() || '?';
-  const frameClassName = `brand-logo-frame brand-logo-frame-${variant}`;
+  const frameClassName = `brand-logo-frame brand-logo-frame-${variant} ${className}`.trim();
 
   useEffect(() => {
     setImageState('primary');

@@ -89,7 +89,7 @@ export function Layout({
               <span>COSTABOTS MANAGER</span>
             </div>
             <div className="brand-lockup">
-              <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+              <BrandLogo className="restaurant-avatar-sidebar" logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
               <div>
                 <p className="eyebrow">Restaurante</p>
                 <strong>{restaurantName}</strong>

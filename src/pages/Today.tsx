@@ -481,7 +481,7 @@ export function Today({
         <div className="today-header-spacer" aria-hidden="true" />
         <div className="app-brand-header today-restaurant-brand">
           <div className="brand-lockup">
-            <BrandLogo logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
+            <BrandLogo className="restaurant-avatar-header" logoUrl={restaurantLogoUrl} fallbackUrl={RESTAURANT_LOGO} fallbackLabel={restaurantName} alt={restaurantName} variant="restaurant" />
             <h1>{restaurantName}</h1>
           </div>
         </div>
