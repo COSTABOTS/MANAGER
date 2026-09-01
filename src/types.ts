@@ -104,6 +104,7 @@ export interface ManagerSettings {
   maxPaxPerBooking: number;
   totalCapacity: number;
   slotCapacity: Record<string, number>;
+  serviceSlotCapacity?: Record<'DESAYUNO' | 'ALMUERZO' | 'CENA', Record<string, number>>;
   openingTime: string;
   closingTime: string;
   bookingInterval: 30 | 60;

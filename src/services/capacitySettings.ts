@@ -8,6 +8,7 @@ export interface CapacitySaveSlot {
   limite: number;
   activo: boolean;
 }
+export type ServiceCapacity = Record<'DESAYUNO' | 'ALMUERZO' | 'CENA', Record<string, number>>;
 
 interface CapacityResponse {
   ok?: boolean;
@@ -18,6 +19,7 @@ interface CapacityResponse {
   data?: CapacityRow[] | CapacityRow;
   rows?: CapacityRow[] | CapacityRow;
   tables?: CapacityRow[] | CapacityRow;
+  services?: Record<string, CapacityRow[] | CapacityRow>;
 }
 
 function unwrapValue(value: unknown) {
@@ -124,16 +126,20 @@ export async function loadCapacityFromManagerApi() {
     throw new Error(response?.code || response?.message || 'manager-api capacity.list no devolvio ok=true');
   }
 
+  if (response.services && typeof response.services === 'object') {
+    return Object.fromEntries(Object.entries(response.services).map(([service, rows]) => [service, normalizeCapacityRows(rows as CapacityRow[])])) as unknown as Record<string, number>;
+  }
   const normalized = normalizeCapacityRows(response.capacity ?? response.capacidad ?? response.rows ?? response.data ?? response.tables ?? response.slots);
   console.log('[DEMO][MANAGER_API] capacity received', Object.keys(normalized).length);
 
   return normalized;
 }
 
-export async function saveCapacityWithManagerApi(capacity: CapacitySaveSlot[]) {
+export async function saveCapacityWithManagerApi(capacity: CapacitySaveSlot[], service?: 'DESAYUNO' | 'ALMUERZO' | 'CENA') {
   const data = await invokeManagerApi<{ ok?: boolean; code?: string; message?: string; rows?: number }>({
     action: 'capacity.save',
     capacity,
+    ...(service ? { service } : {}),
   });
 
   const response = data as { ok?: boolean; code?: string; message?: string; rows?: number };

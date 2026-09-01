@@ -1600,11 +1600,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     if (isDemo) {
       try {
         const loadedCapacity = await loadCapacityFromManagerApi();
+        const capacityMap = (loadedCapacity as Record<string, unknown>).CENA && typeof (loadedCapacity as Record<string, unknown>).CENA === 'object'
+          ? (loadedCapacity as unknown as Record<string, Record<string, number>>).CENA
+          : loadedCapacity as Record<string, number>;
         setSettings((current) => {
           const mergedSource = baseSettings ?? current;
+          const serviceSlotCapacity = loadedCapacity as unknown as Record<'DESAYUNO' | 'ALMUERZO' | 'CENA', Record<string, number>>;
           const nextSettings = {
             ...mergedSource,
-            slotCapacity: buildVisibleSlotCapacity(mergedSource, loadedCapacity),
+            slotCapacity: buildVisibleSlotCapacity(mergedSource, capacityMap),
+            ...(serviceSlotCapacity.CENA ? { serviceSlotCapacity } : {}),
           };
           saveSettingsToStorage(nextSettings);
           return nextSettings;
@@ -2075,7 +2080,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
     console.log('capacidad guardada', capacityPayload);
     if (isSupabaseDemoRoute()) {
+      const serviceCapacities = settingsToSave.serviceSlotCapacity;
       setLastSync('Sincronizado correctamente');
+      if (serviceCapacities) {
+        for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
+          if (!settingsToSave.servicesEnabled.includes(service)) continue;
+          const configured = serviceCapacities[service] ?? {};
+          const hours = generateTimeSlots(settingsToSave.serviceHours[service].start, settingsToSave.serviceHours[service].end, settingsToSave.bookingInterval);
+          const slots = hours.map((hora) => ({ hora, limite: configured[hora] ?? 20, activo: (configured[hora] ?? 20) > 0 }));
+          await saveCapacityWithManagerApi(slots, service);
+        }
+      }
       return 'success';
     }
 

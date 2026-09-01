@@ -684,10 +684,13 @@ export function Settings({
           <div className={isDemoMode ? 'slot-capacity-section is-first' : 'slot-capacity-section'}>
             <p className="eyebrow">Capacidad por tramo horario</p>
             <div className="slot-capacity-grid">
-              {Object.entries(draftSettings.slotCapacity).map(([slot, value]) => (
+              {(!isDemoMode ? [['', draftSettings.slotCapacity] as const] : SERVICE_HOUR_FIELDS.filter(({ key }) => draftSettings.servicesEnabled.includes(key)).map(({ key }) => [key, draftSettings.serviceSlotCapacity?.[key] ?? {}] as const)).map(([service, capacities]) => (
+                <div key={service || 'legacy'} className="service-capacity-block">
+                {service && <p className="eyebrow">Capacidad · {service}</p>}
+                {Object.entries(service ? (Object.keys(capacities).length ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
                 <label key={slot} className="slot-input">
                   <span>{slot}</span>
-                  <select value={value} onChange={(event) => updateSlotCapacity(slot, Number(event.target.value))}>
+                  <select value={value} onChange={(event) => service ? setDraftSettings((current) => ({ ...current, serviceSlotCapacity: { DESAYUNO: current.serviceSlotCapacity?.DESAYUNO ?? {}, ALMUERZO: current.serviceSlotCapacity?.ALMUERZO ?? {}, CENA: current.serviceSlotCapacity?.CENA ?? {}, [service]: { ...(current.serviceSlotCapacity?.[service as ServiceWithHours] ?? {}), [slot]: Number(event.target.value) } } })) : updateSlotCapacity(slot, Number(event.target.value))}>
                     {CAPACITY_OPTIONS.map((capacity) => (
                       <option key={capacity} value={capacity}>
                         {capacity === 0 ? '0 - cerrado' : capacity}
@@ -695,6 +698,8 @@ export function Settings({
                     ))}
                   </select>
                 </label>
+              ))}
+              </div>
               ))}
             </div>
           </div>

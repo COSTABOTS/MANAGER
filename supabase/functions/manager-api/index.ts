@@ -1042,6 +1042,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'reservations.list', 'reservation.create', 'reservation.arrive',
     'reservation.assignTable', 'reservation.cancel', 'reservation.balinesePayment.set',
     'walkin.create', 'feedbacks.list', 'fullybooked.get', 'fullybooked.set',
+    'capacity.list', 'capacity.save',
   ];
   const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save'].includes(String(action))
     && !(String(action) === 'reservations.list' && resolvedReservationStore.toLowerCase() === 'supabase')
@@ -1829,9 +1830,23 @@ function toManagerReservation(reservation: unknown) {
   return reservation;
 }
 
-async function listCapacity(request: Request, clientId: string, sheetId: string, debug: ManagerApiDebug) {
+async function listCapacity(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const { data, error } = await dbClient.from('booking_capacity_slots')
+      .select('service,slot_time,capacity,active')
+      .eq('client_id', clientId).is('weekday', null).is('valid_from', null).is('valid_until', null)
+      .order('service').order('slot_time');
+    if (error) throw new Error(`SUPABASE_CAPACITY_READ_FAILED: ${error.message}`);
+    const services: Record<string, Array<Record<string, unknown>>> = { DESAYUNO: [], ALMUERZO: [], CENA: [] };
+    for (const row of data ?? []) {
+      const service = String(row.service ?? '').toUpperCase();
+      if (services[service]) services[service].push({ hora: String(row.slot_time).slice(0, 5), limite: Number(row.capacity), activo: Boolean(row.active) });
+    }
+    return jsonResponse(request, { ok: true, action: 'capacity.list', client_id: clientId, services });
+  }
 
   const accessToken = await createGoogleAccessToken();
   const sheetsResponse = await fetch(
@@ -1857,9 +1872,25 @@ async function listCapacity(request: Request, clientId: string, sheetId: string,
   });
 }
 
-async function saveCapacity(request: Request, clientId: string, sheetId: string, body: Record<string, unknown>) {
+async function saveCapacity(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
+
+  if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
+    const service = String(body.service ?? '').trim().toUpperCase();
+    if (!['DESAYUNO', 'ALMUERZO', 'CENA'].includes(service)) return errorResponse(request, 'SERVICE_REQUIRED', 'Servicio no valido', 400);
+    const raw = Array.isArray(body.capacity) ? body.capacity : [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>; const hora = toSheetString(row.hora ?? row.time); if (!hora) continue;
+      const values = { client_id: clientId, service, slot_time: hora.length === 5 ? `${hora}:00` : hora, capacity: toSheetNumber(row.limite ?? row.capacity), active: typeof row.activo === 'boolean' ? row.activo : normalizeBoolean(row.activo) };
+      const { data: existing, error: readError } = await dbClient.from('booking_capacity_slots').select('id').eq('client_id', clientId).eq('service', service).is('weekday', null).is('valid_from', null).is('valid_until', null).eq('slot_time', values.slot_time).maybeSingle();
+      if (readError) throw new Error(`SUPABASE_CAPACITY_READ_FAILED: ${readError.message}`);
+      const result = existing?.id ? await dbClient.from('booking_capacity_slots').update({ capacity: values.capacity, active: values.active }).eq('client_id', clientId).eq('id', existing.id) : await dbClient.from('booking_capacity_slots').insert(values);
+      if (result.error && String(result.error.code ?? '') !== '23505') throw new Error(`SUPABASE_CAPACITY_WRITE_FAILED: ${result.error.message}`);
+    }
+    return jsonResponse(request, { ok: true, action: 'capacity.save', client_id: clientId, rows: raw.length });
+  }
 
   const rawCapacity = Array.isArray(body.capacity)
     ? body.capacity
@@ -2750,10 +2781,10 @@ Deno.serve(async (request) => {
         return await listFeedbacks(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
 
       case 'capacity.list':
-        return await listCapacity(request, context.clientId, context.sheetId, debug);
+        return await listCapacity(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
 
       case 'capacity.save':
-        return await saveCapacity(request, context.clientId, context.sheetId, body as Record<string, unknown>);
+        return await saveCapacity(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>);
 
       case 'settings.get':
         return await getSettings(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, debug);
