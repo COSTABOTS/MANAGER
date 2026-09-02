@@ -262,8 +262,10 @@ function isTimeInRange(time: string, start: string, end: string) {
 
 function getWalkInServiceForTime(time: string, settings: ManagerSettings): BookingService {
   const enabledServices = normalizeEnabledServices(settings.servicesEnabled);
+  const currentMinutes = timeToMinutes(time);
+  const candidates: Array<{ service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; distance: number; isNext: boolean; order: number }> = [];
 
-  for (const service of TIMED_SERVICE_ORDER) {
+  for (const [order, service] of TIMED_SERVICE_ORDER.entries()) {
     if (!enabledServices.includes(service)) {
       continue;
     }
@@ -272,9 +274,16 @@ function getWalkInServiceForTime(time: string, settings: ManagerSettings): Booki
     if (serviceHours && isTimeInRange(time, serviceHours.start, serviceHours.end)) {
       return service;
     }
+    const start = timeToMinutes(serviceHours?.start);
+    const end = timeToMinutes(serviceHours?.end);
+    if (currentMinutes !== null && start !== null && end !== null && start <= end) {
+      const isNext = currentMinutes < start;
+      candidates.push({ service, distance: isNext ? start - currentMinutes : currentMinutes - end, isNext, order });
+    }
   }
 
-  return 'CENA';
+  const nearest = candidates.sort((a, b) => a.distance - b.distance || Number(b.isNext) - Number(a.isNext) || a.order - b.order)[0];
+  return nearest?.service ?? enabledServices.find((service) => TIMED_SERVICE_ORDER.includes(service as typeof TIMED_SERVICE_ORDER[number])) ?? 'CENA';
 }
 
 function clearLoginSession() {
