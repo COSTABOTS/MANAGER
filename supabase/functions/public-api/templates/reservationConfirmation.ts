@@ -23,7 +23,7 @@ export function maskReservationCancellationUrl(url: string) {
 }
 
 function restaurantEs(data: ReservationMessageData) {
-  return `🌴 ${data.restaurantName}
+  return `🍽️ ${data.restaurantName}
 
 ✅ Tu reserva ha sido confirmada.
 
@@ -41,7 +41,7 @@ ${data.restaurantName}`;
 }
 
 function restaurantEn(data: ReservationMessageData) {
-  return `🌴 ${data.restaurantName}
+  return `🍽️ ${data.restaurantName}
 
 ✅ Your reservation has been confirmed.
 
@@ -59,7 +59,7 @@ ${data.restaurantName}`;
 }
 
 function balineseEs(data: ReservationMessageData) {
-  return `🌴 ${data.restaurantName}
+  return `🍽️ ${data.restaurantName}
 
 ✅ Tu cama balinesa ha sido confirmada.
 
@@ -77,7 +77,7 @@ ${data.restaurantName}`;
 }
 
 function balineseEn(data: ReservationMessageData) {
-  return `🌴 ${data.restaurantName}
+  return `🍽️ ${data.restaurantName}
 
 ✅ Your Balinese bed has been confirmed.
 

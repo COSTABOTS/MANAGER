@@ -3,8 +3,9 @@ import type { NormalizedFeedbackSubmit, PublicFeedbackReservation } from '../lib
 export function buildFeedbackAlertMessage(
   reservation: PublicFeedbackReservation,
   feedback: NormalizedFeedbackSubmit,
+  restaurantName = '',
 ) {
-  return `🚨 ALERTA EXPERIENCIA CLIENTE
+  return `🚨 ALERTA EXPERIENCIA CLIENTE${restaurantName ? `\n${restaurantName}` : ''}
 
 Idioma: ${feedback.idioma.toUpperCase()}
 Cliente: ${reservation.nombre}

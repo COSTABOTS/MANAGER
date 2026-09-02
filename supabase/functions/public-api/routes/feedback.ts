@@ -143,7 +143,7 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
     const alertPhone = getFeedbackAlertPhone(settings);
     if (!alertPhone) return jsonResponse(request, { ok: true, feedback_saved: true, positive: false, alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' });
     try {
-      await sendEvolutionText(alertPhone, buildFeedbackAlertMessage(reservation, normalized));
+      await sendEvolutionText(alertPhone, buildFeedbackAlertMessage(reservation, normalized, getClientRestaurantName(context.client, 'es')));
     } catch {
       return jsonResponse(request, { ok: true, feedback_saved: true, positive: false, alert_sent: false, warning: 'FEEDBACK_ALERT_NOT_SENT' });
     }
@@ -262,7 +262,7 @@ export async function handleFeedback(request: Request, dbClient: DbClient, mode:
   }
 
   try {
-    await sendEvolutionText(alertPhone, buildFeedbackAlertMessage(reservation, normalized));
+    await sendEvolutionText(alertPhone, buildFeedbackAlertMessage(reservation, normalized, getClientRestaurantName(context.client, 'es')));
   } catch (error) {
     console.error('[PUBLIC_API][FEEDBACK][ALERT_SEND_FAILED]', {
       clientId: context.clientId,
