@@ -8,7 +8,8 @@ interface CancellationTemplateOptions {
 function bookingBlock(bookingUrl?: string) {
   return bookingUrl
     ? `
-If you would like to make a new reservation, you can easily do so here:
+Would you like to book again?
+Make a new reservation here:
 ${bookingUrl}
 `
     : '';
