@@ -15,7 +15,7 @@ export interface ReservationMessageData {
 
 export function buildReservationCancellationUrl(data: ReservationMessageData, language: PublicLanguage) {
   const langQuery = language === 'en' ? '&lang=en' : '';
-  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(data.idReserva)}&client_id=${encodeURIComponent(data.clientId)}&public_token=${encodeURIComponent(data.publicToken)}${langQuery}`;
+  return `https://cancel.costabots.com/?id_reserva=${encodeURIComponent(data.idReserva)}&client_id=${encodeURIComponent(data.clientId)}&public_token=${encodeURIComponent(data.publicToken)}${langQuery}`;
 }
 
 export function maskReservationCancellationUrl(url: string) {

@@ -9,7 +9,7 @@ interface ReservationReminderParams {
 }
 
 function cancellationUrl({ idReserva, clientId, publicToken }: ReservationReminderParams) {
-  return `https://costabots-cancelacion-public.vercel.app/?id_reserva=${encodeURIComponent(idReserva)}&client_id=${encodeURIComponent(clientId)}&public_token=${encodeURIComponent(publicToken)}`;
+  return `https://cancel.costabots.com/?id_reserva=${encodeURIComponent(idReserva)}&client_id=${encodeURIComponent(clientId)}&public_token=${encodeURIComponent(publicToken)}`;
 }
 
 export function buildReservationReminderES(params: ReservationReminderParams) {

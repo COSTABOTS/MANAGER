@@ -8,7 +8,7 @@ interface FeedbackInvitationParams {
 
 export function buildFeedbackUrl({ idReserva, clientId, publicToken }: FeedbackInvitationParams, language: 'es' | 'en') {
   const langQuery = language === 'en' ? '&lang=en' : '&lang=es';
-  return `https://costabots-feedback-public.vercel.app/feedback/${encodeURIComponent(idReserva)}?id_reserva=${encodeURIComponent(idReserva)}&client_id=${encodeURIComponent(clientId)}&public_token=${encodeURIComponent(publicToken)}${langQuery}`;
+  return `https://feedback.costabots.com/feedback/${encodeURIComponent(idReserva)}?id_reserva=${encodeURIComponent(idReserva)}&client_id=${encodeURIComponent(clientId)}&public_token=${encodeURIComponent(publicToken)}${langQuery}`;
 }
 
 export function maskFeedbackUrl(url: string) {
