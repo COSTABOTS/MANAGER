@@ -4897,4 +4897,40 @@ button:active:not(:disabled) {
     width: 100%;
     margin-top: 6px;
   }
+
+  /* Mobile reservation rows are cards: remove desktop service stripes and fit controls. */
+  .reservations-table tbody tr.service-desayuno td,
+  .reservations-table tbody tr.service-desayuno:nth-child(even) td,
+  .reservations-table tbody tr.service-almuerzo td,
+  .reservations-table tbody tr.service-almuerzo:nth-child(even) td,
+  .reservations-table tbody tr.service-balinesa td,
+  .reservations-table tbody tr.service-balinesa:nth-child(even) td {
+    background: var(--premium-surface);
+  }
+
+  .reservations-table td[data-label="Mesa"] .table-input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .reservations-table td[data-label="Acciones"] .compact-action {
+    width: min(100%, 132px);
+    min-height: 36px;
+    padding-inline: 12px;
+    white-space: nowrap;
+  }
+
+  .reservations-table td[data-label="Llego"] .arrival-check {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .reservations-table td[data-label="Estado"] .status-pill,
+  .control-list-table td[data-label="Estado"] .status-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    white-space: nowrap;
+  }
 }
