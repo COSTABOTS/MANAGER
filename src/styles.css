@@ -4834,3 +4834,67 @@ button:active:not(:disabled) {
 .reservations-table th:nth-child(7), .reservations-table td:nth-child(7) { width: 11%; }
 .reservations-table th:nth-child(8), .reservations-table td:nth-child(8) { width: 10%; }
 .reservations-table th:nth-child(9), .reservations-table td:nth-child(9) { width: 15%; }
+
+/* Responsive controls and data cards: keep the switch compact and labels readable. */
+@media (max-width: 720px) {
+  .booking-toggle {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .booking-toggle .toggle-track {
+    grid-column: auto;
+    width: 68px;
+    min-width: 68px;
+    max-width: 68px;
+    flex: 0 0 68px;
+  }
+
+  .control-list-table td {
+    grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr);
+    min-height: 38px;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+
+  .control-list-table td::before {
+    background: transparent;
+    white-space: normal;
+  }
+
+  .control-list-table .status-pill,
+  .control-list-table .compact-toggle {
+    justify-self: start;
+    width: auto;
+    min-width: 76px;
+  }
+
+  .control-list-table .compact-toggle {
+    min-height: 32px;
+    padding: 6px 12px;
+  }
+
+  .reservations-table td {
+    grid-template-columns: minmax(96px, 0.72fr) minmax(0, 1fr);
+    min-height: 38px;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+
+  .reservations-table td::before {
+    background: transparent;
+    white-space: normal;
+  }
+
+  .reservations-table .status-pill,
+  .reservations-table .service-book-badge,
+  .reservations-table .reservation-payment-status {
+    justify-self: start;
+    max-width: 100%;
+  }
+
+  .reservation-detail-modal .compact-action {
+    width: 100%;
+    margin-top: 6px;
+  }
+}
