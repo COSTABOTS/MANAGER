@@ -4862,6 +4862,11 @@ button:active:not(:disabled) {
     white-space: normal;
   }
 
+  .control-list-table tbody tr td,
+  .control-list-table tbody tr:nth-child(even) td {
+    background: var(--premium-surface);
+  }
+
   .control-list-table .status-pill,
   .control-list-table .compact-toggle {
     justify-self: start;
