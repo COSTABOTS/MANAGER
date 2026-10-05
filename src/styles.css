@@ -4938,4 +4938,56 @@ button:active:not(:disabled) {
     min-height: 28px;
     white-space: nowrap;
   }
+
+  /* Mobile reservation cards: keep desktop row/service colors out of each field. */
+  body .reservations-table tbody tr td,
+  body .reservations-table tbody tr:nth-child(even) td,
+  body .reservations-table tbody tr.service-desayuno td,
+  body .reservations-table tbody tr.service-desayuno:nth-child(even) td,
+  body .reservations-table tbody tr.service-almuerzo td,
+  body .reservations-table tbody tr.service-almuerzo:nth-child(even) td,
+  body .reservations-table tbody tr.service-balinesa td,
+  body .reservations-table tbody tr.service-balinesa:nth-child(even) td,
+  body .reservations-table tbody tr.has-arrived td,
+  body .reservations-table tbody tr.is-cancelada td,
+  body .reservations-table tbody tr.is-past td {
+    background: var(--premium-surface);
+  }
+
+  .reservations-table .table-input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 38px;
+    box-sizing: border-box;
+  }
+
+  .reservations-table td[data-label="Acciones"] .compact-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 96px;
+    max-width: 100%;
+    min-height: 38px;
+    padding: 8px 14px;
+    line-height: 1.1;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .reservations-table td[data-label="Estado"] .status-pill,
+  .reservations-table .status-pill,
+  .reservations-table .service-book-badge,
+  .reservations-table .reservation-payment-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
 }
