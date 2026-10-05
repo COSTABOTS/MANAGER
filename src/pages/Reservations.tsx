@@ -137,6 +137,23 @@ export function Reservations({ reservations, onRefreshReservations, isRefreshing
           </div>
         </div>
         <div className="table-wrap">
+          <div className="mobile-reservation-list" aria-label="Libro de reservas móvil">
+            {visibleReservations.map((reservation) => {
+              const pastReservation = isPastReservation(reservation, today);
+              const canceledReservation = isCanceledReservation(reservation);
+              const service = getReservationService(reservation);
+              return (
+                <article key={`mobile-${reservation.idReserva}`} className={`mobile-reservation-card ${canceledReservation ? 'is-canceled' : ''}`} onClick={() => setSelectedReservation(reservation)}>
+                  <div className="mobile-reservation-card__header"><strong>{reservation.name || reservation.room || 'Sin nombre'}</strong><span className={`status-pill is-${reservation.status.toLowerCase()}`}>{reservation.status}</span></div>
+                  <div className="mobile-reservation-card__meta"><span>{formatDisplayDate(reservation.date)} · {service === 'BALINESA' ? '—' : reservation.time}</span><span className={`service-book-badge service-book-badge-${service.toLowerCase()}`}>{service}</span><strong>{reservation.pax} pax</strong></div>
+                  <div className="mobile-reservation-card__detail"><span>Origen</span><strong>{getReservationOrigin(reservation.source)}</strong></div>
+                  {reservation.room && <div className="mobile-reservation-card__detail"><span>Habitación</span><strong>{reservation.room}</strong></div>}
+                  {service === 'BALINESA' && reservation.balinesePaid !== undefined && <div className="mobile-reservation-card__detail"><span>Pago</span><strong>{reservation.balinesePaid ? 'PAGADO' : 'NO PAGADO'}</strong></div>}
+                  {pastReservation && <small className="muted-cell">Reserva anterior</small>}
+                </article>
+              );
+            })}
+          </div>
           <table className="reservations-table">
             <thead>
               <tr>

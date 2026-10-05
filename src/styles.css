@@ -4285,7 +4285,52 @@ button:active:not(:disabled) {
   }
 }
 
+ .mobile-reservation-list { display: none; }
+
 @media (max-width: 720px) {
+  .mobile-reservation-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .mobile-reservation-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    color: var(--premium-text);
+    background: var(--premium-surface);
+    border: 1px solid var(--premium-border);
+    border-radius: 14px;
+    box-sizing: border-box;
+  }
+
+  .mobile-reservation-card.is-canceled { opacity: .78; }
+  .mobile-reservation-card__header,
+  .mobile-reservation-card__meta,
+  .mobile-reservation-card__detail,
+  .mobile-reservation-card__controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .mobile-reservation-card__header strong { min-width: 0; overflow-wrap: anywhere; }
+  .mobile-reservation-card__header span,
+  .mobile-reservation-card__detail span { color: var(--premium-muted); font-size: 12px; }
+  .mobile-reservation-card__meta { flex-wrap: wrap; justify-content: flex-start; }
+  .mobile-reservation-card__detail { justify-content: flex-start; }
+  .mobile-reservation-card__detail span { flex: 0 0 96px; }
+  .mobile-reservation-card__detail strong { min-width: 0; overflow-wrap: anywhere; }
+  .mobile-reservation-card__controls { align-items: stretch; flex-direction: column; }
+  .mobile-reservation-card__controls label { display: grid; gap: 5px; }
+  .mobile-reservation-card__controls label > span:first-child { color: var(--premium-muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+  .mobile-reservation-card__controls .table-input { width: 100%; min-width: 0; }
+  .mobile-reservation-card__controls .compact-action { width: auto; min-width: 96px; align-self: flex-start; }
+  .mobile-arrival-control .arrival-check { justify-content: flex-start; }
+  .table-wrap > .reservations-table { display: none; }
+
   .app-shell {
     width: 100%;
     padding: 82px 12px 12px;

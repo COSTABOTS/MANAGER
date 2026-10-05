@@ -44,6 +44,23 @@ export function ReservationsTable({ reservations, tableOptions, hasLoadedTables,
 
   return (
     <div className="table-wrap">
+      <div className="mobile-reservation-list" aria-label="Reservas de hoy">
+        {reservations.map((reservation) => (
+          <article key={`mobile-${reservation.id}`} className="mobile-reservation-card">
+            <div className="mobile-reservation-card__header">
+              <strong>{reservation.name || reservation.room || 'Sin nombre'}</strong>
+              <span>{reservation.time} · {reservation.pax} pax</span>
+            </div>
+            {reservation.room && <div className="mobile-reservation-card__detail"><span>Habitación</span><strong>{reservation.room}</strong></div>}
+            {reservation.specialRequest && <div className="mobile-reservation-card__detail"><span>Petición especial</span><strong>{reservation.specialRequest}</strong></div>}
+            <div className="mobile-reservation-card__controls">
+              <label><span>Mesa</span>{isLoadingTables ? <small>Cargando mesas...</small> : tableOptions.length === 0 && !hasLoadedTables ? <button className="secondary-button compact-action" type="button" onClick={() => void onEnsureTables()}>Asignar mesa</button> : tableOptions.length === 0 ? <small>No hay mesas configuradas.</small> : <select className="table-input" value={reservation.table} onChange={(event) => onUpdate(reservation.id, 'table', event.target.value)}><option value="">Sin asignar</option>{getAvailableTables(reservation).map((table) => <option key={table} value={table}>{table}</option>)}</select>}</label>
+              <label className="mobile-arrival-control"><span>Llegó</span><span className="arrival-check"><input type="checkbox" checked={reservation.arrived} onChange={(event) => onUpdate(reservation.id, 'arrived', event.target.checked)} /><span>{reservation.arrived ? 'Ha llegado' : 'No ha llegado'}</span></span></label>
+              {isActiveReservation(reservation) ? <button className="danger-button compact-action" type="button" onClick={() => onCancel(reservation)}>Cancelar</button> : <small className="muted-cell">Cancelada</small>}
+            </div>
+          </article>
+        ))}
+      </div>
       <table className="reservations-table">
         <thead>
           <tr>
