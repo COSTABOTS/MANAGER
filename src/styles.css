@@ -4329,7 +4329,11 @@ button:active:not(:disabled) {
   .mobile-reservation-card__controls .table-input { width: 100%; min-width: 0; }
   .mobile-reservation-card__controls .compact-action { width: auto; min-width: 96px; align-self: flex-start; }
   .mobile-arrival-control .arrival-check { justify-content: flex-start; }
-  .table-wrap > .reservations-table { display: none; }
+  .table-wrap > .reservations-table:not(.control-list-table) { display: none; }
+
+  .mobile-reservation-card .status-pill.is-confirmada {
+    color: #14532d;
+  }
 
   .app-shell {
     width: 100%;
