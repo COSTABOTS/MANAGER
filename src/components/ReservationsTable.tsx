@@ -46,7 +46,7 @@ export function ReservationsTable({ reservations, tableOptions, hasLoadedTables,
     <div className="table-wrap">
       <div className="mobile-reservation-list" aria-label="Reservas de hoy">
         {reservations.map((reservation) => (
-          <article key={`mobile-${reservation.id}`} className="mobile-reservation-card">
+          <article key={`mobile-${reservation.id}`} className={`mobile-reservation-card${reservation.arrived ? ' is-arrived' : ''}`}>
             <div className="mobile-reservation-card__header">
               <strong>{reservation.name || reservation.room || 'Sin nombre'}</strong>
               <span>{reservation.time} · {reservation.pax} pax</span>

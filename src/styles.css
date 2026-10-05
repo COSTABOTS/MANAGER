@@ -4305,6 +4305,10 @@ button:active:not(:disabled) {
   }
 
   .mobile-reservation-card.is-canceled { opacity: .78; }
+  .mobile-reservation-card.is-arrived {
+    background: rgba(34, 99, 66, 0.34);
+    border-color: rgba(111, 184, 137, 0.56);
+  }
   .mobile-reservation-card__header,
   .mobile-reservation-card__meta,
   .mobile-reservation-card__detail,
@@ -4333,6 +4337,11 @@ button:active:not(:disabled) {
 
   .mobile-reservation-card .status-pill.is-confirmada {
     color: #14532d;
+  }
+
+  .control-card.is-closed {
+    background: linear-gradient(180deg, rgba(37, 41, 50, 0.96), rgba(28, 31, 36, 0.96));
+    border-color: rgba(217, 106, 97, 0.7);
   }
 
   .app-shell {

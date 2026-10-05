@@ -33,7 +33,11 @@ export function Control({ dateBookingStatus, reservations, totalCapacity, onDate
   const [rangeDays, setRangeDays] = useState(() => Number(localStorage.getItem(CONTROL_VISIBLE_DAYS_KEY) ?? 7));
   const [view, setView] = useState<ControlView>(() => {
     const stored = localStorage.getItem(CONTROL_VIEW_MODE_KEY);
-    return stored === 'cards' ? 'cards' : 'list';
+    if (stored === 'cards' || stored === 'list') {
+      return stored;
+    }
+
+    return window.matchMedia('(max-width: 720px)').matches ? 'cards' : 'list';
   });
   const visibleDates = useMemo(
     () => Array.from({ length: rangeDays }, (_, index) => addDays(rangeStart, index)),
