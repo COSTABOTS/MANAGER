@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { isServiceOpenAt } from './weeklyHours.ts';
-import { loadWeeklyHours, resolveWeeklyHours, type BookingServiceHoursRow, type WeeklyHoursDbClient, type WeeklyHoursDbQuery, type WeeklyHoursDbQueryBuilder } from './weeklyHoursAdapter.ts';
+import { loadWeeklyHours, resolveWeeklyHours, type BookingServiceHoursRow, type WeeklyHoursDbQuery } from './weeklyHoursAdapter.ts';
 
 const rows = (): BookingServiceHoursRow[] => Array.from({ length: 7 }, (_, weekday) =>
   ['DESAYUNO', 'ALMUERZO', 'CENA'].map((service) => ({
@@ -69,24 +69,27 @@ function mockDb(settings: unknown[], bookingRows: unknown[] = [], settingsError:
   return {
     calls,
     filters,
-    from(table: string) {
-      calls.push(table);
-      let result: WeeklyHoursDbQuery = { data: table === 'SETTINGS' ? settings : bookingRows, error: table === 'SETTINGS' ? settingsError : null };
-      const chain: WeeklyHoursDbQueryBuilder = {
-        eq: (column, value) => { filters.push({ table, method: 'eq', column, value }); return chain; },
-        in: (column, value) => { filters.push({ table, method: 'in', column, value }); return chain; },
-        then<TResult1 = WeeklyHoursDbQuery, TResult2 = never>(onfulfilled?: ((value: WeeklyHoursDbQuery) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2> {
-          return Promise.resolve(result).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    reader(): { readSettings(): Promise<WeeklyHoursDbQuery>; readRules(): Promise<WeeklyHoursDbQuery> } {
+      return {
+        readSettings: async () => {
+          calls.push('SETTINGS');
+          filters.push({ table: 'SETTINGS', method: 'eq', column: 'CLIENTE_ID', value: 'TEST' });
+          filters.push({ table: 'SETTINGS', method: 'in', column: 'CLAVE', value: ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED'] });
+          return { data: settings, error: settingsError };
+        },
+        readRules: async () => {
+          calls.push('booking_service_hours');
+          filters.push({ table: 'booking_service_hours', method: 'eq', column: 'client_id', value: 'TEST' });
+          return { data: bookingRows, error: null };
         },
       };
-      return { select: () => chain };
     },
   };
 }
 
 Deno.test('legacy loading does not query booking_service_hours', async () => {
   const db = mockDb([{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'false' }]);
-  const result = await loadWeeklyHours(db as WeeklyHoursDbClient, 'TEST');
+  const result = await loadWeeklyHours(db.reader());
   assertEquals(result.mode, 'legacy');
   assertEquals(db.calls, ['SETTINGS']);
 });
@@ -96,7 +99,7 @@ Deno.test('active loading reads the 21 booking rules and services setting', asyn
     { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
     { CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA' },
   ], rows());
-  const result = await loadWeeklyHours(db as WeeklyHoursDbClient, 'TEST');
+  const result = await loadWeeklyHours(db.reader());
   assertEquals(result.mode, 'weekly');
   if (result.mode === 'weekly') assertEquals([...result.servicesEnabled ?? []], ['ALMUERZO', 'CENA']);
   assertEquals(db.calls, ['SETTINGS', 'booking_service_hours']);

@@ -182,8 +182,8 @@ test('empty Hospitality tables return valid empty read models', async () => {
 test('weekly Sunday rule filters slots while preserving weekday NULL capacity', async () => {
   const client = new FixtureClient({
     SETTINGS: [
-      { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
-      { CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' },
+      { CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+      { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' },
     ],
     booking_service_hours: weeklyRows(),
     booking_capacity_slots: [
@@ -198,7 +198,7 @@ test('weekly Sunday rule filters slots while preserving weekday NULL capacity', 
 
 test('weekly Fully Booked still overrides an open weekly service', async () => {
   const client = new FixtureClient({
-    SETTINGS: [{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' }],
+    SETTINGS: [{ CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' }],
     booking_service_hours: weeklyRows(),
     booking_capacity_slots: [{ client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null }],
     booking_day_controls: [{ client_id: context.clientId, booking_date: '2026-08-16', service: 'CENA', status: 'open', fully_booked: true }],
@@ -270,9 +270,18 @@ test('listReservations maps SQL rows to internal models and uses provisional cre
     id: 'RES-FIXTURE-001', date: '15/08/2026', time: '20:00', name: 'Cliente Ejemplo',
     phone: '600000000', pax: 2, language: 'EN', specialRequest: 'Sin datos reales',
     status: 'CONFIRMED', origin: 'BOT', table: 'M1', arrived: true, feedbackSent: true,
-    room: '', service: 'CENA', balinesePackage: 'PACK-1', resource: 'B1', sourceChannel: 'typebot',
+    room: '', service: 'CENA', balinesePackage: 'PACK-1', balinesePaid: false, resource: 'B1', sourceChannel: 'typebot',
   });
   assert.equal(rows[1].id, 'PUB-2');
+});
+
+test('listReservations maps balinese_paid=true without changing other fields', async () => {
+  const client = new FixtureClient({
+    reservations: [reservation({ balinese_paid: true })],
+  });
+  const rows = await new SupabaseReservationStore(context, client).listReservations();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].balinesePaid, true);
 });
 
 test('getReservation searches legacy id, public reference and UUID without leaking rows', async () => {

@@ -102,8 +102,13 @@ export interface WeeklyHoursDbClient {
   from(table: string): { select(columns: string): WeeklyHoursDbQueryBuilder };
 }
 
-export async function loadWeeklyHours(dbClient: WeeklyHoursDbClient, clientId: string): Promise<WeeklyHoursResolution> {
-  const settingsResult = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+export interface WeeklyHoursReader {
+  readSettings(): Promise<WeeklyHoursDbQuery>;
+  readRules(): Promise<WeeklyHoursDbQuery>;
+}
+
+export async function loadWeeklyHours(reader: WeeklyHoursReader): Promise<WeeklyHoursResolution> {
+  const settingsResult = await reader.readSettings();
   if (settingsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
   const settings = Array.isArray(settingsResult.data) ? settingsResult.data as Array<Record<string, unknown>> : [];
   const settingsMap = new Map(settings.map((row) => [String(row.CLAVE ?? '').trim(), row.VALOR]));
@@ -111,7 +116,7 @@ export async function loadWeeklyHours(dbClient: WeeklyHoursDbClient, clientId: s
   const rawEnabled = settingsMap.get('WEEKLY_HOURS_ENABLED');
   const weeklyEnabled = rawEnabled === true || ['true', '1', 'yes', 'on'].includes(String(rawEnabled ?? '').trim().toLowerCase());
   if (!weeklyEnabled) return resolution;
-  const rowsResult = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time').eq('client_id', clientId);
+  const rowsResult = await reader.readRules();
   if (rowsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
   const weekly = resolveWeeklyHours(rawEnabled, Array.isArray(rowsResult.data) ? rowsResult.data as BookingServiceHoursRow[] : [], null);
   if (weekly.mode !== 'weekly') return weekly;

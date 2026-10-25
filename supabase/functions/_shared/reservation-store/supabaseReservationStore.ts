@@ -184,11 +184,20 @@ export class SupabaseReservationStore implements ReservationStore {
     const requestedService = normalizeService(query.service);
     const weeklyHours = requestedService === 'BALINESA'
       ? { mode: 'legacy' as const, config: null, servicesEnabled: null }
-      : await loadWeeklyHours(this.dbClient, this.context.clientId);
+      : await loadWeeklyHours({
+        readSettings: async () => {
+          const result = await this.dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', this.context.clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+          return { data: result.data, error: result.error };
+        },
+        readRules: async () => {
+          const result = await this.dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time').eq('client_id', this.context.clientId);
+          return { data: result.data, error: result.error };
+        },
+      });
     if (weeklyHours.mode === 'error') throw new Error(weeklyHours.error.code);
     const weeklyService = isWeeklyService(requestedService) ? requestedService : null;
     if (weeklyHours.mode === 'weekly' && !weeklyService) {
-      return { available: [], fullyBooked: false };
+      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };
     }
     if (weeklyHours.mode === 'weekly' && weeklyHours.servicesEnabled && weeklyService && !weeklyHours.servicesEnabled.has(weeklyService)) {
       return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };

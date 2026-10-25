@@ -62,7 +62,16 @@ export async function handleAvailabilityByDay(request: Request, dbClient: DbClie
   const bookingsEnabled = !settingsResult.data?.length || !['false', '0', 'no', 'off', 'disabled'].includes(settingsValue);
   const weeklyHours = normalizedService === 'BALINESA'
     ? { mode: 'legacy' as const, config: null, servicesEnabled: null }
-    : await loadWeeklyHours(dbClient, context.clientId);
+    : await loadWeeklyHours({
+      readSettings: async () => {
+        const result = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', context.clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+        return { data: result.data, error: result.error };
+      },
+      readRules: async () => {
+        const result = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time').eq('client_id', context.clientId);
+        return { data: result.data, error: result.error };
+      },
+    });
   if (weeklyHours.mode === 'error') return errorResponse(request, weeklyHours.error.code, 500);
   const weeklyOpen = weeklyHours.mode !== 'weekly'
     || resolveWeeklyServiceRule(weeklyHours.config, date, normalizedService as 'DESAYUNO' | 'ALMUERZO' | 'CENA').rule?.enabled === true;
