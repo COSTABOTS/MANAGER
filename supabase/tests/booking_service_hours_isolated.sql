@@ -4,7 +4,7 @@
 \set ON_ERROR_STOP on
 \if :{?client_id}
 \else
-  \error 'client_id is required; refusing to run without an isolated fixture'
+  select 1 / 0; -- deliberate failure; ON_ERROR_STOP aborts without a fixture
 \endif
 
 select set_config('weekly_test.client_id', :'client_id', false);
@@ -60,7 +60,6 @@ begin
       (select jsonb_agg(x) from (
         select jsonb_build_object('weekday', d.weekday, 'service', s.service, 'enabled', false, 'start_time', null, 'end_time', null) x
         from generate_series(0, 6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)
-        where not (d.weekday = 6 and s.service = 'CENA')
         union all select jsonb_build_object('weekday', 0, 'service', 'CENA', 'enabled', false, 'start_time', null, 'end_time', null)
       ) q));
   exception when others then rejected := true;
@@ -72,6 +71,7 @@ begin
       (select jsonb_agg(x) from (
         select jsonb_build_object('weekday', d.weekday, 'service', s.service, 'enabled', false, 'start_time', null, 'end_time', null) x
         from generate_series(0, 6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)
+        where not (d.weekday = 6 and s.service = 'CENA')
         union all select jsonb_build_object('weekday', 0, 'service', 'CENA', 'enabled', false, 'start_time', null, 'end_time', null)
       ) q));
   exception when others then rejected := true;

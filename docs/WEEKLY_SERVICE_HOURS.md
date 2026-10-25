@@ -77,6 +77,8 @@ Se prepararon:
 
 El workflow usa Deno `2.9.7` y PostgreSQL `16` efímero. Ejecuta `deno check`, `deno test`, prepara el fixture, aplica la migración solo al contenedor temporal y ejecuta las aserciones con `rollback`. No contiene URL, token, secreto ni credencial de Supabase.
 
+El primer workflow `40187887238` ejecutó correctamente Deno setup, `deno check`, `deno test`, el fixture y la migración PostgreSQL. Falló únicamente al iniciar el harness SQL porque el `psql` del runner no soportaba el comando meta `\\error` en la línea 7. Esta corrección sustituye ese comando por una división SQL deliberadamente inválida bajo `ON_ERROR_STOP=1` y separa correctamente los casos de 22 entradas frente a 21 combinaciones únicas con duplicado.
+
 Estado local: workflow y fixtures **PREPARADOS, NO EJECUTADOS** desde esta sesión. Deno y `psql` no están instalados localmente. La ejecución real quedará registrada por GitHub Actions cuando la rama se publique/ejecute; no se debe declarar PASS antes de consultar ese run.
 
 No se añadió conversión automática entre `start_time/end_time` SQL y `start/end` TypeScript porque todavía no existe integración de API. Esa adaptación pertenece a la fase de lectura posterior y debe probar formatos `HH:mm` y, si se admite, `HH:mm:ss` explícitamente.
