@@ -107,6 +107,24 @@ La futura integración debe combinar el resultado semanal con `SERVICES_ENABLED`
 
 Las capacidades siguen siendo independientes: el adaptador no crea ni modifica slots. Debe revisarse el conflicto conocido entre `weekday 0..6` y consultas que usan `EXTRACT(ISODOW)` (domingo `7`) antes de tocar disponibilidad; las RPC actuales no se modificaron.
 
+## Fase 3B: integración local de disponibilidad
+
+En el worktree aislado `weekly-hours-availability` se preparó la integración local en:
+
+- `routes/availabilityByDay.ts`;
+- `_shared/reservation-store/supabaseReservationStore.ts`;
+- `_shared/booking-hours/weeklyHoursAdapter.ts`.
+
+El store Supabase consulta primero `SETTINGS`. Si el flag semanal está ausente/falso, no consulta `booking_service_hours` y conserva el flujo legacy. Si está activo, carga y valida las 21 reglas; una lectura fallida o configuración inválida se propaga como error controlado. Los slots de restaurante se filtran con inicio inclusivo y fin exclusivo. Balinesa queda fuera. Un servicio no incluido en `SERVICES_ENABLED` no queda disponible aunque su regla semanal esté abierta.
+
+`availabilityByDay` aplica la misma decisión para día cerrado, servicio desactivado y `BOOKINGS_ENABLED`; Fully Booked y controles diarios siguen teniendo precedencia. No se modificaron `reservation/create`, RPC, capacidades ni Manager.
+
+Estado: **CÓDIGO PREPARADO LOCALMENTE; TESTS DE INTEGRACIÓN PENDIENTES; NO DESPLEGADO**. El worktree original con cambios de `public-api` permanece intacto. El CI PASS del adaptador corresponde al commit `3455940` (run `40189762500`); esta integración aún no se ha publicado ni ejecutado en CI. Se añadieron mocks aislados para comprobar que legacy no consulta la tabla semanal y que el modo activo consulta las 21 reglas y `SERVICES_ENABLED`.
+
+La Fase 3B.1 añade regresiones aisladas para domingo con `weekday=0`, capacidad general `weekday=NULL`, Fully Booked y errores de lectura. El workflow se activa también en `feature/weekly-hours-availability` y prepara checks/tests de `availabilityByDay` y `SupabaseReservationStore`. El `availabilityByDay` mantiene su contrato: un día abierto solo informa estado de horario/controles; no afirma disponibilidad de plazas por sí mismo.
+
+La corrección local usa `getBookingWeekday()` con `getUTCDay()` (domingo `0`) para coincidir con el constraint del esquema. No se modifica ninguna RPC. El flujo Sheets sigue fuera de esta integración semanal y queda como riesgo pendiente antes de activar el modelo para tenants que usen ese store.
+
 ## Riesgos pendientes
 
 - La equivalencia entre `SETTINGS` real y todos los entornos debe verificarse antes de integrar la activación.

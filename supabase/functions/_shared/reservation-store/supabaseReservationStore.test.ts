@@ -101,6 +101,17 @@ class SelectiveFailureClient extends FixtureClient {
 
 const context = { clientId: 'CB-FIXTURE-001', sheetId: '', reservationStore: 'supabase' };
 
+function weeklyRows() {
+  return Array.from({ length: 7 }, (_, weekday) => ['DESAYUNO', 'ALMUERZO', 'CENA'].map((service) => ({
+    client_id: context.clientId,
+    weekday,
+    service,
+    enabled: weekday === 0 && service === 'CENA',
+    start_time: weekday === 0 && service === 'CENA' ? '11:00:00' : null,
+    end_time: weekday === 0 && service === 'CENA' ? '18:00:00' : null,
+  }))).flat();
+}
+
 function reservation(overrides: Row = {}): Row {
   return {
     id: '10000000-0000-4000-8000-000000000001',
@@ -166,6 +177,40 @@ test('empty Hospitality tables return valid empty read models', async () => {
   });
   assert.deepEqual(await store.listReservations(), []);
   assert.equal(await store.getReservation('RES-NOT-FOUND'), null);
+});
+
+test('weekly Sunday rule filters slots while preserving weekday NULL capacity', async () => {
+  const client = new FixtureClient({
+    SETTINGS: [
+      { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+      { CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' },
+    ],
+    booking_service_hours: weeklyRows(),
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '12:00:00', capacity: 10, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '18:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
+    ],
+  });
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' });
+  assert.deepEqual(result.availableTimes, ['11:00', '12:00']);
+});
+
+test('weekly Fully Booked still overrides an open weekly service', async () => {
+  const client = new FixtureClient({
+    SETTINGS: [{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' }],
+    booking_service_hours: weeklyRows(),
+    booking_capacity_slots: [{ client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null }],
+    booking_day_controls: [{ client_id: context.clientId, booking_date: '2026-08-16', service: 'CENA', status: 'open', fully_booked: true }],
+  });
+  assert.deepEqual((await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' })).availableTimes, []);
+});
+
+test('weekly settings read errors do not fall back to legacy', async () => {
+  await assert.rejects(
+    () => new SupabaseReservationStore(context, new SelectiveFailureClient({}, 'SETTINGS')).getAvailability({ date: '2026-08-16', requestedPax: 1 }),
+    /WEEKLY_HOURS_CONFIG_READ_FAILED/,
+  );
 });
 
 test('availability preserves slot order and counts every active status variant', async () => {

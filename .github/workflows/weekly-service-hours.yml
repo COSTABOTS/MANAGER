@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/weekly-service-hours
+      - feature/weekly-hours-availability
   workflow_dispatch:
 
 jobs:
@@ -37,6 +38,10 @@ jobs:
         run: deno check supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
       - name: Test weekly-hours adapter
         run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
+      - name: Check availability regressions
+        run: deno check supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
+      - name: Test availability regressions
+        run: deno test --allow-net supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password

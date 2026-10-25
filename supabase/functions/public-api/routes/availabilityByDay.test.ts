@@ -7,3 +7,8 @@ Deno.test('closed control blocks the day', () => assertEquals(evaluateDailyAvail
 Deno.test('disabled bookings take priority', () => assertEquals(evaluateDailyAvailability([{ fully_booked: true }], false, 'CENA'), { available: false, reason: 'bookings_disabled' }));
 Deno.test('service-specific control applies', () => assertEquals(evaluateDailyAvailability([{ service: 'CENA', status: 'closed' }], true, 'CENA'), { available: false, reason: 'closed' }));
 Deno.test('global control applies to CENA', () => assertEquals(evaluateDailyAvailability([{ service: null, status: 'closed' }], true, 'CENA'), { available: false, reason: 'closed' }));
+Deno.test('weekly service disabled takes priority over an open day', () => assertEquals(evaluateDailyAvailability([], true, 'CENA', true, false), { available: false, reason: 'service_disabled' }));
+Deno.test('weekly closed day is unavailable', () => assertEquals(evaluateDailyAvailability([], true, 'ALMUERZO', false, true), { available: false, reason: 'outside_weekly_hours' }));
+Deno.test('daily availability does not claim capacity from an open schedule alone', () => {
+  assertEquals(evaluateDailyAvailability([], true, 'ALMUERZO', true, true), { available: true, reason: 'open' });
+});

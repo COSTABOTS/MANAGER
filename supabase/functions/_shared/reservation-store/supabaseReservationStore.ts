@@ -9,6 +9,8 @@ import type {
   ReservationMutationResult,
   CreateFeedbackCommand,
 } from './types.ts';
+import { isServiceOpenAt } from '../booking-hours/weeklyHours.ts';
+import { loadWeeklyHours } from '../booking-hours/weeklyHoursAdapter.ts';
 
 interface QueryError {
   message: string;
@@ -94,9 +96,8 @@ function isDateWithinRule(date: string, from: unknown, until: unknown) {
   return (!validFrom || validFrom <= date) && (!validUntil || validUntil >= date);
 }
 
-function getIsoWeekday(date: string) {
-  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return day === 0 ? 7 : day;
+export function getBookingWeekday(date: string) {
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
 }
 
 function normalizeStatus(row: DatabaseRow) {
@@ -181,6 +182,13 @@ export class SupabaseReservationStore implements ReservationStore {
   async getAvailability(query: AvailabilityQuery): Promise<AvailabilityResult> {
     const bookingDate = normalizeDatabaseDate(query.date);
     const requestedService = normalizeService(query.service);
+    const weeklyHours = requestedService === 'BALINESA'
+      ? { mode: 'legacy' as const, config: null, servicesEnabled: null }
+      : await loadWeeklyHours(this.dbClient, this.context.clientId);
+    if (weeklyHours.mode === 'error') throw new Error(weeklyHours.error.code);
+    if (weeklyHours.mode === 'weekly' && weeklyHours.servicesEnabled && !weeklyHours.servicesEnabled.has(requestedService)) {
+      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };
+    }
     const capacityResult = await this.dbClient
       .from('booking_capacity_slots')
       .select('slot_time,capacity,active,service,weekday,valid_from,valid_until')
@@ -210,7 +218,7 @@ export class SupabaseReservationStore implements ReservationStore {
       .filter((row) => isApplicableService(row.service, requestedService));
     const blockRows = requireRows(blockResult, 'GET_AVAILABILITY_BLOCKS_FAILED')
       .filter((row) => isApplicableService(row.service, requestedService) && row.active === true);
-    const weekday = getIsoWeekday(bookingDate);
+    const weekday = getBookingWeekday(bookingDate);
     const applicableCapacityRows = capacityRows.filter((row) => {
       const ruleWeekday = row.weekday === null || row.weekday === undefined ? null : toNumberValue(row.weekday);
       return row.active === true
@@ -253,7 +261,9 @@ export class SupabaseReservationStore implements ReservationStore {
       const occupied = activeReservations
         .filter((reservation) => normalizeTime(reservation.booking_time) === slotTime)
         .reduce((total, reservation) => total + toNumberValue(reservation.pax), 0);
-      if (occupied + query.requestedPax <= capacity) {
+      if (occupied + query.requestedPax <= capacity
+        && (weeklyHours.mode !== 'weekly'
+          || isServiceOpenAt(weeklyHours.config, bookingDate, requestedService, slotTime))) {
         availableTimes.push(slotTime);
       }
     }

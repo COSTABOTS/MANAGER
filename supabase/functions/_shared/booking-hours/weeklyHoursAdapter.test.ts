@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { isServiceOpenAt } from './weeklyHours.ts';
-import { resolveWeeklyHours, type BookingServiceHoursRow } from './weeklyHoursAdapter.ts';
+import { loadWeeklyHours, resolveWeeklyHours, type BookingServiceHoursRow, type WeeklyHoursDbClient } from './weeklyHoursAdapter.ts';
 
 const rows = (): BookingServiceHoursRow[] => Array.from({ length: 7 }, (_, weekday) =>
   ['DESAYUNO', 'ALMUERZO', 'CENA'].map((service) => ({
@@ -61,4 +61,38 @@ Deno.test('closed days and service rules stay separate from capacity', () => {
   const result = resolveWeeklyHours(true, rows());
   assertEquals(result.mode, 'weekly');
   if (result.mode === 'weekly') assert(!isServiceOpenAt(result.config, '2026-10-12', 'ALMUERZO', '12:00'));
+});
+
+function mockDb(settings: unknown[], bookingRows: unknown[] = [], settingsError: { message: string } | null = null) {
+  const calls: string[] = [];
+  return {
+    calls,
+    from(table: string) {
+      calls.push(table);
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        in: () => Promise.resolve({ data: table === 'SETTINGS' ? settings : bookingRows, error: table === 'SETTINGS' ? settingsError : null }),
+      };
+      return chain;
+    },
+  };
+}
+
+Deno.test('legacy loading does not query booking_service_hours', async () => {
+  const db = mockDb([{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'false' }]);
+  const result = await loadWeeklyHours(db as WeeklyHoursDbClient, 'TEST');
+  assertEquals(result.mode, 'legacy');
+  assertEquals(db.calls, ['SETTINGS']);
+});
+
+Deno.test('active loading reads the 21 booking rules and services setting', async () => {
+  const db = mockDb([
+    { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA' },
+  ], rows());
+  const result = await loadWeeklyHours(db as WeeklyHoursDbClient, 'TEST');
+  assertEquals(result.mode, 'weekly');
+  if (result.mode === 'weekly') assertEquals([...result.servicesEnabled ?? []], ['ALMUERZO', 'CENA']);
+  assertEquals(db.calls, ['SETTINGS', 'booking_service_hours']);
 });

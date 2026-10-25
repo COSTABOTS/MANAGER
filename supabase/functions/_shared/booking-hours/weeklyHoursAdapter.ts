@@ -18,8 +18,8 @@ export type BookingServiceHoursRow = {
 };
 
 export type WeeklyHoursResolution =
-  | { mode: 'legacy'; config: null }
-  | { mode: 'weekly'; config: WeeklyHoursConfig }
+  | { mode: 'legacy'; config: null; servicesEnabled: Set<WeeklyService> | null }
+  | { mode: 'weekly'; config: WeeklyHoursConfig; servicesEnabled: Set<WeeklyService> | null }
   | { mode: 'error'; error: { code: string; message: string } };
 
 function isEnabled(value: unknown) {
@@ -59,7 +59,7 @@ export function resolveWeeklyHours(
   if (readError) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
   const enabled = isEnabled(enabledSetting);
   if (enabled === null) return invalid('WEEKLY_HOURS_ENABLED is invalid');
-  if (!enabled) return { mode: 'legacy', config: null };
+  if (!enabled) return { mode: 'legacy', config: null, servicesEnabled: null };
   if (!rows || rows.length !== 21) return invalid('Weekly hours require exactly 21 rules');
 
   const config: WeeklyHoursConfig = {};
@@ -85,5 +85,36 @@ export function resolveWeeklyHours(
   if (seen.size !== 21) return invalid('weekly service rules are incomplete');
   const validationErrors = validateWeeklyHoursConfig(config);
   if (validationErrors.length) return invalid(`weekly service rules are invalid: ${validationErrors.join(',')}`);
-  return { mode: 'weekly', config };
+  return { mode: 'weekly', config, servicesEnabled: null };
+}
+
+export interface WeeklyHoursDbQuery {
+  data: unknown;
+  error: { message?: string } | null;
+}
+
+export interface WeeklyHoursDbClient {
+  from(table: string): {
+    select(columns: string): WeeklyHoursDbClient;
+    eq(column: string, value: unknown): WeeklyHoursDbClient;
+    in(column: string, values: unknown[]): WeeklyHoursDbClient;
+    then<TResult1 = WeeklyHoursDbQuery, TResult2 = never>(onfulfilled?: ((value: WeeklyHoursDbQuery) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2>;
+  };
+}
+
+export async function loadWeeklyHours(dbClient: WeeklyHoursDbClient, clientId: string): Promise<WeeklyHoursResolution> {
+  const settingsResult = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+  if (settingsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
+  const settings = Array.isArray(settingsResult.data) ? settingsResult.data as Array<Record<string, unknown>> : [];
+  const settingsMap = new Map(settings.map((row) => [String(row.CLAVE ?? '').trim(), row.VALOR]));
+  const resolution = resolveWeeklyHours(settingsMap.get('WEEKLY_HOURS_ENABLED'), [], null);
+  const rawEnabled = settingsMap.get('WEEKLY_HOURS_ENABLED');
+  const weeklyEnabled = rawEnabled === true || ['true', '1', 'yes', 'on'].includes(String(rawEnabled ?? '').trim().toLowerCase());
+  if (!weeklyEnabled) return resolution;
+  const rowsResult = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time').eq('client_id', clientId);
+  if (rowsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
+  const weekly = resolveWeeklyHours(rawEnabled, Array.isArray(rowsResult.data) ? rowsResult.data as BookingServiceHoursRow[] : [], null);
+  if (weekly.mode !== 'weekly') return weekly;
+  const servicesEnabled = new Set(String(settingsMap.get('SERVICES_ENABLED') ?? '').split(/[,;\n]/).map((value) => value.trim().toUpperCase()).filter((value): value is WeeklyService => SERVICES.includes(value as WeeklyService)));
+  return { ...weekly, servicesEnabled: servicesEnabled.size ? servicesEnabled : null };
 }
