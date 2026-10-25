@@ -9,7 +9,7 @@ import type {
   ReservationMutationResult,
   CreateFeedbackCommand,
 } from './types.ts';
-import { isServiceOpenAt } from '../booking-hours/weeklyHours.ts';
+import { isServiceOpenAt, isWeeklyService } from '../booking-hours/weeklyHours.ts';
 import { loadWeeklyHours } from '../booking-hours/weeklyHoursAdapter.ts';
 
 interface QueryError {
@@ -186,7 +186,11 @@ export class SupabaseReservationStore implements ReservationStore {
       ? { mode: 'legacy' as const, config: null, servicesEnabled: null }
       : await loadWeeklyHours(this.dbClient, this.context.clientId);
     if (weeklyHours.mode === 'error') throw new Error(weeklyHours.error.code);
-    if (weeklyHours.mode === 'weekly' && weeklyHours.servicesEnabled && !weeklyHours.servicesEnabled.has(requestedService)) {
+    const weeklyService = isWeeklyService(requestedService) ? requestedService : null;
+    if (weeklyHours.mode === 'weekly' && !weeklyService) {
+      return { available: [], fullyBooked: false };
+    }
+    if (weeklyHours.mode === 'weekly' && weeklyHours.servicesEnabled && weeklyService && !weeklyHours.servicesEnabled.has(weeklyService)) {
       return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };
     }
     const capacityResult = await this.dbClient
@@ -263,7 +267,7 @@ export class SupabaseReservationStore implements ReservationStore {
         .reduce((total, reservation) => total + toNumberValue(reservation.pax), 0);
       if (occupied + query.requestedPax <= capacity
         && (weeklyHours.mode !== 'weekly'
-          || isServiceOpenAt(weeklyHours.config, bookingDate, requestedService, slotTime))) {
+          || (weeklyService !== null && isServiceOpenAt(weeklyHours.config, bookingDate, weeklyService, slotTime)))) {
         availableTimes.push(slotTime);
       }
     }

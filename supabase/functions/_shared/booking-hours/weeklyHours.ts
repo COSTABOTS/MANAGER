@@ -4,6 +4,10 @@ export type WeeklyService = typeof SERVICES[number];
 export type WeeklyServiceRule = { enabled: boolean; start: string | null; end: string | null };
 export type WeeklyHoursConfig = Partial<Record<number, Partial<Record<WeeklyService, WeeklyServiceRule>>>>;
 
+export function isWeeklyService(value: unknown): value is WeeklyService {
+  return typeof value === 'string' && SERVICES.includes(value as WeeklyService);
+}
+
 function parseTime(value: string | null) {
   const match = value?.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;

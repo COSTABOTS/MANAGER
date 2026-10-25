@@ -94,13 +94,12 @@ export interface WeeklyHoursDbQuery {
 }
 
 export interface WeeklyHoursDbQueryBuilder extends PromiseLike<WeeklyHoursDbQuery> {
-  select(columns: string): WeeklyHoursDbQueryBuilder;
   eq(column: string, value: unknown): WeeklyHoursDbQueryBuilder;
   in(column: string, values: unknown[]): WeeklyHoursDbQueryBuilder;
 }
 
 export interface WeeklyHoursDbClient {
-  from(table: string): WeeklyHoursDbQueryBuilder;
+  from(table: string): { select(columns: string): WeeklyHoursDbQueryBuilder };
 }
 
 export async function loadWeeklyHours(dbClient: WeeklyHoursDbClient, clientId: string): Promise<WeeklyHoursResolution> {

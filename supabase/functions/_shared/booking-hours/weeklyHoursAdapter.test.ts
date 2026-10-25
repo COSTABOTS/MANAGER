@@ -73,14 +73,13 @@ function mockDb(settings: unknown[], bookingRows: unknown[] = [], settingsError:
       calls.push(table);
       let result: WeeklyHoursDbQuery = { data: table === 'SETTINGS' ? settings : bookingRows, error: table === 'SETTINGS' ? settingsError : null };
       const chain: WeeklyHoursDbQueryBuilder = {
-        select: () => chain,
         eq: (column, value) => { filters.push({ table, method: 'eq', column, value }); return chain; },
         in: (column, value) => { filters.push({ table, method: 'in', column, value }); return chain; },
         then<TResult1 = WeeklyHoursDbQuery, TResult2 = never>(onfulfilled?: ((value: WeeklyHoursDbQuery) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2> {
           return Promise.resolve(result).then(onfulfilled ?? undefined, onrejected ?? undefined);
         },
       };
-      return chain;
+      return { select: () => chain };
     },
   };
 }
