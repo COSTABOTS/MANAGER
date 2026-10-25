@@ -1,0 +1,45 @@
+name: Weekly service hours isolated validation
+
+on:
+  push:
+    branches:
+      - feature/weekly-service-hours
+  workflow_dispatch:
+
+jobs:
+  isolated-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: weekly-test-password
+          POSTGRES_DB: weekly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d weekly_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.9.7
+      - name: Check weekly-hours helper
+        run: deno check supabase/functions/_shared/booking-hours/weeklyHours.ts
+      - name: Test weekly-hours helper
+        run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHours.test.ts
+      - name: Prepare disposable PostgreSQL fixture
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/booking_service_hours_fixture.sql
+      - name: Apply migration only to disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261025120000_booking_service_hours.sql
+      - name: Run SQL assertions and rollback
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -v client_id=TEST-WEEKLY-HOURS -f supabase/tests/booking_service_hours_isolated.sql

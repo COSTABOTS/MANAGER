@@ -22,6 +22,8 @@ La migración local `supabase/migrations/20261025120000_booking_service_hours.sq
 
 La tabla tiene RLS activada, sin permisos para `anon`/`authenticated` y con permisos para `service_role`, siguiendo el patrón del esquema Hospitality existente.
 
+Compatibilidad revisada contra `20260802110939_hospitality_phase1_schema.sql`: existe `hospitality_set_updated_at()`, `CLIENTES.client_id` se usa como FK `text` con `on update restrict/on delete restrict`, y el patrón de RLS/permisos coincide con las tablas Hospitality. La migración no depende de `booking_capacity_slots`, reservas ni RPC existentes.
+
 ## Activación por tenant
 
 La activación está diseñada alrededor de la clave existente de `SETTINGS`: `WEEKLY_HOURS_ENABLED`. La migración no inserta ni cambia esa clave. Ausente o falsa significa comportamiento legacy. Una futura operación de Manager debe establecerla solo después de guardar y validar las 21 reglas.
@@ -53,9 +55,31 @@ El helper local `supabase/functions/_shared/booking-hours/weeklyHours.ts` mantie
 | Manager UI/guardado | Pendiente | no se modificó manager-api/UI |
 | Migración remota | Pendiente/no ejecutada | producción intacta |
 
+## Validación Fase 2C
+
+El harness SQL se corrigió para no usar `:'client_id'` dentro de bloques `DO $$`; ahora fija el valor con `set_config('weekly_test.client_id', ...)` y los bloques PL/pgSQL lo recuperan mediante `current_setting`. Las aserciones lanzan errores explícitos cuando una entrada inválida es aceptada, cuando se pierden las 21 reglas originales o cuando faltan permisos esperados.
+
+El script cubre: 21 reglas válidas, 20 y 22 reglas, duplicados, weekdays fuera de `0..6`, servicio no permitido, ventanas invertidas/iguales, cruces de medianoche, servicio desactivado con horas, preservación ante rechazo, integridad y permisos. La concurrencia se deja como prueba de dos sesiones: una sesión mantiene abierta la transacción y otra debe esperar el `pg_advisory_xact_lock` del mismo tenant.
+
 ## Pruebas
 
-La suite del helper tenía 8 tests PASS antes de este ajuste. Tras cambiar la política de medianoche no pudo ejecutarse de nuevo porque Deno no está disponible en el entorno y no se instaló ninguna herramienta. `git diff --check` sí se ejecutó correctamente. El SQL aislado está preparado para ejecutarse únicamente contra una base desechable con `:client_id` de fixture y rollback.
+La suite del helper tenía 8 tests PASS antes de este ajuste. Tras cambiar la política de medianoche no pudo ejecutarse de nuevo porque Deno no está disponible en el entorno y no se instaló ninguna herramienta. `git diff --check` se ejecutó correctamente. El harness SQL está preparado para `psql` contra una base desechable, exige `-v client_id=...` y termina con `rollback`; no se ha ejecutado.
+
+La búsqueda del repositorio no encontró ningún consumidor actual de `WEEKLY_HOURS_ENABLED`; solo aparecen la migración y esta documentación. Por tanto no existe activación accidental, pero tampoco existe todavía una activación funcional integrada.
+
+## Validación automatizada Fase 2D
+
+Se prepararon:
+
+- `.github/workflows/weekly-service-hours.yml`, limitado a pushes de `feature/weekly-service-hours` y ejecución manual;
+- `supabase/tests/fixtures/booking_service_hours_fixture.sql`, con `pgcrypto`, `CLIENTES`, el trigger `updated_at` y los roles mínimos `anon`, `authenticated` y `service_role`;
+- el harness SQL corregido para ejecutarse con `psql -v client_id=...`.
+
+El workflow usa Deno `2.9.7` y PostgreSQL `16` efímero. Ejecuta `deno check`, `deno test`, prepara el fixture, aplica la migración solo al contenedor temporal y ejecuta las aserciones con `rollback`. No contiene URL, token, secreto ni credencial de Supabase.
+
+Estado local: workflow y fixtures **PREPARADOS, NO EJECUTADOS** desde esta sesión. Deno y `psql` no están instalados localmente. La ejecución real quedará registrada por GitHub Actions cuando la rama se publique/ejecute; no se debe declarar PASS antes de consultar ese run.
+
+No se añadió conversión automática entre `start_time/end_time` SQL y `start/end` TypeScript porque todavía no existe integración de API. Esa adaptación pertenece a la fase de lectura posterior y debe probar formatos `HH:mm` y, si se admite, `HH:mm:ss` explícitamente.
 
 ## Riesgos pendientes
 
@@ -64,6 +88,7 @@ La suite del helper tenía 8 tests PASS antes de este ajuste. Tras cambiar la po
 - No se ha probado el SQL contra PostgreSQL aislado.
 - Debe definirse control de concurrencia y permisos de Manager antes de exponer el guardado.
 - No ejecutar la migración hasta revisar el esquema real y obtener autorización explícita.
+- El harness SQL no se considera PASS hasta ejecutarse con PostgreSQL/Supabase desechable y roles `anon`, `authenticated` y `service_role` disponibles.
 
 ## Plan posterior y recuperación
 
