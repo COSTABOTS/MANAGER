@@ -3,6 +3,7 @@ import { validatePublicClient } from '../lib/clients.ts';
 import { appendSheetValues, createGoogleAccessToken } from '../lib/googleSheets.ts';
 import {
   buildCreateReservationResult,
+  isPublicRestaurantSlotWithinLeadTime,
   normalizeCreateReservationInput,
 } from '../lib/reservations.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
@@ -10,6 +11,17 @@ import { resolveReservationStore } from '../../_shared/reservation-store/resolve
 import type { CreateReservationCommand } from '../../_shared/reservation-store/types.ts';
 
 const DEFAULT_MAX_PUBLIC_RESTAURANT_PAX = 8;
+
+export function getPublicReservationTimeError(
+  request: Request,
+  date: string,
+  time: string,
+  now = new Date(),
+) {
+  return isPublicRestaurantSlotWithinLeadTime(date, time, now)
+    ? null
+    : errorResponse(request, 'RESERVATION_TIME_PASSED', 409);
+}
 
 function getSafeErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -108,6 +120,8 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
         return { reservation };
       },
     }, dbClient);
+    const timeError = getPublicReservationTimeError(request, result.normalized.fecha, result.normalized.hora);
+    if (timeError) return timeError;
     await store.createReservation(command);
   } catch (error) {
     const errorCode = getSafeErrorCode(error);

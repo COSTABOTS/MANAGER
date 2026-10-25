@@ -133,6 +133,85 @@ export function normalizeReservationTimeForSheet(value: unknown) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+const PUBLIC_RESTAURANT_LEAD_TIME_MS = 30 * 60 * 1000;
+const RESTAURANT_TIME_ZONE = 'Europe/Madrid';
+
+function getTimeZoneParts(instantMs: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(instantMs));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second),
+  };
+}
+
+function localDateTimeToInstantMs(date: string, time: string, timeZone = RESTAURANT_TIME_ZONE) {
+  const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const year = dateMatch ? Number(dateMatch[1].length === 4 ? dateMatch[1] : dateMatch[3]) : 0;
+  const month = dateMatch ? Number(dateMatch[1].length === 4 ? dateMatch[2] : dateMatch[2]) : 0;
+  const day = dateMatch ? Number(dateMatch[1].length === 4 ? dateMatch[3] : dateMatch[1]) : 0;
+  const timeMatch = time.match(/^(\d{2}):(\d{2})$/);
+  const hour = timeMatch ? Number(timeMatch[1]) : -1;
+  const minute = timeMatch ? Number(timeMatch[2]) : -1;
+  if (!isValidDateParts(year, month, day) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  const localAsUtcMs = Date.UTC(year, month - 1, day, hour, minute);
+  let instantMs = localAsUtcMs;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = getTimeZoneParts(instantMs, timeZone);
+    const renderedAsUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    instantMs = localAsUtcMs - (renderedAsUtcMs - instantMs);
+  }
+
+  const resolved = getTimeZoneParts(instantMs, timeZone);
+  if (resolved.year !== year || resolved.month !== month || resolved.day !== day || resolved.hour !== hour || resolved.minute !== minute) {
+    return null;
+  }
+  const isSameLocalMinute = (candidateMs: number) => {
+    const candidate = getTimeZoneParts(candidateMs, timeZone);
+    return candidate.year === year && candidate.month === month && candidate.day === day
+      && candidate.hour === hour && candidate.minute === minute;
+  };
+  if ([-2, -1, 1, 2].some((hours) => isSameLocalMinute(instantMs + hours * 60 * 60 * 1000))) {
+    return null;
+  }
+  return instantMs;
+}
+
+export function isPublicRestaurantSlotWithinLeadTime(
+  date: string,
+  time: string,
+  now = new Date(),
+  timeZone = RESTAURANT_TIME_ZONE,
+) {
+  const slotMs = localDateTimeToInstantMs(date, time, timeZone);
+  return slotMs !== null && slotMs >= now.getTime() + PUBLIC_RESTAURANT_LEAD_TIME_MS;
+}
+
+export function filterPublicRestaurantSlotsByLeadTime(
+  date: string,
+  times: string[],
+  now = new Date(),
+  timeZone = RESTAURANT_TIME_ZONE,
+) {
+  return times.filter((time) => isPublicRestaurantSlotWithinLeadTime(date, time, now, timeZone));
+}
+
 function normalizeReservationLanguage(value: unknown) {
   const raw = toStringValue(value).toUpperCase();
   if (!raw) {

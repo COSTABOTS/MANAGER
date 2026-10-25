@@ -146,8 +146,8 @@ test('HTTP response remains legacy-only and internal client flags are not expose
     assert.ok(!responseBlock.includes(internal), internal);
   }
   assert.match(responseBlock, /pax_solicitados: result\.requestedPax/);
-  assert.match(responseBlock, /horas_disponibles: result\.availableTimes/);
-  assert.match(responseBlock, /DISPONIBLE: result\.requestedTimeAvailable/);
+  assert.match(responseBlock, /horas_disponibles: (?:result\.availableTimes|availableTimes)/);
+  assert.match(responseBlock, /DISPONIBLE: (?:result\.requestedTimeAvailable|requestedTimeAvailable)/);
   assert.match(route, /reservationStore: context\.reservationStore/);
   assert.match(route, /if \(!useSupabase\) \{[\s\S]*runAvailabilityShadow/);
   assert.match(route, /}, dbClient\)/);

@@ -13,6 +13,7 @@ import { normalizeDateKey, normalizeService, toNumberValue, toStringValue } from
 import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
 import { SupabaseReservationStore } from '../../_shared/reservation-store/supabaseReservationStore.ts';
 import { runAvailabilityShadow } from '../../_shared/reservation-store/shadowComparison.ts';
+import { filterPublicRestaurantSlotsByLeadTime } from '../lib/reservations.ts';
 
 function pickBodyValue(body: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -32,6 +33,17 @@ function parseRequestedPax(value: unknown) {
   }
 
   return toNumberValue(raw);
+}
+
+export function filterPublicAvailabilityTimes(
+  date: string,
+  availableTimes: string[],
+  requestedTime: string,
+  now = new Date(),
+) {
+  const filteredTimes = filterPublicRestaurantSlotsByLeadTime(date, availableTimes, now);
+  const requestedTimeAvailable = Boolean(requestedTime) && filteredTimes.includes(requestedTime);
+  return { filteredTimes, requestedTimeAvailable };
 }
 
 export async function handleAvailabilityByHour(request: Request, dbClient: DbClient) {
@@ -125,13 +137,14 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
       });
     }
 
+    const { filteredTimes: availableTimes, requestedTimeAvailable } = filterPublicAvailabilityTimes(fecha, result.availableTimes, horaSolicitada);
     return jsonResponse(request, {
       ok: true,
       pax_solicitados: result.requestedPax,
-      horas_disponibles: result.availableTimes,
-      horas_disponibles_texto: result.availableTimes.join(', '),
-      DISPONIBLE: result.requestedTimeAvailable,
-      resultado: result.requestedTimeAvailable ? 'TRUE' : 'FALSE',
+      horas_disponibles: availableTimes,
+      horas_disponibles_texto: availableTimes.join(', '),
+      DISPONIBLE: requestedTimeAvailable,
+      resultado: requestedTimeAvailable ? 'TRUE' : 'FALSE',
     });
   } catch (error) {
     const headerIssues = (error as { headerIssues?: unknown }).headerIssues;
