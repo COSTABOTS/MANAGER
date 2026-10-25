@@ -33,6 +33,8 @@ jobs:
         run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHours.test.ts
       - name: Check weekly-hours adapter
         run: deno check supabase/functions/_shared/booking-hours/weeklyHoursAdapter.ts
+      - name: Check weekly-hours adapter tests
+        run: deno check supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
       - name: Test weekly-hours adapter
         run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
       - name: Prepare disposable PostgreSQL fixture

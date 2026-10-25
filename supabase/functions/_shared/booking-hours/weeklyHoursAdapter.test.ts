@@ -7,7 +7,7 @@ const rows = (): BookingServiceHoursRow[] => Array.from({ length: 7 }, (_, weekd
     weekday, service, enabled: service === 'ALMUERZO' && weekday === 0,
     start_time: service === 'ALMUERZO' && weekday === 0 ? '11:00:00' : null,
     end_time: service === 'ALMUERZO' && weekday === 0 ? '18:00:00' : null,
-  }))).flat());
+  }))).flat();
 
 Deno.test('adapts Sunday lunch and closed dinner', () => {
   const result = resolveWeeklyHours('true', rows());
@@ -28,8 +28,14 @@ Deno.test('enabled requires complete configuration', () => {
 });
 
 Deno.test('read errors are distinct from missing configuration', () => {
-  assertEquals(resolveWeeklyHours(true, null, new Error('db')).error?.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
-  assertEquals(resolveWeeklyHours(false, null, new Error('db')).error?.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
+  const enabledResult = resolveWeeklyHours(true, null, new Error('db'));
+  const disabledResult = resolveWeeklyHours(false, null, new Error('db'));
+  assertEquals(enabledResult.mode, 'error');
+  assertEquals(disabledResult.mode, 'error');
+  if (enabledResult.mode === 'error' && disabledResult.mode === 'error') {
+    assertEquals(enabledResult.error.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
+    assertEquals(disabledResult.error.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
+  }
 });
 
 Deno.test('accepts start/end aliases and PostgreSQL HH:mm:ss with zero seconds', () => {
