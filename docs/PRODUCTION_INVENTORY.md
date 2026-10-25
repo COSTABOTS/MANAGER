@@ -2,6 +2,8 @@
 
 Fecha de auditoría: 2026-10-14. Estado: solo lectura.
 
+Observación adicional del 2026-10-25: en Supabase se observaron contadores de despliegue `public-api: 85` y `manager-api: 128`. Son contadores observados, no una prueba de equivalencia exacta entre el código desplegado y un commit concreto.
+
 ## Repositorios verificados
 
 | Sistema | Repositorio | Rama/commit observado | Verificación |
@@ -40,3 +42,7 @@ Typebot, proyectos Vercel concretos, Experience, URLs por tenant, configuración
 | ZACS | resolver verificado | resolver verificado | PENDIENTE | HTTP shell verificada; API PENDIENTE | PENDIENTE |
 
 “Verificado” aquí significa smoke HTTP de resolución/configuración, no una reserva real ni una prueba de UI completa.
+
+## Horarios semanales
+
+La tabla y funciones de `booking_service_hours` están **IMPLEMENTADAS LOCALMENTE** en la rama de trabajo de esta fase. Están **PENDIENTES** de validación aislada, migración y despliegue. No deben marcarse como existentes en Supabase.

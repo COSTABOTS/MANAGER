@@ -51,3 +51,7 @@ El riesgo principal actual es la divergencia entre el código autorizado y la ve
 ## Hecho frente a pendiente
 
 Confirmado por código: rutas, módulos y separación `assistant_slug`/`booking_slug`. Pendiente: Typebot, Experience, Vercel y configuración completa de WhatsApp; no se deben inferir a partir de nombres de dominio.
+
+## Horarios semanales (Fase 2)
+
+El motor puro semanal está preparado en `_shared/booking-hours/weeklyHours.ts` y el modelo SQL local en la migración `20261025120000_booking_service_hours.sql`. Este trabajo aún no está integrado en `public-api`, Manager, Booking o Assistant y no está desplegado. La configuración solo debe activarse mediante `SETTINGS.WEEKLY_HOURS_ENABLED` después de validar las 21 reglas; sin esa activación, el comportamiento legacy permanece intacto.
