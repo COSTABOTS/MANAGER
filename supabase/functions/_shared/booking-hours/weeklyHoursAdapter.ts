@@ -1,0 +1,89 @@
+import {
+  SERVICES,
+  WEEKDAYS,
+  type WeeklyHoursConfig,
+  type WeeklyService,
+  type WeeklyServiceRule,
+  validateWeeklyHoursConfig,
+} from './weeklyHours.ts';
+
+export type BookingServiceHoursRow = {
+  weekday?: unknown;
+  service?: unknown;
+  enabled?: unknown;
+  start_time?: unknown;
+  end_time?: unknown;
+  start?: unknown;
+  end?: unknown;
+};
+
+export type WeeklyHoursResolution =
+  | { mode: 'legacy'; config: null }
+  | { mode: 'weekly'; config: WeeklyHoursConfig }
+  | { mode: 'error'; error: { code: string; message: string } };
+
+function isEnabled(value: unknown) {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value === null || value === undefined) return false;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off', ''].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function normalizeTime(value: unknown) {
+  if (value === null || value === undefined || value === '') return { value: null, valid: true } as const;
+  if (typeof value !== 'string') return { value: null, valid: false } as const;
+  const minute = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+  if (minute) return { value, valid: true } as const;
+  const second = /^(?:[01]\d|2[0-3]):[0-5]\d:([0-5]\d)$/.exec(value);
+  if (!second || second[1] !== '00') return { value: null, valid: false } as const;
+  return { value: value.slice(0, 5), valid: true } as const;
+}
+
+function rowValue(row: BookingServiceHoursRow, primary: 'start_time' | 'end_time', legacy: 'start' | 'end') {
+  return row[primary] !== undefined ? row[primary] : row[legacy];
+}
+
+function invalid(message: string): WeeklyHoursResolution {
+  return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_INVALID', message } };
+}
+
+export function resolveWeeklyHours(
+  enabledSetting: unknown,
+  rows: readonly BookingServiceHoursRow[] | null | undefined,
+  readError: unknown = null,
+): WeeklyHoursResolution {
+  if (readError) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
+  const enabled = isEnabled(enabledSetting);
+  if (enabled === null) return invalid('WEEKLY_HOURS_ENABLED is invalid');
+  if (!enabled) return { mode: 'legacy', config: null };
+  if (!rows || rows.length !== 21) return invalid('Weekly hours require exactly 21 rules');
+
+  const config: WeeklyHoursConfig = {};
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const weekday = typeof row.weekday === 'string' && /^\d+$/.test(row.weekday) ? Number(row.weekday) : row.weekday;
+    const service = row.service;
+    if (!WEEKDAYS.includes(weekday as typeof WEEKDAYS[number])) return invalid('weekday must be between 0 and 6');
+    if (!SERVICES.includes(service as WeeklyService)) return invalid('service is not supported');
+    const key = `${weekday}:${service}`;
+    if (seen.has(key)) return invalid('weekly service rules must be unique');
+    seen.add(key);
+    const rowEnabled = isEnabled(row.enabled);
+    if (rowEnabled === null) return invalid(`enabled is invalid for ${key}`);
+    const start = normalizeTime(rowValue(row, 'start_time', 'start'));
+    const end = normalizeTime(rowValue(row, 'end_time', 'end'));
+    if (!start.valid || !end.valid) return invalid(`time format is invalid for ${key}`);
+    const rule: WeeklyServiceRule = { enabled: rowEnabled, start: start.value, end: end.value };
+    const day: Partial<Record<WeeklyService, WeeklyServiceRule>> = config[weekday as number] ?? {};
+    day[service as WeeklyService] = rule;
+    config[weekday as number] = day;
+  }
+  if (seen.size !== 21) return invalid('weekly service rules are incomplete');
+  const validationErrors = validateWeeklyHoursConfig(config);
+  if (validationErrors.length) return invalid(`weekly service rules are invalid: ${validationErrors.join(',')}`);
+  return { mode: 'weekly', config };
+}

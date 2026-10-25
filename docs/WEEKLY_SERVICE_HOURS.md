@@ -83,6 +83,30 @@ Estado local: workflow y fixtures **PREPARADOS, NO EJECUTADOS** desde esta sesi�
 
 No se añadió conversión automática entre `start_time/end_time` SQL y `start/end` TypeScript porque todavía no existe integración de API. Esa adaptación pertenece a la fase de lectura posterior y debe probar formatos `HH:mm` y, si se admite, `HH:mm:ss` explícitamente.
 
+## Fase 3A: adaptador aislado
+
+Se preparan, sin importarlos desde `public-api`, `weeklyHoursAdapter.ts` y `weeklyHoursAdapter.test.ts`.
+
+El adaptador:
+
+- acepta `start_time/end_time` y aliases `start/end`;
+- normaliza `HH:mm` y `HH:mm:00` a `HH:mm`;
+- rechaza segundos distintos de `00` para no truncar silenciosamente una hora;
+- valida weekday `0..6`, servicios canónicos y las 21 combinaciones únicas;
+- devuelve `legacy` si `WEEKLY_HOURS_ENABLED` falta o es falso;
+- devuelve `weekly` solo con configuración completa y válida;
+- devuelve `WEEKLY_HOURS_CONFIG_INVALID` para configuración activa incompleta/inválida;
+- devuelve `WEEKLY_HOURS_CONFIG_READ_FAILED` para errores de lectura, sin confundirlos con ausencia;
+- no lee ni modifica capacidad.
+
+Los tests cubren domingo, cena cerrada, legacy, configuración incompleta, aliases, formatos PostgreSQL, límites inclusivos/exclusivos, días cerrados, servicios inválidos y separación respecto a capacidad. No se ha ejecutado localmente porque Deno no está disponible; no se declara PASS hasta ejecutar CI.
+
+### Compatibilidad pendiente
+
+La futura integración debe combinar el resultado semanal con `SERVICES_ENABLED`, `BOOKING_INTERVAL`, `BOOKING_ENABLED/BOOKINGS_ENABLED`, `booking_capacity_slots` y `booking_day_controls` sin duplicar reglas. Un servicio semanalmente abierto pero ausente/desactivado en `SERVICES_ENABLED` debe permanecer no reservable; esta precedencia aún no está implementada.
+
+Las capacidades siguen siendo independientes: el adaptador no crea ni modifica slots. Debe revisarse el conflicto conocido entre `weekday 0..6` y consultas que usan `EXTRACT(ISODOW)` (domingo `7`) antes de tocar disponibilidad; las RPC actuales no se modificaron.
+
 ## Riesgos pendientes
 
 - La equivalencia entre `SETTINGS` real y todos los entornos debe verificarse antes de integrar la activación.

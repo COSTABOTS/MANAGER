@@ -31,6 +31,10 @@ jobs:
         run: deno check supabase/functions/_shared/booking-hours/weeklyHours.ts
       - name: Test weekly-hours helper
         run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHours.test.ts
+      - name: Check weekly-hours adapter
+        run: deno check supabase/functions/_shared/booking-hours/weeklyHoursAdapter.ts
+      - name: Test weekly-hours adapter
+        run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
