@@ -39,9 +39,9 @@ jobs:
       - name: Test weekly-hours adapter
         run: deno test --allow-net supabase/functions/_shared/booking-hours/weeklyHoursAdapter.test.ts
       - name: Check availability regressions
-        run: deno check supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
+        run: deno check --node-modules-dir=auto supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
       - name: Test availability regressions
-        run: deno test --allow-net supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
+        run: deno test --node-modules-dir=auto --allow-net supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
