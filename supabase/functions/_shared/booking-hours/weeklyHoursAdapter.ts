@@ -93,13 +93,14 @@ export interface WeeklyHoursDbQuery {
   error: { message?: string } | null;
 }
 
+export interface WeeklyHoursDbQueryBuilder extends PromiseLike<WeeklyHoursDbQuery> {
+  select(columns: string): WeeklyHoursDbQueryBuilder;
+  eq(column: string, value: unknown): WeeklyHoursDbQueryBuilder;
+  in(column: string, values: unknown[]): WeeklyHoursDbQueryBuilder;
+}
+
 export interface WeeklyHoursDbClient {
-  from(table: string): {
-    select(columns: string): WeeklyHoursDbClient;
-    eq(column: string, value: unknown): WeeklyHoursDbClient;
-    in(column: string, values: unknown[]): WeeklyHoursDbClient;
-    then<TResult1 = WeeklyHoursDbQuery, TResult2 = never>(onfulfilled?: ((value: WeeklyHoursDbQuery) => TResult1 | PromiseLike<TResult1>) | null, onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2>;
-  };
+  from(table: string): WeeklyHoursDbQueryBuilder;
 }
 
 export async function loadWeeklyHours(dbClient: WeeklyHoursDbClient, clientId: string): Promise<WeeklyHoursResolution> {
