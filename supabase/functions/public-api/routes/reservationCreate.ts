@@ -1,6 +1,7 @@
 import type { DbClient } from '../lib/clients.ts';
 import { validatePublicClient } from '../lib/clients.ts';
 import { appendSheetValues, createGoogleAccessToken } from '../lib/googleSheets.ts';
+import { normalizeDateKey, toStringValue } from '../lib/normalization.ts';
 import {
   buildCreateReservationResult,
   isPublicRestaurantSlotWithinLeadTime,
@@ -8,9 +9,21 @@ import {
 } from '../lib/reservations.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
-import type { CreateReservationCommand } from '../../_shared/reservation-store/types.ts';
+import { isServiceOpenAt, isWeeklyService } from '../../_shared/booking-hours/weeklyHours.ts';
+import { loadWeeklyHours } from '../../_shared/booking-hours/weeklyHoursAdapter.ts';
+import type { CreateReservationCommand, ReservationStore } from '../../_shared/reservation-store/types.ts';
 
 const DEFAULT_MAX_PUBLIC_RESTAURANT_PAX = 8;
+
+interface ReservationCreateDependencies {
+  now?: () => Date;
+  createStore?: (...args: Parameters<typeof resolveReservationStore>) => Pick<ReservationStore, 'createReservation'>;
+  weeklyCreateGuardEnabled?: boolean;
+}
+
+export function isWeeklyCreateGuardEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === 'true';
+}
 
 export function getPublicReservationTimeError(
   request: Request,
@@ -38,7 +51,7 @@ function getSafeErrorCode(error: unknown) {
   return 'INTERNAL_ERROR';
 }
 
-export async function handleReservationCreate(request: Request, dbClient: DbClient) {
+export async function handleReservationCreate(request: Request, dbClient: DbClient, dependencies: ReservationCreateDependencies = {}) {
   if (request.method !== 'POST') {
     return errorResponse(request, 'METHOD_NOT_ALLOWED', 405);
   }
@@ -85,6 +98,47 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
+  if (dependencies.weeklyCreateGuardEnabled ?? isWeeklyCreateGuardEnabled(Deno.env.get('ENABLE_WEEKLY_CREATE_GUARD'))) {
+    const weeklyHours = await loadWeeklyHours({
+      readSettings: async () => {
+        const query = await dbClient.from('SETTINGS').select('CLAVE,VALOR')
+          .eq('CLIENTE_ID', context.clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+        return { data: query.data, error: query.error };
+      },
+      readRules: async () => {
+        const query = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time')
+          .eq('client_id', context.clientId);
+        return { data: query.data, error: query.error };
+      },
+    }).catch(() => ({
+      mode: 'error' as const,
+      error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' },
+    }));
+    if (weeklyHours.mode === 'error') return errorResponse(request, weeklyHours.error.code, 500);
+    if (weeklyHours.mode === 'weekly') {
+      const bookingsSetting = await (async () => {
+        try {
+          return await dbClient.from('SETTINGS').select('VALOR')
+            .eq('CLIENTE_ID', context.clientId).eq('CLAVE', 'BOOKINGS_ENABLED').maybeSingle();
+        } catch {
+          return null;
+        }
+      })();
+      if (!bookingsSetting || bookingsSetting.error) return errorResponse(request, 'WEEKLY_HOURS_CONFIG_READ_FAILED', 500);
+      const bookingsRow = bookingsSetting.data as Record<string, unknown> | null;
+      const bookingsValue = toStringValue(bookingsRow?.VALOR).toLowerCase();
+      if (['false', '0', 'no', 'off', 'disabled'].includes(bookingsValue)) {
+        return errorResponse(request, 'BOOKINGS_DISABLED', 409);
+      }
+      if (!isWeeklyService(normalized.servicio) || !weeklyHours.servicesEnabled?.has(normalized.servicio)) {
+        return errorResponse(request, 'SERVICE_NOT_ENABLED', 409);
+      }
+      if (!isServiceOpenAt(weeklyHours.config, normalizeDateKey(normalized.fecha), normalized.servicio, normalized.hora)) {
+        return errorResponse(request, 'RESERVATION_OUTSIDE_WEEKLY_HOURS', 409);
+      }
+    }
+  }
+
   const result = buildCreateReservationResult(normalized);
   const command: CreateReservationCommand = {
     id: result.idReserva,
@@ -109,7 +163,7 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
   };
 
   try {
-    const store = resolveReservationStore({
+    const store = (dependencies.createStore ?? resolveReservationStore)({
       clientId: context.clientId,
       sheetId: context.sheetId,
       reservationStore: context.reservationStore,
@@ -120,7 +174,7 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
         return { reservation };
       },
     }, dbClient);
-    const timeError = getPublicReservationTimeError(request, result.normalized.fecha, result.normalized.hora);
+    const timeError = getPublicReservationTimeError(request, result.normalized.fecha, result.normalized.hora, dependencies.now?.() ?? new Date());
     if (timeError) return timeError;
     await store.createReservation(command);
   } catch (error) {

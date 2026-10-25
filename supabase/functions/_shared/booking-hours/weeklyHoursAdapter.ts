@@ -121,5 +121,5 @@ export async function loadWeeklyHours(reader: WeeklyHoursReader): Promise<Weekly
   const weekly = resolveWeeklyHours(rawEnabled, Array.isArray(rowsResult.data) ? rowsResult.data as BookingServiceHoursRow[] : [], null);
   if (weekly.mode !== 'weekly') return weekly;
   const servicesEnabled = new Set(String(settingsMap.get('SERVICES_ENABLED') ?? '').split(/[,;\n]/).map((value) => value.trim().toUpperCase()).filter((value): value is WeeklyService => SERVICES.includes(value as WeeklyService)));
-  return { ...weekly, servicesEnabled: servicesEnabled.size ? servicesEnabled : null };
+  return { ...weekly, servicesEnabled: servicesEnabled.size ? servicesEnabled : new Set<WeeklyService>(['CENA']) };
 }

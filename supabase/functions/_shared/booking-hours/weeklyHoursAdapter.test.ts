@@ -109,3 +109,15 @@ Deno.test('active loading reads the 21 booking rules and services setting', asyn
     { table: 'booking_service_hours', method: 'eq', column: 'client_id', value: 'TEST' },
   ]);
 });
+
+Deno.test('active weekly hours default missing or empty SERVICES_ENABLED to CENA only', async () => {
+  for (const settings of [
+    [{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }],
+    [{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLAVE: 'SERVICES_ENABLED', VALOR: '' }],
+  ]) {
+    const result = await loadWeeklyHours(mockDb(settings, rows()).reader());
+    assertEquals(result.mode, 'weekly');
+    if (result.mode !== 'weekly') throw new Error('Expected weekly hours');
+    assertEquals([...result.servicesEnabled ?? []], ['CENA']);
+  }
+});

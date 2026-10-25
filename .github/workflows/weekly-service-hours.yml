@@ -46,6 +46,9 @@ jobs:
         # The global public-api typecheck has inherited errors in the base commit.
         # Run these focused tests without typechecking their unrelated imports.
         run: deno test --node-modules-dir=auto --no-check --allow-net supabase/functions/public-api/lib/reservations.test.ts supabase/functions/public-api/routes/publicReservationLeadTime.integration.test.ts
+      - name: Test weekly reservation creation guard
+        # reservationCreate.ts has inherited public-api type errors; --no-check does not skip test assertions.
+        run: deno test --node-modules-dir=auto --no-check --allow-net supabase/functions/public-api/routes/reservationCreate.weekly.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
