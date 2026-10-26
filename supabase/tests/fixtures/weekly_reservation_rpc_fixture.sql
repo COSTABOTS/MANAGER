@@ -1,13 +1,6 @@
 -- Disposable PostgreSQL 16 fixture only. Apply before the versioned Phase 1 schema.
 \set ON_ERROR_STOP on
-do $$
-begin
-  if current_database() !~ '^weekly_[a-z0-9_]*_test$'
-     or inet_server_addr() <> inet '127.0.0.1'
-     or current_setting('server_version_num')::integer / 10000 <> 16 then
-    raise exception 'Disposable local PostgreSQL 16 database required';
-  end if;
-end $$;
+\ir weekly_rpc_environment_guard.sql
 create table public."CLIENTES" (client_id text);
 create table public."PROFILES" (id integer);
 create table public."SETTINGS" (

@@ -1,13 +1,6 @@
 -- Persistent fixtures ONLY inside the disposable weekly_rpc_test database.
 \set ON_ERROR_STOP on
-do $$
-begin
-  if current_database() !~ '^weekly_[a-z0-9_]*_test$'
-     or inet_server_addr() <> inet '127.0.0.1'
-     or current_setting('server_version_num')::integer / 10000 <> 16 then
-    raise exception 'Disposable local PostgreSQL 16 database required';
-  end if;
-end $$;
+\ir fixtures/weekly_rpc_environment_guard.sql
 delete from public.booking_idempotency where client_id='TEST-RPC-WEEKLY';
 delete from public.reservations where client_id='TEST-RPC-WEEKLY';
 delete from public.booking_capacity_slots where client_id='TEST-RPC-WEEKLY';

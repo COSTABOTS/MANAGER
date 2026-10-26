@@ -1,14 +1,7 @@
 -- Full restaurant RPC assertions for a disposable PostgreSQL 16 database only.
 \set ON_ERROR_STOP on
 begin;
-do $$
-begin
-  if current_database() !~ '^weekly_[a-z0-9_]*_test$'
-     or inet_server_addr() <> inet '127.0.0.1'
-     or current_setting('server_version_num')::integer / 10000 <> 16 then
-    raise exception 'Disposable local PostgreSQL 16 database required';
-  end if;
-end $$;
+\ir fixtures/weekly_rpc_environment_guard.sql
 
 -- Helper functions are callable by the definer RPC, not directly by API roles.
 do $$

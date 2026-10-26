@@ -64,9 +64,27 @@ jobs:
       - name: Prepare separate disposable restaurant RPC database
         env:
           PGPASSWORD: weekly-test-password
+        run: createdb -h 127.0.0.1 -U postgres weekly_rpc_test
+      - name: Verify disposable PostgreSQL service identity
+        env:
+          PGPASSWORD: weekly-test-password
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
-          createdb -h 127.0.0.1 -U postgres weekly_rpc_test
-          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/weekly_reservation_rpc_fixture.sql
+          test -n "$POSTGRES_SERVICE_ID"
+          service_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$POSTGRES_SERVICE_ID")
+          test -n "$service_ip"
+          connection=$(psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -At -F '|' -c "select current_database(), host(inet_server_addr()), current_setting('server_version_num')")
+          IFS='|' read -r database server_ip version <<< "$connection"
+          printf 'Disposable PostgreSQL: database=%s server=%s version=%s container=%s\n' "$database" "$server_ip" "$version" "${POSTGRES_SERVICE_ID:0:12}"
+          test "$database" = weekly_rpc_test
+          test "$version" -ge 160000
+          test "$version" -lt 170000
+          test "$server_ip" = "$service_ip"
+          echo "PGOPTIONS=-c costabots.weekly_rpc_test=gha-isolated-postgres16 -c costabots.weekly_rpc_server_ip=$service_ip" >> "$GITHUB_ENV"
+      - name: Apply disposable restaurant RPC fixture
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/weekly_reservation_rpc_fixture.sql
       - name: Apply versioned restaurant baseline in disposable PostgreSQL
         env:
           PGPASSWORD: weekly-test-password
