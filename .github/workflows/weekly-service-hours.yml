@@ -49,6 +49,10 @@ jobs:
       - name: Test weekly reservation creation guard
         # reservationCreate.ts has inherited public-api type errors; --no-check does not skip test assertions.
         run: deno test --node-modules-dir=auto --no-check --allow-net supabase/functions/public-api/routes/reservationCreate.weekly.test.ts
+      - name: Check Manager weekly-hours actions
+        run: deno check supabase/functions/manager-api/weeklyHoursActions.test.ts
+      - name: Test Manager weekly-hours actions and draft
+        run: deno test supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
@@ -61,6 +65,34 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -v client_id=TEST-WEEKLY-HOURS -f supabase/tests/booking_service_hours_isolated.sql
+      - name: Apply weekly-hours CAS only to disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261026120000_booking_service_hours_revision_cas.sql
+      - name: Verify disposable Manager test database identity
+        env:
+          PGPASSWORD: weekly-test-password
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          test -n "$POSTGRES_SERVICE_ID"
+          service_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$POSTGRES_SERVICE_ID")
+          test -n "$service_ip"
+          connection=$(psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -At -F '|' -c "select current_database(), host(inet_server_addr()), current_setting('server_version_num')")
+          IFS='|' read -r database server_ip version <<< "$connection"
+          test "$database" = weekly_test
+          test "$version" -ge 160000
+          test "$version" -lt 170000
+          test "$server_ip" = "$service_ip"
+          echo "PGOPTIONS=-c costabots.weekly_test=gha-isolated-postgres16 -c costabots.weekly_server_ip=$service_ip" >> "$GITHUB_ENV"
+      - name: Test Manager weekly-hours persistence and revision
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_hours_manager_persistence_isolated.sql
+      - name: Test concurrent Manager weekly-hours saves
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/weekly_hours_manager_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
       - name: Prepare separate disposable restaurant RPC database
         env:
           PGPASSWORD: weekly-test-password
@@ -93,6 +125,7 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260802223000_hospitality_reservation_write_rpc.sql
           psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260813120000_hospitality_balinese_reservation_rpc.sql
           psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261025120000_booking_service_hours.sql
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261026120000_booking_service_hours_revision_cas.sql
       - name: Compare legacy behavior before weekly RPC migration
         env:
           PGPASSWORD: weekly-test-password

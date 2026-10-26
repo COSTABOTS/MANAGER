@@ -47,7 +47,7 @@ if ((Invoke-LocalSql "select count(*), (select count(*) from public.booking_idem
   throw 'Concurrent last-slot writes or idempotency count is wrong.'
 }
 
-$closeRules = "begin; select public.replace_booking_service_hours('TEST-RPC-WEEKLY',(select jsonb_agg(jsonb_build_object('weekday',d.weekday,'service',s.service,'enabled',false,'start_time',null,'end_time',null)) from generate_series(0,6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service))); select pg_sleep(3); commit;"
+$closeRules = "begin; select public.replace_booking_service_hours('TEST-RPC-WEEKLY',(select jsonb_agg(jsonb_build_object('weekday',d.weekday,'service',s.service,'enabled',false,'start_time',null,'end_time',null)) from generate_series(0,6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)),public.get_booking_service_hours_snapshot('TEST-RPC-WEEKLY')->>'revision'); select pg_sleep(3); commit;"
 $writer = Start-Job -ScriptBlock {
   param($binary,$port,$database,$sql)
   $output = & $binary -h 127.0.0.1 -p $port -U postgres -d $database -v ON_ERROR_STOP=1 -c $sql 2>&1
@@ -65,7 +65,7 @@ if ((Invoke-LocalSql "select count(*), (select count(*) from public.booking_idem
 }
 
 # Reverse lock order: an in-flight valid reservation completes before the writer closes.
-$openRules = "select public.replace_booking_service_hours('TEST-RPC-WEEKLY',(select jsonb_agg(jsonb_build_object('weekday',d.weekday,'service',s.service,'enabled',d.weekday=0 and s.service='ALMUERZO','start_time',case when d.weekday=0 and s.service='ALMUERZO' then '11:00' else null end,'end_time',case when d.weekday=0 and s.service='ALMUERZO' then '18:00' else null end)) from generate_series(0,6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)))"
+$openRules = "select public.replace_booking_service_hours('TEST-RPC-WEEKLY',(select jsonb_agg(jsonb_build_object('weekday',d.weekday,'service',s.service,'enabled',d.weekday=0 and s.service='ALMUERZO','start_time',case when d.weekday=0 and s.service='ALMUERZO' then '11:00' else null end,'end_time',case when d.weekday=0 and s.service='ALMUERZO' then '18:00' else null end)) from generate_series(0,6) d(weekday) cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)),public.get_booking_service_hours_snapshot('TEST-RPC-WEEKLY')->>'revision')"
 Invoke-LocalSql $openRules | Out-Null
 $createBeforeClose = "begin; select public.create_hospitality_reservation('TEST-RPC-WEEKLY','before-close','$payload16'::jsonb); select pg_sleep(3); commit;"
 $reservationJob = Start-Job -ScriptBlock {

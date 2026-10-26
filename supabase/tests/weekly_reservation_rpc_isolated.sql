@@ -86,7 +86,8 @@ select public.replace_booking_service_hours(
     'end_time',case when d.weekday=0 and s.service='ALMUERZO' then '18:00' else null end
   ) order by d.weekday,s.service)
    from generate_series(0,6) d(weekday)
-   cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service))
+   cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)),
+  public.get_booking_service_hours_snapshot('TEST-RPC-WEEKLY')->>'revision'
 );
 select public.replace_booking_service_hours(
   'TEST-RPC-OTHER',
@@ -100,7 +101,8 @@ select public.replace_booking_service_hours(
                     when d.weekday in (0,1) and s.service='CENA' then '23:00' else null end
   ) order by d.weekday,s.service)
    from generate_series(0,6) d(weekday)
-   cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service))
+   cross join unnest(array['DESAYUNO','ALMUERZO','CENA']) s(service)),
+  public.get_booking_service_hours_snapshot('TEST-RPC-OTHER')->>'revision'
 );
 
 insert into public."SETTINGS"("CLIENTE_ID","CLAVE","VALOR") values

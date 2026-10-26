@@ -710,7 +710,7 @@ export function Settings({
         )}
 
         {WEEKLY_HOURS_UI_ENABLED && (!isDemoMode || activeSettingsTab === 'general') && clientId && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={draftSettings.servicesEnabled} />
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} />
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (
