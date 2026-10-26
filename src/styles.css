@@ -2461,6 +2461,124 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   align-content: start;
 }
 
+.weekly-hours-editor {
+  gap: 18px;
+}
+
+.weekly-hours-notice,
+.weekly-service-hint,
+.weekly-hours-status {
+  margin: 0;
+  color: var(--premium-muted);
+  line-height: 1.5;
+}
+
+.weekly-service {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--premium-border);
+}
+
+.weekly-service-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weekly-service-heading h3 {
+  margin: 0;
+  color: var(--premium-text);
+}
+
+.weekly-service-heading span {
+  color: var(--premium-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.weekly-days {
+  display: grid;
+  gap: 8px;
+}
+
+.weekly-day {
+  display: grid;
+  grid-template-columns: minmax(145px, 1fr) minmax(125px, 0.8fr) minmax(125px, 0.8fr) auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  color: var(--premium-text);
+  border: 1px solid var(--premium-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.weekly-day.is-invalid {
+  border-color: var(--premium-danger);
+}
+
+.weekly-day > label:not(.weekly-day-toggle) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.weekly-day input[type='time'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.weekly-day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.weekly-day-toggle input {
+  width: auto;
+  min-height: auto;
+}
+
+.weekly-day-toggle span {
+  color: var(--premium-muted);
+  font-size: 12px;
+}
+
+.weekly-day-toggle strong {
+  color: var(--premium-text);
+}
+
+.weekly-copy-button {
+  white-space: nowrap;
+}
+
+.weekly-rule-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--premium-danger);
+  font-size: 13px;
+}
+
+@media (max-width: 800px) {
+  .weekly-day {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .weekly-day-toggle {
+    grid-column: 1 / -1;
+  }
+
+  .weekly-copy-button {
+    grid-column: 1 / -1;
+  }
+}
+
 .admin-card {
   border-color: rgba(53, 95, 157, 0.32);
 }

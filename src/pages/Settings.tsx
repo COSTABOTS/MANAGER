@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseStatus, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
+import { WeeklyHoursEditor } from './WeeklyHoursEditor';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -76,6 +77,7 @@ const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
 const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MIN_PRE_DINNER_MINUTES = 15;
 const MAX_PRE_DINNER_MINUTES = 1440;
+const WEEKLY_HOURS_UI_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WEEKLY_HOURS_UI === 'true';
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -705,6 +707,10 @@ export function Settings({
           </div>
           )}
         </article>
+        )}
+
+        {WEEKLY_HOURS_UI_ENABLED && (!isDemoMode || activeSettingsTab === 'general') && clientId && (
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={draftSettings.servicesEnabled} />
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (
