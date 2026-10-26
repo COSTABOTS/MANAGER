@@ -120,6 +120,9 @@ export async function loadWeeklyHours(reader: WeeklyHoursReader): Promise<Weekly
   if (rowsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
   const weekly = resolveWeeklyHours(rawEnabled, Array.isArray(rowsResult.data) ? rowsResult.data as BookingServiceHoursRow[] : [], null);
   if (weekly.mode !== 'weekly') return weekly;
-  const servicesEnabled = new Set(String(settingsMap.get('SERVICES_ENABLED') ?? '').split(/[,;\n]/).map((value) => value.trim().toUpperCase()).filter((value): value is WeeklyService => SERVICES.includes(value as WeeklyService)));
-  return { ...weekly, servicesEnabled: servicesEnabled.size ? servicesEnabled : new Set<WeeklyService>(['CENA']) };
+  const rawServices = String(settingsMap.get('SERVICES_ENABLED') ?? '').trim();
+  const servicesEnabled = rawServices
+    ? new Set(rawServices.split(/[,;\s]+/).map((value) => value.trim().toUpperCase()).filter((value): value is WeeklyService => SERVICES.includes(value as WeeklyService)))
+    : new Set<WeeklyService>(['CENA']);
+  return { ...weekly, servicesEnabled };
 }

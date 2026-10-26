@@ -97,7 +97,7 @@ Deno.test('legacy loading does not query booking_service_hours', async () => {
 Deno.test('active loading reads the 21 booking rules and services setting', async () => {
   const db = mockDb([
     { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
-    { CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA,BALINESA' },
   ], rows());
   const result = await loadWeeklyHours(db.reader());
   assertEquals(result.mode, 'weekly');
@@ -120,4 +120,24 @@ Deno.test('active weekly hours default missing or empty SERVICES_ENABLED to CENA
     if (result.mode !== 'weekly') throw new Error('Expected weekly hours');
     assertEquals([...result.servicesEnabled ?? []], ['CENA']);
   }
+});
+
+Deno.test('BALINESA alone does not enable any weekly restaurant service', async () => {
+  const result = await loadWeeklyHours(mockDb([
+    { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'BALINESA' },
+  ], rows()).reader());
+  assertEquals(result.mode, 'weekly');
+  if (result.mode !== 'weekly') throw new Error('Expected weekly hours');
+  assertEquals([...result.servicesEnabled ?? []], []);
+});
+
+Deno.test('explicit restaurant services accept whitespace separators consistently with SQL', async () => {
+  const result = await loadWeeklyHours(mockDb([
+    { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO CENA BALINESA' },
+  ], rows()).reader());
+  assertEquals(result.mode, 'weekly');
+  if (result.mode !== 'weekly') throw new Error('Expected weekly hours');
+  assertEquals([...result.servicesEnabled ?? []], ['ALMUERZO', 'CENA']);
 });

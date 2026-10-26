@@ -1,6 +1,7 @@
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { handleReservationCreate, isWeeklyCreateGuardEnabled } from './reservationCreate.ts';
+import { SupabaseReservationStore, type SupabaseReadClient } from '../../_shared/reservation-store/supabaseReservationStore.ts';
 import type { BookingServiceHoursRow } from '../../_shared/booking-hours/weeklyHoursAdapter.ts';
 import type { DbClient } from '../lib/clients.ts';
 
@@ -27,9 +28,16 @@ function weeklyRules(open: Partial<Record<'DESAYUNO' | 'ALMUERZO' | 'CENA', [str
     })).flat();
 }
 
-function harness(tenants: Tenant[], weeklyCreateGuardEnabled = true) {
+type RpcSimulation = {
+  tenant: string;
+  error: { code?: string; message: string };
+  onCall?: () => void;
+};
+
+function harness(tenants: Tenant[], weeklyCreateGuardEnabled = true, rpcSimulation?: RpcSimulation) {
   const reads: Array<{ table: string; tenant: string }> = [];
   const writes: Array<{ tenant: string; service: string }> = [];
+  const rpcCalls: Array<{ tenant: string; name: string }> = [];
   const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
   const db = createClient('https://isolated.test', 'local-anon-key', {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -72,17 +80,28 @@ function harness(tenants: Tenant[], weeklyCreateGuardEnabled = true) {
       },
     },
   }) as DbClient;
-  async function submit(id: string, service = 'ALMUERZO', time = '11:00', now = new Date('2026-10-24T10:00:00Z')) {
+  async function submit(id: string, service = 'ALMUERZO', time = '11:00', now: Date | (() => Date) = new Date('2026-10-24T10:00:00Z')) {
     const request = new Request('https://isolated.test/public-api/reservation/create', {
       method: 'POST',
       body: JSON.stringify({ client_id: id, public_token: 'local-public-token', nombre: 'LOCAL TEST',
         telefono: '000000000', fecha: '25/10/2026', hora: time, personas: 2, servicio: service }),
     });
     const response = await handleReservationCreate(request, db, {
-      now: () => now,
+      now: () => typeof now === 'function' ? now() : now,
       weeklyCreateGuardEnabled,
       createStore: (context) => ({
         createReservation: async (command) => {
+          if (rpcSimulation?.tenant === context.clientId) {
+            const simulatedDb: SupabaseReadClient = {
+              from: () => { throw new Error('Unexpected table read from simulated RPC store'); },
+              rpc: async (name) => {
+                rpcCalls.push({ tenant: context.clientId, name });
+                rpcSimulation.onCall?.();
+                return { data: null, error: rpcSimulation.error };
+              },
+            };
+            return new SupabaseReservationStore(context, simulatedDb).createReservation(command);
+          }
           writes.push({ tenant: context.clientId, service: command.service });
           return { reservation: command };
         },
@@ -91,7 +110,7 @@ function harness(tenants: Tenant[], weeklyCreateGuardEnabled = true) {
     if (!response) throw new Error('Expected a public API response');
     return { status: response.status, body: await response.json() as Record<string, unknown> };
   }
-  return { reads, writes, submit };
+  return { reads, writes, rpcCalls, submit };
 }
 
 Deno.test('weekly create guard is disabled by default and only an explicit true enables it', () => {
@@ -169,6 +188,16 @@ Deno.test('full create handler defaults missing or empty SERVICES_ENABLED to CEN
   }
 });
 
+Deno.test('full create handler does not enable CENA for BALINESA-only tenants', async () => {
+  for (const store of ['supabase', 'sheets'] as const) {
+    const test = harness([{ id: 'BALINESE-ONLY', store, weeklyFlag: 'true', services: 'BALINESA',
+      rules: weeklyRules({ CENA: ['19:00', '23:00'] }) }]);
+    const result = await test.submit('BALINESE-ONLY', 'CENA', '19:00');
+    assertEquals([result.status, result.body.code], [409, 'SERVICE_NOT_ENABLED']);
+    assertEquals(test.writes.length, 0);
+  }
+});
+
 Deno.test('full create handler blocks explicitly disabled bookings only in weekly mode', async () => {
   const test = harness([{ id: 'DISABLED', store: 'sheets', weeklyFlag: 'true', services: 'ALMUERZO', bookings: 'false', rules: weeklyRules() }]);
   const result = await test.submit('DISABLED');
@@ -206,4 +235,63 @@ Deno.test('full create handler keeps tenants isolated and retains exact 30-minut
   assertEquals(test.writes, [{ tenant: 'OPEN', service: 'ALMUERZO' }]);
   assertEquals(test.reads.filter((row) => row.table === 'booking_service_hours').map((row) => row.tenant),
     ['OPEN', 'OPEN', 'CLOSED']);
+});
+
+Deno.test('full handler maps an RPC time rejection after the API boundary to HTTP 409 without reporting creation', async () => {
+  let simulatedNow = new Date('2026-10-25T09:30:00Z');
+  const test = harness([
+    { id: 'RACE', store: 'supabase', weeklyFlag: 'true', services: 'ALMUERZO', rules: weeklyRules() },
+  ], true, {
+    tenant: 'RACE',
+    error: { code: 'P0001', message: 'RESERVATION_TIME_PASSED' },
+    onCall: () => { simulatedNow = new Date('2026-10-25T09:30:02Z'); },
+  });
+  const result = await test.submit('RACE', 'ALMUERZO', '11:00', () => simulatedNow);
+  assertEquals(simulatedNow.toISOString(), '2026-10-25T09:30:02.000Z');
+  assertEquals([result.status, result.body.ok, result.body.code, result.body.error, result.body.message],
+    [409, false, 'RESERVATION_TIME_PASSED', 'RESERVATION_TIME_PASSED', 'RESERVATION_TIME_PASSED']);
+  assertEquals('reservation_created' in result.body || 'id_reserva' in result.body, false);
+  assertEquals(test.rpcCalls, [{ tenant: 'RACE', name: 'create_hospitality_reservation' }]);
+  assertEquals(test.writes.length, 0);
+});
+
+Deno.test('full handler preserves distinct weekly RPC rejection contracts', async () => {
+  for (const [message, status] of [
+    ['RESERVATION_OUTSIDE_WEEKLY_HOURS', 409],
+    ['WEEKLY_HOURS_CONFIG_INVALID', 500],
+    ['WEEKLY_HOURS_CONFIG_READ_FAILED', 500],
+    ['AVAILABILITY_EXHAUSTED', 409],
+    ['SERVICE_NOT_ENABLED', 409],
+    ['BOOKINGS_DISABLED', 409],
+  ] as const) {
+    const test = harness([
+      { id: 'WEEKLY-RPC', store: 'supabase', weeklyFlag: 'true', services: 'ALMUERZO', rules: weeklyRules() },
+    ], true, { tenant: 'WEEKLY-RPC', error: { code: 'P0001', message } });
+    const result = await test.submit('WEEKLY-RPC');
+    assertEquals([result.status, result.body.ok, result.body.code], [status, false, message]);
+    assertEquals('reservation_created' in result.body, false);
+    assertEquals(test.rpcCalls.length, 1);
+    assertEquals(test.writes.length, 0);
+  }
+});
+
+Deno.test('full handler keeps unexpected RPC errors generic and legacy capacity behavior unchanged', async () => {
+  for (const error of [
+    { code: 'XX000', message: 'RESERVATION_TIME_PASSED' },
+    { code: 'P0001', message: 'UNRECOGNIZED_SQL_DETAIL' },
+    { code: 'P0001', message: 'AVAILABILITY_EXHAUSTED' },
+  ]) {
+    const test = harness([{ id: 'LEGACY-RPC', store: 'supabase' }], true,
+      { tenant: 'LEGACY-RPC', error });
+    const result = await test.submit('LEGACY-RPC');
+    assertEquals([result.status, result.body.code], [500, 'RESERVATION_CREATE_FAILED']);
+    assertEquals(JSON.stringify(result.body).includes(error.message), false);
+    assertEquals(test.rpcCalls.length, 1);
+    assertEquals(test.writes.length, 0);
+  }
+  const sheets = harness([{ id: 'SHEETS-LEGACY', store: 'sheets' }]);
+  const result = await sheets.submit('SHEETS-LEGACY');
+  assertEquals([result.status, result.body.reservation_created], [201, true]);
+  assertEquals(sheets.rpcCalls.length, 0);
+  assertEquals(sheets.writes.length, 1);
 });

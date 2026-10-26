@@ -11,9 +11,11 @@ import type {
 } from './types.ts';
 import { isServiceOpenAt, isWeeklyService } from '../booking-hours/weeklyHours.ts';
 import { loadWeeklyHours } from '../booking-hours/weeklyHoursAdapter.ts';
+import { parseRestaurantRpcRejection } from './errors.ts';
 
 interface QueryError {
   message: string;
+  code?: string;
 }
 
 interface QueryResult {
@@ -340,7 +342,11 @@ export class SupabaseReservationStore implements ReservationStore {
       p_idempotency_key: command.id,
       p_reservation: await this.toDatabasePayload(command, 'typebot'),
     });
-    if (result.error) throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+    if (result.error) {
+      const rejection = parseRestaurantRpcRejection(result.error);
+      if (rejection) throw rejection;
+      throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+    }
     return { reservation: command };
   }
 

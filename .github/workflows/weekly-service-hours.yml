@@ -61,3 +61,38 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -v client_id=TEST-WEEKLY-HOURS -f supabase/tests/booking_service_hours_isolated.sql
+      - name: Prepare separate disposable restaurant RPC database
+        env:
+          PGPASSWORD: weekly-test-password
+        run: |
+          createdb -h 127.0.0.1 -U postgres weekly_rpc_test
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/weekly_reservation_rpc_fixture.sql
+      - name: Apply versioned restaurant baseline in disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: |
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260802110939_hospitality_phase1_schema.sql
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260802223000_hospitality_reservation_write_rpc.sql
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20260813120000_hospitality_balinese_reservation_rpc.sql
+          psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261025120000_booking_service_hours.sql
+      - name: Compare legacy behavior before weekly RPC migration
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_reservation_rpc_legacy_comparison.sql
+      - name: Apply proposed weekly RPC migration only in disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261025180000_weekly_hospitality_reservation_guard.sql
+      - name: Compare legacy behavior after weekly RPC migration
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_reservation_rpc_legacy_comparison.sql
+      - name: Test weekly restaurant RPC and rollback assertions
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_reservation_rpc_isolated.sql
+      - name: Test weekly RPC concurrency in disposable PostgreSQL
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/weekly_reservation_rpc_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test

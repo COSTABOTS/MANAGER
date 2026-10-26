@@ -196,6 +196,21 @@ test('weekly Sunday rule filters slots while preserving weekday NULL capacity', 
   assert.deepEqual(result.availableTimes, ['11:00', '12:00']);
 });
 
+test('BALINESA-only global service does not expose weekly CENA capacity', async () => {
+  const client = new FixtureClient({
+    SETTINGS: [
+      { CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+      { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'BALINESA' },
+    ],
+    booking_service_hours: weeklyRows(),
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
+    ],
+  });
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' });
+  assert.deepEqual(result.availableTimes, []);
+});
+
 test('weekly Fully Booked still overrides an open weekly service', async () => {
   const client = new FixtureClient({
     SETTINGS: [{ CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' }],

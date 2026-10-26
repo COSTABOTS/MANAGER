@@ -9,6 +9,7 @@ import {
 } from '../lib/reservations.ts';
 import { errorResponse, jsonResponse } from '../lib/responses.ts';
 import { resolveReservationStore } from '../../_shared/reservation-store/resolver.ts';
+import { RestaurantRpcRejection } from '../../_shared/reservation-store/errors.ts';
 import { isServiceOpenAt, isWeeklyService } from '../../_shared/booking-hours/weeklyHours.ts';
 import { loadWeeklyHours } from '../../_shared/booking-hours/weeklyHoursAdapter.ts';
 import type { CreateReservationCommand, ReservationStore } from '../../_shared/reservation-store/types.ts';
@@ -49,6 +50,22 @@ function getSafeErrorCode(error: unknown) {
   }
 
   return 'INTERNAL_ERROR';
+}
+
+function expectedRpcResponse(request: Request, error: unknown, weeklyMode: boolean): Response | null {
+  if (!(error instanceof RestaurantRpcRejection)) return null;
+  switch (error.publicCode) {
+    case 'RESERVATION_TIME_PASSED':
+    case 'RESERVATION_OUTSIDE_WEEKLY_HOURS':
+    case 'SERVICE_NOT_ENABLED':
+    case 'BOOKINGS_DISABLED':
+      return errorResponse(request, error.publicCode, 409);
+    case 'WEEKLY_HOURS_CONFIG_INVALID':
+    case 'WEEKLY_HOURS_CONFIG_READ_FAILED':
+      return errorResponse(request, error.publicCode, 500);
+    case 'AVAILABILITY_EXHAUSTED':
+      return weeklyMode ? errorResponse(request, error.publicCode, 409) : null;
+  }
 }
 
 export async function handleReservationCreate(request: Request, dbClient: DbClient, dependencies: ReservationCreateDependencies = {}) {
@@ -98,6 +115,7 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     return errorResponse(request, 'INVALID_CLIENT', 404);
   }
 
+  let weeklyMode = false;
   if (dependencies.weeklyCreateGuardEnabled ?? isWeeklyCreateGuardEnabled(Deno.env.get('ENABLE_WEEKLY_CREATE_GUARD'))) {
     const weeklyHours = await loadWeeklyHours({
       readSettings: async () => {
@@ -116,6 +134,7 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     }));
     if (weeklyHours.mode === 'error') return errorResponse(request, weeklyHours.error.code, 500);
     if (weeklyHours.mode === 'weekly') {
+      weeklyMode = true;
       const bookingsSetting = await (async () => {
         try {
           return await dbClient.from('SETTINGS').select('VALOR')
@@ -178,6 +197,8 @@ export async function handleReservationCreate(request: Request, dbClient: DbClie
     if (timeError) return timeError;
     await store.createReservation(command);
   } catch (error) {
+    const expectedResponse = expectedRpcResponse(request, error, weeklyMode);
+    if (expectedResponse) return expectedResponse;
     const errorCode = getSafeErrorCode(error);
     console.error('[PUBLIC_API][RESERVATION_CREATE][APPEND_FAILED]', {
       clientId: context.clientId,
