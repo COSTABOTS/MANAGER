@@ -162,6 +162,8 @@ export function Settings({
   const [settingsValidationMessage, setSettingsValidationMessage] = useState('');
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
   const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
+  const weeklyPreview = WEEKLY_HOURS_UI_ENABLED && Boolean(clientId);
+  const settingsVerified = !isLoadingSettings && settingsMessage === 'SETTINGS cargados correctamente';
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
@@ -607,6 +609,7 @@ export function Settings({
           <div className="settings-subsection">
             <p className="eyebrow">Horario del restaurante</p>
             <div className="settings-grid inner">
+              {!weeklyPreview && <>
               <label>
                 Hora apertura
                 <input type="time" value={draftSettings.openingTime} onChange={(event) => updateSchedule({ openingTime: event.target.value })} />
@@ -615,6 +618,7 @@ export function Settings({
                 Hora cierre
                 <input type="time" value={draftSettings.closingTime} onChange={(event) => updateSchedule({ closingTime: event.target.value })} />
               </label>
+              </>}
               <label>
                 Intervalo de reservas
                 <select
@@ -628,7 +632,9 @@ export function Settings({
             </div>
           </div>
 
-          <div className="settings-subsection">
+          {weeklyPreview && <p className="weekly-hours-notice">Las horas de apertura de esta vista se calculan desde el borrador semanal local. Los valores generales anteriores se conservan internamente.</p>}
+
+          {!weeklyPreview && <div className="settings-subsection">
             <p className="eyebrow">Horarios de servicio</p>
             <label className="service-enabled-toggle service-enabled-toggle-inline">
               <input
@@ -669,9 +675,9 @@ export function Settings({
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
-          <div className="settings-subsection">
+          {!weeklyPreview && <div className="settings-subsection">
             <p className="eyebrow">Dias de apertura</p>
             <div className="opening-days-grid">
               {WEEKDAYS.map((day) => (
@@ -685,7 +691,7 @@ export function Settings({
                 </label>
               ))}
             </div>
-          </div>
+          </div>}
             </>
           )}
 
@@ -716,8 +722,17 @@ export function Settings({
         </article>
         )}
 
-        {WEEKLY_HOURS_UI_ENABLED && (!isDemoMode || activeSettingsTab === 'general') && clientId && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} localOnly />
+        {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly />
+        )}
+
+        {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
+          <article className="settings-card" aria-label="Configuración de Balinesa">
+            <div className="section-title compact"><div><p className="eyebrow">Servicio independiente</p><h2>Balinesa</h2></div></div>
+            <p className="weekly-hours-notice">{settingsVerified
+              ? `Estado actual: ${settings.servicesEnabled.includes('BALINESA') ? 'activada' : 'desactivada'}. Se configura fuera del calendario semanal.`
+              : 'Estado no verificado: no se pudieron confirmar los Settings. Balinesa se configura fuera de este borrador.'}</p>
+          </article>
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (

@@ -2473,6 +2473,32 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   line-height: 1.5;
 }
 
+.weekly-summary {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px;
+  border: 1px solid var(--premium-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.weekly-summary p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.weekly-service-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.weekly-service-switch input {
+  width: auto;
+  min-height: auto;
+}
+
 .weekly-service {
   display: grid;
   gap: 10px;
