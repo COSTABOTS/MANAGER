@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
 import { readOfficialReservationList } from './reservationListSource.ts';
 import { classifyWeeklyHoursRpcError, readWeeklyHours, saveWeeklyHours, weeklyHoursHttpStatus, type WeeklyHourRule, type WeeklyHoursAccess } from './weeklyHoursActions.ts';
+import { executePoolHoursAction, poolHoursHttpStatus, type PoolHoursAccess } from './poolHoursActions.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -20,6 +21,8 @@ type ManagerAction =
   | 'settings.save'
   | 'weeklyHours.get'
   | 'weeklyHours.save'
+  | 'poolHours.get'
+  | 'poolHours.save'
   | 'fullybooked.get'
   | 'fullybooked.set'
   | 'reservation.create'
@@ -1047,7 +1050,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
     'walkin.create', 'feedbacks.list', 'fullybooked.get', 'fullybooked.set',
     'capacity.list', 'capacity.save',
   ];
-  const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save', 'weeklyHours.get', 'weeklyHours.save'].includes(String(action))
+  const actionRequiresSheetId = !['client.license.update', 'client.branding.update', 'clients.list', 'shows.list', 'shows.save', 'settings.get', 'settings.save', 'weeklyHours.get', 'weeklyHours.save', 'poolHours.get', 'poolHours.save'].includes(String(action))
     && !(String(action) === 'reservations.list' && resolvedReservationStore.toLowerCase() === 'supabase')
     && !(resolvedReservationStore.toLowerCase() === 'supabase' && supabaseActionsWithoutSheetId.includes(String(action)));
   if (!resolvedSheetId && actionRequiresSheetId) {
@@ -2788,6 +2791,43 @@ async function handleWeeklyHours(
   return jsonResponse(request, { ok: true, action, rules: result.rules, revision: result.revision });
 }
 
+function poolHoursAccess(): PoolHoursAccess {
+  const dbClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  );
+  return {
+    async read(clientId) {
+      const { data, error } = await dbClient.rpc('get_booking_pool_hours_snapshot', { p_client_id: clientId });
+      return { data, error };
+    },
+    async replace(clientId, openingTime, closingTime, expectedRevision) {
+      const { data, error } = await dbClient.rpc('replace_booking_pool_hours', {
+        p_client_id: clientId,
+        p_opening_time: openingTime,
+        p_closing_time: closingTime,
+        p_expected_revision: expectedRevision,
+      });
+      return { data, error };
+    },
+  };
+}
+
+async function handlePoolHours(
+  request: Request,
+  context: { clientId: string; serviceRoleAvailable: boolean },
+  body: Record<string, unknown>,
+  action: 'poolHours.get' | 'poolHours.save',
+) {
+  if (!context.serviceRoleAvailable || !Deno.env.get('SUPABASE_URL')) {
+    return errorResponse(request, 'POOL_HOURS_UNAVAILABLE', 'Horario de piscina no disponible', 503);
+  }
+  const access = poolHoursAccess();
+  const result = await executePoolHoursAction(access, action, context.clientId, body);
+  if (!result.ok) return errorResponse(request, result.code, result.code, poolHoursHttpStatus(result.code));
+  return jsonResponse(request, { ok: true, action, ...result.snapshot });
+}
+
 Deno.serve(async (request) => {
   console.log(
     '[MANAGER_API] KEY MODE:',
@@ -2866,6 +2906,10 @@ Deno.serve(async (request) => {
       case 'weeklyHours.get':
       case 'weeklyHours.save':
         return await handleWeeklyHours(request, context, body as Record<string, unknown>, action);
+
+      case 'poolHours.get':
+      case 'poolHours.save':
+        return await handlePoolHours(request, context, body as Record<string, unknown>, action);
 
       case 'fullybooked.get':
         return await getFullyBooked(request, context.clientId, context.sheetId, context.reservationStore, context.dbClient, body as Record<string, unknown>, debug);

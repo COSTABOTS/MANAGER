@@ -53,6 +53,10 @@ jobs:
         run: deno check supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts tests/weeklyHoursPreview.test.ts tests/weeklyHoursPreviewDraft.test.ts tests/balinesePoolPreview.test.ts
       - name: Test Manager weekly-hours actions, draft and Preview gate
         run: deno test supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts tests/weeklyHoursPreview.test.ts tests/weeklyHoursPreviewDraft.test.ts tests/balinesePoolPreview.test.ts
+      - name: Check Manager pool-hours actions
+        run: deno check supabase/functions/manager-api/poolHoursActions.test.ts
+      - name: Test Manager pool-hours actions with isolated access
+        run: deno test supabase/functions/manager-api/poolHoursActions.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
@@ -93,6 +97,19 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/weekly_hours_manager_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
+      - name: Apply pool-hours migration only to disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261027120000_booking_pool_hours.sql
+      - name: Test isolated pool-hours persistence, permissions and transaction rollback
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/booking_pool_hours_isolated.sql
+      - name: Test concurrent pool-hours saves in disposable PostgreSQL
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/booking_pool_hours_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
       - name: Prepare separate disposable restaurant RPC database
         env:
           PGPASSWORD: weekly-test-password
