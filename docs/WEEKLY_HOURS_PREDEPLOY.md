@@ -1,0 +1,41 @@
+# Horarios semanales y piscina: integración previa al despliegue
+
+Estado al 27/10/2026: **preparado en la rama de desarrollo; no aplicado en Supabase ni en Manager producción**. El editor de Preview sigue usando `localStorage`: `POOL_HOURS_REMOTE_ENABLED=false`. Ningún restaurante se activa por estos cambios. La equivalencia entre el código de esta rama y un deployment futuro debe volver a verificarse antes de publicarlo.
+
+## Fuente y CORS de manager-api
+
+La referencia local del hotfix de producción v129 es el commit `1456312c0907c8e01458cbf9cc462b16abe0a37f`, derivado de `ad2c21845f39ef3dcde6162c4d110d6995c84c30`: añade solo `https://manager-4u8ir2cd5-costabots-projects.vercel.app` a los orígenes permitidos. Según la verificación previa del despliegue, v129 incorpora ese hotfix; **esta fase no ha vuelto a descargar ni comparar los bytes del deployment activo**. El código de desarrollo conserva producción, ese origen exacto y los dos orígenes locales, y prepara `https://manager-preview.costabots.com`. No acepta `*` ni un patrón de subdominios. `OPTIONS` y las respuestas JSON `POST` (éxito/error) usan el mismo helper CORS; los orígenes desconocidos no reciben su propio origen en `Access-Control-Allow-Origin`. La autenticación, selección de tenant y acciones legacy permanecen en `manager-api/index.ts`.
+
+Frente a la referencia v129, los cambios previstos de Manager API son: acciones `weeklyHours.get/save`, acciones `poolHours.get/save`, sus módulos y el helper CORS; **no** se incorpora `public-api` en un despliegue de Manager API. Las acciones nuevas requieren perfil autenticado, tenant resuelto en servidor, tablas/RPC nuevas y `service_role`. La lectura y escritura semanal usan revisión de instantánea y CAS; piscina usa revisión por tenant. Un despliegue posterior de Manager API exige comprobar nuevamente que la fuente activa coincide con la referencia y revisar el diff completo, no solo los orígenes.
+
+## Dominio Preview estable: preparación, no configuración remota
+
+El editor semanal reconoce `https://manager-preview.costabots.com` únicamente si el build declara **ambos** `VITE_VERCEL_ENV=preview` y `VITE_VERCEL_GIT_COMMIT_REF=feature/weekly-hours-availability`. Una compilación `production`, `main` u otra rama queda cerrada incluso si se sirve desde ese dominio. Los dominios efímeros anteriores siguen sujetos al mismo entorno/rama y a los metadatos exactos `VITE_VERCEL_URL` o `VITE_VERCEL_BRANCH_URL`. Esta barrera es solo de interfaz; no es autorización de API. No habilita el modo remoto de piscina.
+
+**Pendiente de configuración y comprobación manual:** confirmar el proyecto Vercel correcto, asociar el dominio fijo exclusivamente a la rama Preview autorizada, configurar DNS/TLS, exponer las cuatro variables `VITE_VERCEL_*` usadas por `Settings.tsx` durante el build y verificar su valor real en el artefacto Preview. Confirmar que `manager.costabots.com` sigue ligado a `main`/Production. No se modificó Vercel, DNS ni Supabase en esta fase. Antes de usar el dominio, probar un build de `main` servido desde él: el editor debe seguir oculto. La lista CORS preparada solo surtirá efecto tras un despliegue posterior de `manager-api`.
+
+## Preflight del esquema real
+
+`supabase/tests/weekly_hours_production_schema_preflight.sql` contiene solo consultas de catálogo: tablas/columnas, FK/constraints, RLS/políticas, permisos de tabla, firmas/`SECURITY DEFINER`/`search_path`/`EXECUTE` de RPC y existencia de historial de migraciones. **No ejecutado contra producción.** Revisar el resultado antes de aplicar SQL: `CLIENTES.client_id` y columnas de `SETTINGS`, `hospitality_set_updated_at`, ausencias o colisiones de `booking_service_hours`/`booking_pool_hours`, firmas antiguas de `replace_booking_service_hours`, permisos inesperados de `anon`/`authenticated` y definición activa de `create_hospitality_reservation`. Un resultado de catálogo no demuestra equivalencia del cuerpo de una RPC; compararlo por separado mediante lectura autorizada de `pg_get_functiondef` y diff sanitizado.
+
+Dependencias versionadas, en orden lógico para revisión: `20261025120000_booking_service_hours.sql` (tabla y RPC inicial); `20261026120000_booking_service_hours_revision_cas.sql` (retira la firma insegura y añade CAS); `20261027120000_booking_pool_hours.sql` (tabla y RPC independientes). `20261025180000_weekly_hospitality_reservation_guard.sql` reemplaza la RPC de creación y requiere la tabla semanal: tratarlo como un cambio de reservas separado, posterior a la verificación de API/canales, antes de activar cualquier tenant. **Su nombre ordena antes de CAS en una ejecución cronológica automática**; no ejecutar `db push` a ciegas. Determinar antes el estado real del historial y el método autorizado de aplicación selectiva. Ningún script preflight activa flags ni escribe datos.
+
+## Contrato compartido y orden de integración posterior
+
+| Dato / regla | Fuente autorizada | Consumo previsto |
+| --- | --- | --- |
+| Servicios globales, intervalo, límites y configuración legacy | `SETTINGS` por `CLIENTE_ID` | Manager/Admin gestionan; `widget/config`, disponibilidad y creación pública deben respetarlos. Confirmar los contratos concretos de Admin antes de cambiarlo. |
+| Apertura por servicio/día de restaurante | `booking_service_hours`, 21 reglas por `client_id`, domingo=0; `WEEKLY_HOURS_ENABLED` en `SETTINGS` | API de disponibilidad y creación/RPC son autoridad; Widget y Assistant presentan sus resultados por fecha y servicio. El flag sigue apagado hasta integración completa. |
+| Capacidad, bloqueos, Fully Booked | `booking_capacity_slots`, `booking_blocks`, `booking_day_controls` y store/RPC actuales | Independientes del horario; un servicio abierto no crea cupo. |
+| Balinesa | Servicio global en `SERVICES_ENABLED`, recursos/capacidad y `booking_pool_hours` por `client_id` | Reserva **por fecha**, sin franjas horarias. La apertura/cierre de piscina es operativa; el cierre solo corta reservas del día actual al llegar a la hora exacta en `Europe/Madrid`. La regla no está activada en endpoints. |
+
+Secuencia propuesta, cada paso con autorización separada: (1) verificar deployment actual y ejecutar preflight de lectura; (2) revisar/aplicar migraciones de configuración en entorno aislado y luego en destino autorizado, sin activar flags; (3) desplegar solo `manager-api` desde fuente que conserve v129 CORS y probar producción + Preview con lecturas y errores, sin guardados reales; (4) autorizar por separado el modo remoto del editor tras verificar lectura, CAS y rollback; (5) integrar y validar Widget, Assistant y cualquier Typebot/Admin afectado, además de `public-api`/RPC de creación, antes de activar un tenant; (6) activar un solo tenant con 21 reglas válidas, capacidades revisadas y monitoreo. El detalle de cada comando remoto, versión efectiva y permisos requiere una comprobación nueva antes de ejecutarlo.
+
+**Rollback propuesto, no probado remotamente:** conservar artefacto/código verificable de v129 y su configuración JWT/CORS; ante regresión atribuible a Manager API, detener nuevas escrituras y redeplegar solo esa función desde la referencia verificada. La Preview pierde las acciones nuevas, pero el editor local sigue siendo local. No revertir automáticamente una tabla que contenga datos ni restaurar la RPC antigua mientras haya tenants semanales activos: abriría una vía de creación sin guard. Para retirar una activación futura, coordinar API/RPC/flags por tenant y comprobar que no queda un bypass. No alterar `ENABLE_LEGACY_SHEETS` ni `reservation_store` como parte de esta recuperación.
+
+## Bloqueos antes de producción
+
+- Falta contrastar de nuevo los bytes y metadatos activos de v129 con la referencia local; el hotfix local sí está identificado.
+- No se han ejecutado los preflight de esquema contra el proyecto real ni configurado el dominio fijo.
+- `POOL_HOURS_REMOTE_ENABLED` permanece `false`; no existe activación del corte de piscina en disponibilidad/creación. Widget y Assistant conservan filtros legacy que requieren revisión antes de activar horarios semanales.
+- El despliegue de RPC semanal puede afectar a legacy si falla la lectura de `SETTINGS`; exigir ensayo y plan de recuperación específico. Typecheck global de Edge Function conserva diagnósticos heredados; comparar antes de cualquier despliegue.

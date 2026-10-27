@@ -61,6 +61,10 @@ jobs:
         run: deno check supabase/functions/manager-api/poolHoursHttp.test.ts tests/poolHoursRemote.test.ts
       - name: Test pool-hours HTTP and remote-client state
         run: deno test supabase/functions/manager-api/poolHoursHttp.test.ts tests/poolHoursRemote.test.ts
+      - name: Check Manager CORS and Preview origin tests
+        run: deno check supabase/functions/manager-api/cors.test.ts tests/weeklyHoursPreview.test.ts
+      - name: Test Manager CORS and Preview origin gate
+        run: deno test supabase/functions/manager-api/cors.test.ts tests/weeklyHoursPreview.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password

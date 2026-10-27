@@ -14,11 +14,14 @@ const preview = {
 Deno.test('only this branch deployment and its stable branch URL show the weekly editor', () => {
   assert(isWeeklyHoursPreview({ ...preview, origin: `https://${preview.deploymentUrl}` }), 'deployment preview should be allowed');
   assert(isWeeklyHoursPreview({ ...preview, origin: `https://${preview.branchUrl}` }), 'branch preview should be allowed');
+  assert(isWeeklyHoursPreview({ ...preview, origin: 'https://manager-preview.costabots.com' }), 'fixed preview origin should be allowed');
 });
 
 Deno.test('production, other branches and other deployments never show the weekly editor', () => {
   assert(!isWeeklyHoursPreview({ ...preview, origin: 'https://manager.costabots.com' }), 'production must be hidden');
   assert(!isWeeklyHoursPreview({ ...preview, environment: 'production', origin: `https://${preview.deploymentUrl}` }), 'production build must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, environment: 'production', origin: 'https://manager-preview.costabots.com' }), 'production build on fixed preview origin must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, branch: 'main', origin: 'https://manager-preview.costabots.com' }), 'main on fixed preview origin must be hidden');
   assert(!isWeeklyHoursPreview({ ...preview, environment: 'development', origin: 'http://localhost:5173' }), 'local development must be hidden');
   assert(!isWeeklyHoursPreview({ ...preview, branch: 'main', origin: `https://${preview.deploymentUrl}` }), 'main must be hidden');
   assert(!isWeeklyHoursPreview({ ...preview, origin: 'https://manager-otherbuild-costabots-projects.vercel.app' }), 'other deployment must be hidden');

@@ -4,6 +4,7 @@ import { readOfficialReservationList } from './reservationListSource.ts';
 import { classifyWeeklyHoursRpcError, readWeeklyHours, saveWeeklyHours, weeklyHoursHttpStatus, type WeeklyHourRule, type WeeklyHoursAccess } from './weeklyHoursActions.ts';
 import type { PoolHoursAccess } from './poolHoursActions.ts';
 import { handlePoolHoursHttp } from './poolHoursHttp.ts';
+import { getCorsHeaders } from './cors.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -56,22 +57,6 @@ type ManagerApiDebug = {
   hasGoogleSecret: boolean;
   rowsRead: number;
 };
-
-const allowedOrigins = new Set([
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://manager.costabots.com',
-]);
-
-function getCorsHeaders(request: Request) {
-  const origin = request.headers.get('Origin') ?? '';
-
-  return {
-    'Access-Control-Allow-Origin': allowedOrigins.has(origin) ? origin : 'https://manager.costabots.com',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
 
 function jsonResponse(request: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
