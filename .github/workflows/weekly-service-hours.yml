@@ -69,6 +69,16 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/booking_service_hours_fixture.sql
+      - name: Reject missing legacy columns in disposable preflight fixture
+        env:
+          PGPASSWORD: weekly-test-password
+        run: |
+          if psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_hours_production_schema_preflight.sql > preflight-negative.log 2>&1; then
+            cat preflight-negative.log
+            echo 'Preflight unexpectedly accepted a fixture without SETTINGS' >&2
+            exit 1
+          fi
+          grep -q 'MISSING_REQUIRED_COLUMNS:' preflight-negative.log
       - name: Apply migration only to disposable PostgreSQL
         env:
           PGPASSWORD: weekly-test-password
@@ -147,6 +157,10 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/fixtures/weekly_reservation_rpc_fixture.sql
+      - name: Accept required legacy columns in disposable preflight fixture
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_hours_production_schema_preflight.sql
       - name: Apply versioned restaurant baseline in disposable PostgreSQL
         env:
           PGPASSWORD: weekly-test-password

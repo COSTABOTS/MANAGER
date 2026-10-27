@@ -1,5 +1,7 @@
 -- READ ONLY: prepared for a separately authorized production inspection.
 -- Catalog metadata only; no tenant rows, settings values or personal data.
+-- Run with psql -v ON_ERROR_STOP=1 when separately authorized. A missing
+-- required legacy column deliberately fails this read-only preflight.
 select current_database() as database_name, current_setting('server_version') as postgres_version;
 
 select n.nspname as schema_name, c.relname as relation_name, c.relkind,
@@ -13,9 +15,30 @@ select table_name, column_name, data_type, udt_name, is_nullable
 from information_schema.columns
 where table_schema = 'public'
   and ((table_name = 'CLIENTES' and column_name = 'client_id')
-    or (table_name = 'SETTINGS' and column_name in ('CLIENT_ID', 'CLAVE', 'VALOR'))
+    or (table_name = 'SETTINGS' and column_name in ('id', 'CLIENTE_ID', 'CLAVE', 'VALOR'))
     or table_name in ('booking_service_hours', 'booking_pool_hours'))
 order by table_name, ordinal_position;
+
+with required(table_name, column_name) as (
+  values ('CLIENTES', 'client_id'),
+         ('SETTINGS', 'id'),
+         ('SETTINGS', 'CLIENTE_ID'),
+         ('SETTINGS', 'CLAVE'),
+         ('SETTINGS', 'VALOR')
+), missing as (
+  select r.table_name, r.column_name
+  from required r
+  left join information_schema.columns c
+    on c.table_schema = 'public'
+   and c.table_name = r.table_name
+   and c.column_name = r.column_name
+  where c.column_name is null
+)
+select case when count(*) = 0 then 'PASS'
+            else ('MISSING_REQUIRED_COLUMNS: ' ||
+                  string_agg(table_name || '.' || column_name, ', ' order by table_name, column_name))::integer::text
+       end as required_columns_check
+from missing;
 
 select conrelid::regclass::text as relation_name, conname, contype,
        pg_get_constraintdef(oid) as definition
