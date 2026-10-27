@@ -2,7 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
 import { readOfficialReservationList } from './reservationListSource.ts';
 import { classifyWeeklyHoursRpcError, readWeeklyHours, saveWeeklyHours, weeklyHoursHttpStatus, type WeeklyHourRule, type WeeklyHoursAccess } from './weeklyHoursActions.ts';
-import { executePoolHoursAction, poolHoursHttpStatus, type PoolHoursAccess } from './poolHoursActions.ts';
+import type { PoolHoursAccess } from './poolHoursActions.ts';
+import { handlePoolHoursHttp } from './poolHoursHttp.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -2822,10 +2823,10 @@ async function handlePoolHours(
   if (!context.serviceRoleAvailable || !Deno.env.get('SUPABASE_URL')) {
     return errorResponse(request, 'POOL_HOURS_UNAVAILABLE', 'Horario de piscina no disponible', 503);
   }
-  const access = poolHoursAccess();
-  const result = await executePoolHoursAction(access, action, context.clientId, body);
-  if (!result.ok) return errorResponse(request, result.code, result.code, poolHoursHttpStatus(result.code));
-  return jsonResponse(request, { ok: true, action, ...result.snapshot });
+  return handlePoolHoursHttp(request, body, action, async () => context, poolHoursAccess, {
+    success: (incoming, payload) => jsonResponse(incoming, payload),
+    failure: (incoming, code, status) => errorResponse(incoming, code, code, status),
+  });
 }
 
 Deno.serve(async (request) => {

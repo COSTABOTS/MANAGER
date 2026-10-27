@@ -57,6 +57,10 @@ jobs:
         run: deno check supabase/functions/manager-api/poolHoursActions.test.ts
       - name: Test Manager pool-hours actions with isolated access
         run: deno test supabase/functions/manager-api/poolHoursActions.test.ts
+      - name: Check pool-hours HTTP and remote-client tests
+        run: deno check supabase/functions/manager-api/poolHoursHttp.test.ts tests/poolHoursRemote.test.ts
+      - name: Test pool-hours HTTP and remote-client state
+        run: deno test supabase/functions/manager-api/poolHoursHttp.test.ts tests/poolHoursRemote.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
@@ -110,6 +114,11 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/booking_pool_hours_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
+      - name: Test guarded pool-hours rollback in disposable PostgreSQL
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/booking_pool_hours_rollback.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
       - name: Prepare separate disposable restaurant RPC database
         env:
           PGPASSWORD: weekly-test-password

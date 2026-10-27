@@ -3,7 +3,9 @@ import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseSta
 import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
+import { BalinesePoolRemote } from './BalinesePoolRemote';
 import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
+import { POOL_HOURS_REMOTE_ENABLED } from '../utils/poolHoursRemoteState';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -730,7 +732,9 @@ export function Settings({
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          <BalinesePoolPreview clientId={clientId} />
+          POOL_HOURS_REMOTE_ENABLED
+            ? <BalinesePoolRemote clientId={clientId} />
+            : <BalinesePoolPreview clientId={clientId} />
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (

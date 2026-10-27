@@ -8,6 +8,9 @@ do $$ declare v_has_rows boolean; begin
   if current_setting('costabots.allow_pool_hours_rollback', true) is distinct from 'reviewed-no-active-consumers' then
     raise exception 'Pool hours rollback requires explicit reviewed session marker';
   end if;
+  if current_setting('costabots.pool_hours_consumers_disabled', true) is distinct from 'confirmed' then
+    raise exception 'Pool hours rollback requires disabled consumers confirmation';
+  end if;
   if to_regclass('public.booking_pool_hours') is not null then
     execute 'select exists (select 1 from public.booking_pool_hours)' into v_has_rows;
     if v_has_rows then
