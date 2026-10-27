@@ -163,7 +163,9 @@ export function Settings({
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
   const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
   const weeklyPreview = WEEKLY_HOURS_UI_ENABLED && Boolean(clientId);
-  const settingsVerified = !isLoadingSettings && settingsMessage === 'SETTINGS cargados correctamente';
+  const settingsVerified = !isLoadingSettings && (
+    settingsMessage === 'SETTINGS cargados correctamente' || settingsMessage === 'SETTINGS guardados correctamente'
+  );
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
