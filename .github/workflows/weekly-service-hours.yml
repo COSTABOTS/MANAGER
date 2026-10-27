@@ -50,9 +50,9 @@ jobs:
         # reservationCreate.ts has inherited public-api type errors; --no-check does not skip test assertions.
         run: deno test --node-modules-dir=auto --no-check --allow-net supabase/functions/public-api/routes/reservationCreate.weekly.test.ts
       - name: Check Manager weekly-hours actions
-        run: deno check supabase/functions/manager-api/weeklyHoursActions.test.ts
-      - name: Test Manager weekly-hours actions and draft
-        run: deno test supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts
+        run: deno check supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts tests/weeklyHoursPreview.test.ts
+      - name: Test Manager weekly-hours actions, draft and Preview gate
+        run: deno test supabase/functions/manager-api/weeklyHoursActions.test.ts tests/weeklyHoursDraft.test.ts tests/weeklyHoursPreview.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password

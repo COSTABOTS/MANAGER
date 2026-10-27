@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseStatus, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor } from './WeeklyHoursEditor';
+import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -77,7 +78,13 @@ const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
 const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MIN_PRE_DINNER_MINUTES = 15;
 const MAX_PRE_DINNER_MINUTES = 1440;
-const WEEKLY_HOURS_UI_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WEEKLY_HOURS_UI === 'true';
+const WEEKLY_HOURS_UI_ENABLED = typeof window !== 'undefined' && isWeeklyHoursPreview({
+  origin: window.location.origin,
+  environment: import.meta.env.VITE_VERCEL_ENV,
+  branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
+  deploymentUrl: import.meta.env.VITE_VERCEL_URL,
+  branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
+});
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -710,7 +717,7 @@ export function Settings({
         )}
 
         {WEEKLY_HOURS_UI_ENABLED && (!isDemoMode || activeSettingsTab === 'general') && clientId && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} />
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} localOnly />
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (

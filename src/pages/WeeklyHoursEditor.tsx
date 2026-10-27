@@ -17,6 +17,7 @@ import {
 interface WeeklyHoursEditorProps {
   clientId: string;
   servicesEnabled: BookingService[];
+  localOnly?: boolean;
 }
 
 const SERVICE_LABELS: Record<ServiceWithHours, string> = {
@@ -44,7 +45,7 @@ function hasStoredDraft(clientId: string) {
   catch { return false; }
 }
 
-export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEditorProps) {
+export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false }: WeeklyHoursEditorProps) {
   const [state, setState] = useState(() => ({ clientId, draft: loadDraft(clientId) }));
   const [storageError, setStorageError] = useState(false);
   const [remote, setRemote] = useState<{ clientId: string; revision: string; draft: WeeklyHoursDraft } | null>(null);
@@ -56,6 +57,10 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEdit
     const localDraftExists = hasStoredDraft(clientId);
     setState({ clientId, draft: loadDraft(clientId) });
     setRemote(null);
+    if (localOnly) {
+      setMessage('Borrador local cargado. No afecta a las reservas.');
+      return () => { cancelled = true; };
+    }
     setMessage('Cargando horarios guardados…');
     if (clientId) {
       void getWeeklyHours().then((response) => {
@@ -72,7 +77,7 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEdit
       });
     }
     return () => { cancelled = true; };
-  }, [clientId]);
+  }, [clientId, localOnly]);
 
   useEffect(() => {
     if (!clientId || state.clientId !== clientId) return;
@@ -86,14 +91,25 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEdit
 
   const draft = state.clientId === clientId ? state.draft : loadDraft(clientId);
   const activeRestaurantServices = RESTAURANT_SERVICES.filter((service) => servicesEnabled.includes(service));
-  const canEdit = remote?.clientId === clientId && !isSaving;
+  const canEdit = localOnly ? Boolean(clientId) : remote?.clientId === clientId && !isSaving;
 
   function updateDraft(next: WeeklyHoursDraft) {
     setState({ clientId, draft: next });
-    setMessage('Cambios pendientes. El calendario semanal sigue sin activar.');
+    setMessage(localOnly ? 'Borrador local actualizado. No afecta a las reservas.' : 'Cambios pendientes. El calendario semanal sigue sin activar.');
   }
 
   async function saveDraft() {
+    if (localOnly) {
+      try {
+        window.localStorage.setItem(storageKey(clientId), JSON.stringify(draft));
+        setStorageError(false);
+        setMessage('Borrador guardado solo en este navegador. No afecta a las reservas.');
+      } catch {
+        setStorageError(true);
+        setMessage('No se pudo guardar el borrador en este navegador.');
+      }
+      return;
+    }
     if (!remote || remote.clientId !== clientId || isSaving || !isCompleteWeeklyDraft(draft)) return;
     setIsSaving(true);
     setMessage('Guardando 21 reglas…');
@@ -121,12 +137,14 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEdit
     <article className="settings-card weekly-hours-editor" aria-label="Horarios semanales">
       <div className="section-title compact">
         <div>
-          <p className="eyebrow">Configuración en desarrollo</p>
+          <p className="eyebrow">{localOnly ? 'Vista de prueba' : 'Configuración en desarrollo'}</p>
           <h2>Horarios semanales por servicio</h2>
         </div>
       </div>
       <p className="weekly-hours-notice">
-        Puedes guardar las 21 reglas de forma independiente. Guardarlas no activa el calendario semanal ni modifica las reservas o capacidades.
+        {localOnly
+          ? 'Vista de prueba: los horarios se guardan solo en este navegador. No afectan a las reservas.'
+          : 'Puedes guardar las 21 reglas de forma independiente. Guardarlas no activa el calendario semanal ni modifica las reservas o capacidades.'}
       </p>
       {activeRestaurantServices.length === 0 && (
         <p className="weekly-hours-notice">No hay servicios de restaurante activados. Balinesa usa su configuración independiente.</p>
@@ -197,14 +215,14 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled }: WeeklyHoursEdit
         {message || (isCompleteWeeklyDraft(draft) ? '21 reglas en el borrador local. Sin activar.' : 'Completa las horas de los días abiertos.')}
       </p>
       {storageError && <p className="weekly-rule-error">No se pudo conservar el borrador en este navegador.</p>}
-      {remote?.clientId === clientId && JSON.stringify(draft) !== JSON.stringify(remote.draft) && (
+      {!localOnly && remote?.clientId === clientId && JSON.stringify(draft) !== JSON.stringify(remote.draft) && (
         <button type="button" className="secondary-button" disabled={isSaving} onClick={() => {
           setState({ clientId, draft: remote.draft });
           setMessage('Versión guardada cargada. El borrador local anterior se ha sustituido.');
         }}>Cargar versión guardada</button>
       )}
-      <button type="button" disabled={!remote || remote.clientId !== clientId || isSaving || !isCompleteWeeklyDraft(draft)} onClick={() => { void saveDraft(); }}>
-        {isSaving ? 'Guardando…' : 'Guardar horarios semanales'}
+      <button type="button" disabled={localOnly ? !clientId : !remote || remote.clientId !== clientId || isSaving || !isCompleteWeeklyDraft(draft)} onClick={() => { void saveDraft(); }}>
+        {localOnly ? 'Guardar borrador en este navegador' : isSaving ? 'Guardando…' : 'Guardar horarios semanales'}
       </button>
     </article>
   );
