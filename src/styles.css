@@ -2499,6 +2499,23 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   min-height: auto;
 }
 
+.balinese-pool-hours {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.balinese-pool-hours label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.balinese-pool-hours input[type='time'] {
+  width: 100%;
+  min-width: 0;
+}
+
 .weekly-service {
   display: grid;
   gap: 10px;
@@ -2592,6 +2609,10 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
 }
 
 @media (max-width: 800px) {
+  .balinese-pool-hours {
+    grid-template-columns: 1fr;
+  }
+
   .weekly-day {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

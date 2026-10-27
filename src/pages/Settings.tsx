@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseStatus, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor } from './WeeklyHoursEditor';
+import { BalinesePoolPreview } from './BalinesePoolPreview';
 import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
 
 interface SettingsProps {
@@ -729,12 +730,7 @@ export function Settings({
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          <article className="settings-card" aria-label="Configuración de Balinesa">
-            <div className="section-title compact"><div><p className="eyebrow">Servicio independiente</p><h2>Balinesa</h2></div></div>
-            <p className="weekly-hours-notice">{settingsVerified
-              ? `Estado actual: ${settings.servicesEnabled.includes('BALINESA') ? 'activada' : 'desactivada'}. Se configura fuera del calendario semanal.`
-              : 'Estado no verificado: no se pudieron confirmar los Settings. Balinesa se configura fuera de este borrador.'}</p>
-          </article>
+          <BalinesePoolPreview clientId={clientId} />
         )}
 
         {(!isDemoMode || activeSettingsTab === 'general') && (
