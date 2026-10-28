@@ -128,6 +128,18 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/booking_pool_hours_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_test
+      - name: Reproduce Supabase pool-hours default table grant in disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -c "grant all on table public.booking_pool_hours to service_role"
+      - name: Apply pool-hours least-privilege migration only to disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261028120000_booking_pool_hours_least_privilege.sql
+      - name: Assert pool-hours effective table and RPC permissions
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_test -v ON_ERROR_STOP=1 -f supabase/tests/booking_pool_hours_least_privilege_isolated.sql
       - name: Test guarded pool-hours rollback in disposable PostgreSQL
         shell: pwsh
         env:
