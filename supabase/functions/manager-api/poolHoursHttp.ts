@@ -21,7 +21,7 @@ export async function handlePoolHoursHttp(
   if (context instanceof Response) return context;
   if (!context?.clientId) return respond.failure(request, 'UNAUTHENTICATED', 401);
   if (!context.serviceRoleAvailable) return respond.failure(request, 'POOL_HOURS_UNAVAILABLE', 503);
-  if (action === 'poolHours.save' && context.role !== 'ADMIN' && context.role !== 'SUPER_ADMIN') {
+  if (action === 'poolHours.save' && context.role !== 'ADMIN' && context.role !== 'ADMIN-CLIENTE' && context.role !== 'SUPER_ADMIN') {
     return respond.failure(request, 'FORBIDDEN', 403);
   }
   if (action === 'poolHours.save' && !canWrite(context.clientId)) {

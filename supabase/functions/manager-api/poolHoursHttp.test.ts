@@ -51,7 +51,11 @@ function fakeServer(enabled?: string, allowedClientIds?: string) {
       const identity = incoming.headers.get('Authorization');
       return identity === 'tenant-A' ? { clientId: 'A', role: 'ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-B' ? { clientId: 'B', role: 'ADMIN', serviceRoleAvailable: true }
+        : identity === 'tenant-A-client-admin' ? { clientId: 'A', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-B-client-admin' ? { clientId: 'B', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-A-super-admin' ? { clientId: 'A', role: 'SUPER_ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-A-manager' ? { clientId: 'A', role: 'MANAGER', serviceRoleAvailable: true }
+        : identity === 'tenant-A-viewer' ? { clientId: 'A', role: 'VIEWER', serviceRoleAvailable: true }
         : identity === 'no-service-role' ? { clientId: 'A', role: 'ADMIN', serviceRoleAvailable: false }
         : respond.failure(incoming, 'UNAUTHENTICATED', 200);
     };
@@ -131,9 +135,35 @@ Deno.test('pool writes default closed and require exact resolved tenant allowlis
 
 Deno.test('pool writes require an authorized profile role even for an allowlisted tenant', async () => {
   const server = fakeServer('true', 'A');
-  const denied = await server.send('poolHours.save', 'tenant-A-manager', {
+  for (const token of ['tenant-A-manager', 'tenant-A-viewer']) {
+    const denied = await server.send('poolHours.save', token, {
+      opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+    });
+    assert(denied.status === 403 && denied.body.code === 'FORBIDDEN', 'other roles cannot write pool rules');
+  }
+  assert(server.writes === 0 && server.accessCreated === 0, 'role denial occurs before database access');
+});
+
+Deno.test('pool role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN for the resolved tenant', async () => {
+  for (const token of ['tenant-A', 'tenant-A-client-admin', 'tenant-A-super-admin']) {
+    const server = fakeServer('true', 'A');
+    const saved = await server.send('poolHours.save', token, {
+      client_id: 'B', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+    });
+    assert(saved.status === 200 && saved.body.client_id === 'A', `${token} saves only resolved tenant A`);
+    assert(server.writes === 1 && server.rows.has('A') && !server.rows.has('B'), `${token} never writes forged tenant B`);
+  }
+  const closed = fakeServer('false', 'A');
+  const deniedByFlag = await closed.send('poolHours.save', 'tenant-A-client-admin', {
     opening_time: '10:00', closing_time: '19:00', expected_revision: null,
   });
-  assert(denied.status === 403 && denied.body.code === 'FORBIDDEN', 'manager profile cannot write pool rules');
-  assert(server.writes === 0 && server.accessCreated === 0, 'role denial occurs before database access');
+  assert(deniedByFlag.status === 403 && deniedByFlag.body.code === 'POOL_HOURS_WRITE_DISABLED', 'false flag blocks client admin');
+  assert(closed.writes === 0 && closed.accessCreated === 0, 'closed flag creates no database access');
+
+  const restricted = fakeServer('true', 'A');
+  const deniedByTenant = await restricted.send('poolHours.save', 'tenant-B-client-admin', {
+    client_id: 'A', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+  });
+  assert(deniedByTenant.status === 403 && deniedByTenant.body.code === 'POOL_HOURS_WRITE_DISABLED', 'other client admin cannot use Safari allowlist');
+  assert(restricted.writes === 0 && restricted.accessCreated === 0, 'foreign tenant causes no database access');
 });
