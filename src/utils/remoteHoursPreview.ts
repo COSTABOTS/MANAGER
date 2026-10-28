@@ -1,7 +1,7 @@
 import { isWeeklyHoursPreview, type PreviewContext } from './weeklyHoursPreview';
 
-// A later reviewed code change must explicitly open this gate after manager-api is deployed.
-export const REMOTE_HOURS_PREVIEW_ENABLED = false;
+// The remote editor is limited to the verified Preview origin, environment and branch.
+export const REMOTE_HOURS_PREVIEW_ENABLED = true;
 
 export function canUseRemoteHoursPreview(
   context: PreviewContext,
