@@ -2494,6 +2494,14 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   cursor: pointer;
 }
 
+.weekly-service-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
 .weekly-service-switch input {
   width: auto;
   min-height: auto;

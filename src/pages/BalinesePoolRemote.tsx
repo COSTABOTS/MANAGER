@@ -13,6 +13,7 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
   activeClientId.current = clientId;
   const [state, setState] = useState(() => initialPoolHoursRemoteState(clientId));
   const [message, setMessage] = useState('');
+  const [sectionVisibility, setSectionVisibility] = useState({ clientId, open: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +40,7 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
 
   const current = state.clientId === clientId ? state : initialPoolHoursRemoteState(clientId);
   const editable = current.status === 'ready' || current.status === 'unconfigured';
+  const configurationVisible = sectionVisibility.clientId === clientId ? sectionVisibility.open : true;
 
   function changeHours(patch: { openingTime?: string; closingTime?: string }) {
     if (!editable) return;
@@ -69,20 +71,30 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
 
   return (
     <article className="settings-card balinese-pool-preview" aria-label="Horario de piscina de Balinesa">
-      <div className="section-title compact"><div><p className="eyebrow">Configuración remota</p><h2>Balinesa · horario de piscina</h2></div></div>
-      <p className="weekly-hours-notice">El horario es informativo y sirve como corte de reservas del mismo día cuando esa regla se active. Balinesa se reserva por fecha, sin elegir hora. Este editor no modifica SERVICES_ENABLED, capacidades ni reservas.</p>
-      <p role="status">{message}</p>
-      <div className="balinese-pool-hours">
-        <label>Hora de apertura de piscina
-          <input type="time" value={current.openingTime} disabled={!editable} onChange={(event) => changeHours({ openingTime: event.target.value })} />
-        </label>
-        <label>Hora de cierre de piscina
-          <input type="time" value={current.closingTime} disabled={!editable} onChange={(event) => changeHours({ closingTime: event.target.value })} />
+      <div className="section-title compact">
+        <div><p className="eyebrow">Configuración remota</p><h2>Balinesa · horario de piscina</h2></div>
+        <label className="weekly-service-switch">
+          <input type="checkbox" checked={configurationVisible} onChange={(event) => setSectionVisibility({ clientId, open: event.target.checked })} />
+          <span>Mostrar configuración de piscina</span>
         </label>
       </div>
-      <button type="button" disabled={!canSavePoolHours(current)} onClick={() => void saveDraft()}>Guardar horario de piscina</button>
-      {current.status === 'conflict' && <p className="weekly-rule-error">El guardado está bloqueado para evitar sobrescribir cambios ajenos. Copia tu borrador si lo necesitas y recarga la página.</p>}
-      {current.status === 'error' && <p className="weekly-rule-error">El guardado está bloqueado hasta verificar de nuevo la configuración del servidor.</p>}
+      <p className="weekly-hours-notice">El horario es informativo y sirve como corte de reservas del mismo día cuando esa regla se active. Balinesa se reserva por fecha, sin elegir hora. El interruptor solo muestra u oculta esta configuración; no modifica SERVICES_ENABLED, capacidades ni reservas.</p>
+      <p role="status">{message}</p>
+      {configurationVisible && (
+        <>
+          <div className="balinese-pool-hours">
+            <label>Hora de apertura de piscina
+              <input type="time" value={current.openingTime} disabled={!editable} onChange={(event) => changeHours({ openingTime: event.target.value })} />
+            </label>
+            <label>Hora de cierre de piscina
+              <input type="time" value={current.closingTime} disabled={!editable} onChange={(event) => changeHours({ closingTime: event.target.value })} />
+            </label>
+          </div>
+          <button type="button" disabled={!canSavePoolHours(current)} onClick={() => void saveDraft()}>Guardar horario de piscina</button>
+          {current.status === 'conflict' && <p className="weekly-rule-error">El guardado está bloqueado para evitar sobrescribir cambios ajenos. Copia tu borrador si lo necesitas y recarga la página.</p>}
+          {current.status === 'error' && <p className="weekly-rule-error">El guardado está bloqueado hasta verificar de nuevo la configuración del servidor.</p>}
+        </>
+      )}
     </article>
   );
 }
