@@ -170,7 +170,8 @@ export function Settings({
   const settingsVerified = !isLoadingSettings && (
     settingsMessage === 'SETTINGS cargados correctamente' || settingsMessage === 'SETTINGS guardados correctamente'
   );
-  const remoteHoursPreview = canUseRemoteHoursPreview(HOURS_PREVIEW_CONTEXT, clientId, settingsVerified, isDemoMode);
+  const remoteHoursPreview = canUseRemoteHoursPreview(HOURS_PREVIEW_CONTEXT, clientId, settingsVerified,
+    isDemoUser || (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/demo')));
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {

@@ -7,8 +7,8 @@ export function canUseRemoteHoursPreview(
   context: PreviewContext,
   clientId: string,
   settingsVerified: boolean,
-  isDemoMode: boolean,
+  isProtectedDemo: boolean,
   enabled = REMOTE_HOURS_PREVIEW_ENABLED,
 ): boolean {
-  return enabled && Boolean(clientId.trim()) && settingsVerified && !isDemoMode && isWeeklyHoursPreview(context);
+  return enabled && Boolean(clientId.trim()) && settingsVerified && !isProtectedDemo && isWeeklyHoursPreview(context);
 }
