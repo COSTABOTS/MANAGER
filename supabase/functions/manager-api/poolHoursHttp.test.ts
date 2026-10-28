@@ -1,5 +1,6 @@
 import { handlePoolHoursHttp, type PoolHoursAuthContext, type PoolHoursResponseWriters } from './poolHoursHttp.ts';
 import type { PoolHoursAccess, PoolHoursSnapshot } from './poolHoursActions.ts';
+import { canWriteRemoteHours } from './hoursWriteGate.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -12,7 +13,7 @@ const empty: PoolHoursSnapshot = {
   time_zone: 'Europe/Madrid', revision: null,
 };
 
-function fakeServer() {
+function fakeServer(enabled?: string, allowedClientIds?: string) {
   const rows = new Map<string, PoolHoursSnapshot>();
   let writes = 0;
   let accessCreated = 0;
@@ -48,30 +49,31 @@ function fakeServer() {
     });
     const authorize = async (incoming: Request): Promise<PoolHoursAuthContext | Response | null> => {
       const identity = incoming.headers.get('Authorization');
-      return identity === 'tenant-A' ? { clientId: 'A', serviceRoleAvailable: true }
-        : identity === 'tenant-B' ? { clientId: 'B', serviceRoleAvailable: true }
-        : identity === 'no-service-role' ? { clientId: 'A', serviceRoleAvailable: false }
+      return identity === 'tenant-A' ? { clientId: 'A', role: 'ADMIN', serviceRoleAvailable: true }
+        : identity === 'tenant-B' ? { clientId: 'B', role: 'ADMIN', serviceRoleAvailable: true }
+        : identity === 'tenant-A-manager' ? { clientId: 'A', role: 'MANAGER', serviceRoleAvailable: true }
+        : identity === 'no-service-role' ? { clientId: 'A', role: 'ADMIN', serviceRoleAvailable: false }
         : respond.failure(incoming, 'UNAUTHENTICATED', 200);
     };
     const response = await handlePoolHoursHttp(request, { action, ...payload }, action, authorize, () => {
       accessCreated += 1;
       return access;
-    }, respond);
+    }, respond, (clientId) => canWriteRemoteHours(clientId, enabled, allowedClientIds));
     return { status: response.status, body: await response.json() as Record<string, unknown> };
   }
   return { send, rows, get writes() { return writes; }, get accessCreated() { return accessCreated; }, setReadFailure(value: boolean) { readFailure = value; } };
 }
 
 Deno.test('authenticated HTTP get/save isolate tenants and return unconfigured state', async () => {
-  const server = fakeServer();
+  const server = fakeServer('true', 'A');
   const emptyA = await server.send('poolHours.get', 'tenant-A', { client_id: 'B' });
-  assert(emptyA.status === 200 && emptyA.body.configured === false && emptyA.body.opening_time === null, 'unconfigured A has no default');
+  assert(emptyA.status === 200 && emptyA.body.client_id === 'A' && emptyA.body.configured === false && emptyA.body.opening_time === null, 'unconfigured A has no default and echoes the resolved tenant');
   const saved = await server.send('poolHours.save', 'tenant-A', {
     client_id: 'B', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
   });
-  assert(saved.status === 200 && saved.body.revision === revisionA && server.rows.has('A') && !server.rows.has('B'), 'forged tenant is ignored');
+  assert(saved.status === 200 && saved.body.client_id === 'A' && saved.body.revision === revisionA && server.rows.has('A') && !server.rows.has('B'), 'forged tenant is ignored');
   const other = await server.send('poolHours.get', 'tenant-B', { client_id: 'A' });
-  assert(other.status === 200 && other.body.configured === false, 'B cannot read A through the action');
+  assert(other.status === 200 && other.body.client_id === 'B' && other.body.configured === false, 'B cannot read A through the action');
   assert(server.writes === 1, 'only one write reached persistence');
 });
 
@@ -87,7 +89,7 @@ Deno.test('missing auth and missing service role reject before constructing acce
 });
 
 Deno.test('HTTP validation and stale revisions return 400/409 with zero rejected writes', async () => {
-  const server = fakeServer();
+  const server = fakeServer('true', 'A');
   const bad = await server.send('poolHours.save', 'tenant-A', {
     opening_time: '19:00', closing_time: '10:00', expected_revision: null,
   });
@@ -108,4 +110,30 @@ Deno.test('read failure returns 503 rather than an unconfigured success', async 
   const response = await server.send('poolHours.get', 'tenant-A');
   assert(response.status === 503 && response.body.code === 'POOL_HOURS_READ_FAILED', 'read errors fail closed');
   assert(server.writes === 0, 'read failure cannot write');
+});
+
+Deno.test('pool writes default closed and require exact resolved tenant allowlist', async () => {
+  const closed = fakeServer();
+  const readable = await closed.send('poolHours.get', 'tenant-A');
+  const denied = await closed.send('poolHours.save', 'tenant-A', {
+    opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+  });
+  assert(readable.status === 200, 'read remains available');
+  assert(denied.status === 403 && denied.body.code === 'POOL_HOURS_WRITE_DISABLED', 'save fails closed');
+  assert(closed.writes === 0 && closed.accessCreated === 1, 'denied save does not construct database access');
+
+  const restricted = fakeServer('true', 'A');
+  const forged = await restricted.send('poolHours.save', 'tenant-B', {
+    client_id: 'A', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+  });
+  assert(forged.status === 403 && restricted.writes === 0 && restricted.accessCreated === 0, 'body tenant cannot bypass the allowlist');
+});
+
+Deno.test('pool writes require an authorized profile role even for an allowlisted tenant', async () => {
+  const server = fakeServer('true', 'A');
+  const denied = await server.send('poolHours.save', 'tenant-A-manager', {
+    opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+  });
+  assert(denied.status === 403 && denied.body.code === 'FORBIDDEN', 'manager profile cannot write pool rules');
+  assert(server.writes === 0 && server.accessCreated === 0, 'role denial occurs before database access');
 });

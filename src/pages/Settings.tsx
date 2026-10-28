@@ -5,7 +5,7 @@ import { WeeklyHoursEditor } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
 import { BalinesePoolRemote } from './BalinesePoolRemote';
 import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
-import { POOL_HOURS_REMOTE_ENABLED } from '../utils/poolHoursRemoteState';
+import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -81,13 +81,14 @@ const CLIENT_LICENSE_PLANS: ClientLicensePlan[] = ['DEMO', 'PRO'];
 const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MIN_PRE_DINNER_MINUTES = 15;
 const MAX_PRE_DINNER_MINUTES = 1440;
-const WEEKLY_HOURS_UI_ENABLED = typeof window !== 'undefined' && isWeeklyHoursPreview({
-  origin: window.location.origin,
+const HOURS_PREVIEW_CONTEXT = {
+  origin: typeof window !== 'undefined' ? window.location.origin : '',
   environment: import.meta.env.VITE_VERCEL_ENV,
   branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
   deploymentUrl: import.meta.env.VITE_VERCEL_URL,
   branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
-});
+};
+const WEEKLY_HOURS_UI_ENABLED = isWeeklyHoursPreview(HOURS_PREVIEW_CONTEXT);
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -169,6 +170,7 @@ export function Settings({
   const settingsVerified = !isLoadingSettings && (
     settingsMessage === 'SETTINGS cargados correctamente' || settingsMessage === 'SETTINGS guardados correctamente'
   );
+  const remoteHoursPreview = canUseRemoteHoursPreview(HOURS_PREVIEW_CONTEXT, clientId, settingsVerified, isDemoMode);
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
@@ -728,11 +730,11 @@ export function Settings({
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly />
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview} />
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          POOL_HOURS_REMOTE_ENABLED
+          remoteHoursPreview
             ? <BalinesePoolRemote clientId={clientId} />
             : <BalinesePoolPreview clientId={clientId} />
         )}

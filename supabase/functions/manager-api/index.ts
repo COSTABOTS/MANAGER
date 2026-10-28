@@ -1,9 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveReservationStore } from '../_shared/reservation-store/resolver.ts';
 import { readOfficialReservationList } from './reservationListSource.ts';
-import { classifyWeeklyHoursRpcError, readWeeklyHours, saveWeeklyHours, weeklyHoursHttpStatus, type WeeklyHourRule, type WeeklyHoursAccess } from './weeklyHoursActions.ts';
+import { classifyWeeklyHoursRpcError, type WeeklyHourRule, type WeeklyHoursAccess } from './weeklyHoursActions.ts';
+import { handleWeeklyHoursHttp } from './weeklyHoursHttp.ts';
 import type { PoolHoursAccess } from './poolHoursActions.ts';
 import { handlePoolHoursHttp } from './poolHoursHttp.ts';
+import { canWriteRemoteHours, hoursAuthFailureStatus } from './hoursWriteGate.ts';
 import { getCorsHeaders } from './cors.ts';
 
 type ManagerAction =
@@ -867,7 +869,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
   }
 
   if (!token) {
-    return { error: errorResponse(request, 'UNAUTHENTICATED', 'Missing Authorization header', 200, debug) };
+    return { error: errorResponse(request, 'UNAUTHENTICATED', 'Missing Authorization header', hoursAuthFailureStatus(action), debug) };
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -877,7 +879,7 @@ async function resolveOperationalContext(request: Request, body: Record<string, 
 
   if (userError || !userData.user) {
     return {
-      error: errorResponse(request, 'INVALID_TOKEN', userError?.message || 'Invalid Supabase JWT', 200, {
+      error: errorResponse(request, 'INVALID_TOKEN', userError?.message || 'Invalid Supabase JWT', hoursAuthFailureStatus(action), {
         ...debug,
         supabase_error: userError?.message,
       }),
@@ -2760,21 +2762,21 @@ function weeklyHoursAccess(): WeeklyHoursAccess {
 
 async function handleWeeklyHours(
   request: Request,
-  context: { clientId: string; serviceRoleAvailable: boolean },
+  context: { clientId: string; role: string; serviceRoleAvailable: boolean },
   body: Record<string, unknown>,
   action: 'weeklyHours.get' | 'weeklyHours.save',
 ) {
-  if (!context.serviceRoleAvailable || !Deno.env.get('SUPABASE_URL')) {
+  if (!Deno.env.get('SUPABASE_URL')) {
     return errorResponse(request, 'WEEKLY_HOURS_UNAVAILABLE', 'Horarios semanales no disponibles', 503);
   }
-  const access = weeklyHoursAccess();
-  const result = action === 'weeklyHours.get'
-    ? await readWeeklyHours(access, context.clientId)
-    : await saveWeeklyHours(access, context.clientId, body.rules, body.expected_revision);
-  if (!result.ok) {
-    return errorResponse(request, result.code, result.code, weeklyHoursHttpStatus(result.code));
-  }
-  return jsonResponse(request, { ok: true, action, rules: result.rules, revision: result.revision });
+  return handleWeeklyHoursHttp(request, body, action, async () => context, weeklyHoursAccess, {
+    success: (incoming, payload) => jsonResponse(incoming, payload),
+    failure: (incoming, code, status) => errorResponse(incoming, code, code, status),
+  }, (resolvedClientId) => canWriteRemoteHours(
+    resolvedClientId,
+    Deno.env.get('ENABLE_MANAGER_HOURS_WRITES'),
+    Deno.env.get('MANAGER_HOURS_WRITE_CLIENT_IDS'),
+  ));
 }
 
 function poolHoursAccess(): PoolHoursAccess {
@@ -2801,7 +2803,7 @@ function poolHoursAccess(): PoolHoursAccess {
 
 async function handlePoolHours(
   request: Request,
-  context: { clientId: string; serviceRoleAvailable: boolean },
+  context: { clientId: string; role: string; serviceRoleAvailable: boolean },
   body: Record<string, unknown>,
   action: 'poolHours.get' | 'poolHours.save',
 ) {
@@ -2811,7 +2813,11 @@ async function handlePoolHours(
   return handlePoolHoursHttp(request, body, action, async () => context, poolHoursAccess, {
     success: (incoming, payload) => jsonResponse(incoming, payload),
     failure: (incoming, code, status) => errorResponse(incoming, code, code, status),
-  });
+  }, (resolvedClientId) => canWriteRemoteHours(
+    resolvedClientId,
+    Deno.env.get('ENABLE_MANAGER_HOURS_WRITES'),
+    Deno.env.get('MANAGER_HOURS_WRITE_CLIENT_IDS'),
+  ));
 }
 
 Deno.serve(async (request) => {

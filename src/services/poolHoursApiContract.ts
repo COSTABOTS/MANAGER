@@ -10,10 +10,10 @@ export type PoolHoursInvoker = (body: Record<string, unknown>) => Promise<unknow
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const REVISION_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function parsePoolHoursResponse(value: unknown, action: 'poolHours.get' | 'poolHours.save'): PoolHoursSnapshot {
+export function parsePoolHoursResponse(value: unknown, action: 'poolHours.get' | 'poolHours.save', expectedClientId: string): PoolHoursSnapshot {
   if (!value || typeof value !== 'object') throw new Error('POOL_HOURS_RESPONSE_INVALID');
   const response = value as Record<string, unknown>;
-  if (response.ok !== true || response.action !== action || response.time_zone !== 'Europe/Madrid') {
+  if (response.ok !== true || response.action !== action || response.client_id !== expectedClientId || response.time_zone !== 'Europe/Madrid') {
     throw new Error(typeof response.code === 'string' ? response.code : 'POOL_HOURS_RESPONSE_INVALID');
   }
   if (response.configured === false && response.opening_time === null
@@ -35,18 +35,23 @@ export function parsePoolHoursResponse(value: unknown, action: 'poolHours.get' |
   };
 }
 
-export function createPoolHoursApi(call: PoolHoursInvoker) {
+export function createPoolHoursApi(call: PoolHoursInvoker, activeClientId: () => string) {
+  function assertClient(expectedClientId: string) {
+    if (!expectedClientId || activeClientId() !== expectedClientId) throw new Error('POOL_HOURS_TENANT_CHANGED');
+  }
   return {
-    async get(): Promise<PoolHoursSnapshot> {
-      return parsePoolHoursResponse(await call({ action: 'poolHours.get' }), 'poolHours.get');
+    async get(expectedClientId: string): Promise<PoolHoursSnapshot> {
+      assertClient(expectedClientId);
+      return parsePoolHoursResponse(await call({ action: 'poolHours.get' }), 'poolHours.get', expectedClientId);
     },
-    async save(openingTime: string, closingTime: string, expectedRevision: string | null): Promise<PoolHoursSnapshot> {
+    async save(expectedClientId: string, openingTime: string, closingTime: string, expectedRevision: string | null): Promise<PoolHoursSnapshot> {
+      assertClient(expectedClientId);
       return parsePoolHoursResponse(await call({
         action: 'poolHours.save',
         opening_time: openingTime,
         closing_time: closingTime,
         expected_revision: expectedRevision,
-      }), 'poolHours.save');
+      }), 'poolHours.save', expectedClientId);
     },
   };
 }

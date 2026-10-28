@@ -35,6 +35,3 @@ export function poolHoursConflictState(state: PoolHoursRemoteState): PoolHoursRe
 export function poolHoursErrorState(state: PoolHoursRemoteState): PoolHoursRemoteState {
   return { ...state, status: 'error' };
 }
-
-/** Requires a later reviewed code change; a Preview environment variable cannot enable remote writes. */
-export const POOL_HOURS_REMOTE_ENABLED = false;

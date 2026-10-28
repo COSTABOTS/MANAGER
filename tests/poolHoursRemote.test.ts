@@ -5,7 +5,6 @@ import {
   loadedPoolHoursRemoteState,
   poolHoursConflictState,
   poolHoursErrorState,
-  POOL_HOURS_REMOTE_ENABLED,
 } from '../src/utils/poolHoursRemoteState.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -18,8 +17,7 @@ const blank: PoolHoursSnapshot = {
   time_zone: 'Europe/Madrid', revision: null,
 };
 
-Deno.test('Preview keeps the remote switch closed and never derives remote data from localStorage', () => {
-  assert(POOL_HOURS_REMOTE_ENABLED === false, 'remote mode must need a reviewed code change');
+Deno.test('remote pool state starts blank and cannot save before a server read', () => {
   const state = initialPoolHoursRemoteState('restaurant-a');
   assert(state.status === 'loading' && state.openingTime === '' && state.closingTime === '' && state.revision === null, 'remote state starts blank');
   assert(!canSavePoolHours(state), 'no save before a successful server read');
@@ -29,9 +27,9 @@ Deno.test('remote get reads an unconfigured tenant without inventing hours', asy
   const requests: Record<string, unknown>[] = [];
   const api = createPoolHoursApi(async (body) => {
     requests.push(body);
-    return { ok: true, action: 'poolHours.get', ...blank };
-  });
-  const snapshot = await api.get();
+    return { ok: true, action: 'poolHours.get', client_id: 'restaurant-a', ...blank };
+  }, () => 'restaurant-a');
+  const snapshot = await api.get('restaurant-a');
   const state = loadedPoolHoursRemoteState('restaurant-a', snapshot);
   assert(requests.length === 1 && requests[0].action === 'poolHours.get', 'get invokes the Manager action');
   assert(!('client_id' in requests[0]), 'frontend does not select a tenant for the RPC');
@@ -43,10 +41,10 @@ Deno.test('remote save sends the loaded revision and accepts the returned revisi
   const requests: Record<string, unknown>[] = [];
   const api = createPoolHoursApi(async (body) => {
     requests.push(body);
-    return { ok: true, action: 'poolHours.save', configured: true, opening_time: '10:00',
+    return { ok: true, action: 'poolHours.save', client_id: 'restaurant-a', configured: true, opening_time: '10:00',
       closing_time: '19:00', time_zone: 'Europe/Madrid', revision };
-  });
-  const snapshot = await api.save('10:00', '19:00', null);
+  }, () => 'restaurant-a');
+  const snapshot = await api.save('restaurant-a', '10:00', '19:00', null);
   assert(requests.length === 1 && requests[0].expected_revision === null, 'first save uses null revision');
   assert(requests[0].opening_time === '10:00' && !('client_id' in requests[0]), 'payload contains hours but no tenant id');
   const state = loadedPoolHoursRemoteState('restaurant-a', snapshot);
@@ -66,12 +64,24 @@ Deno.test('conflict and read errors preserve the draft while blocking another wr
 
 Deno.test('malformed or failed server responses cannot become a successful configuration', async () => {
   for (const response of [
-    { ok: true, action: 'poolHours.get', configured: true, opening_time: '10:00', closing_time: '19:00', time_zone: 'UTC', revision },
-    { ok: true, action: 'poolHours.get', configured: false, opening_time: '10:00', closing_time: null, time_zone: 'Europe/Madrid', revision: null },
+    { ok: true, action: 'poolHours.get', client_id: 'restaurant-a', configured: true, opening_time: '10:00', closing_time: '19:00', time_zone: 'UTC', revision },
+    { ok: true, action: 'poolHours.get', client_id: 'restaurant-a', configured: false, opening_time: '10:00', closing_time: null, time_zone: 'Europe/Madrid', revision: null },
+    { ok: true, action: 'poolHours.get', client_id: 'restaurant-b', ...blank },
     { ok: false, action: 'poolHours.get', code: 'POOL_HOURS_READ_FAILED' },
   ]) {
     let rejected = false;
-    try { await createPoolHoursApi(async () => response).get(); } catch { rejected = true; }
+    try { await createPoolHoursApi(async () => response, () => 'restaurant-a').get('restaurant-a'); } catch { rejected = true; }
     assert(rejected, 'invalid or failed remote response must be rejected');
   }
+});
+
+Deno.test('pool-hours client refuses a tenant switch before either API action', async () => {
+  let calls = 0;
+  const api = createPoolHoursApi(async () => { calls += 1; return {}; }, () => 'restaurant-b');
+  for (const action of [() => api.get('restaurant-a'), () => api.save('restaurant-a', '10:00', '19:00', null)]) {
+    let rejected = false;
+    try { await action(); } catch { rejected = true; }
+    assert(rejected, 'stale tenant must be rejected');
+  }
+  assert(calls === 0, 'tenant mismatch must not invoke manager-api');
 });

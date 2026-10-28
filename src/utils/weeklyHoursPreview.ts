@@ -1,4 +1,4 @@
-type PreviewContext = {
+export type PreviewContext = {
   origin: string;
   environment?: string;
   branch?: string;

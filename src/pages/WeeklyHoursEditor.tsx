@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BookingService, ServiceWithHours } from '../types';
 import { draftFromWeeklyRows, getWeeklyHours, saveWeeklyHours } from '../services/weeklyHoursApi';
 import {
@@ -44,49 +44,57 @@ function loadPreviewServices(clientId: string, servicesEnabled: BookingService[]
   return initialPreviewServices(settingsVerified ? servicesEnabled : []);
 }
 
-function loadDraft(clientId: string): WeeklyHoursDraft {
-  if (!clientId) return createWeeklyHoursDraft();
+function loadStoredDraft(clientId: string): WeeklyHoursDraft | null {
+  if (!clientId) return null;
   try {
     const saved = window.localStorage.getItem(storageKey(clientId));
-    return saved ? parseWeeklyHoursDraft(JSON.parse(saved)) ?? createWeeklyHoursDraft() : createWeeklyHoursDraft();
+    return saved ? parseWeeklyHoursDraft(JSON.parse(saved)) : null;
   } catch {
-    return createWeeklyHoursDraft();
+    return null;
   }
 }
 
-function hasStoredDraft(clientId: string) {
-  try { return Boolean(clientId && window.localStorage.getItem(storageKey(clientId))); }
-  catch { return false; }
+function loadDraft(clientId: string): WeeklyHoursDraft {
+  return loadStoredDraft(clientId) ?? createWeeklyHoursDraft();
 }
 
 export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false, settingsVerified = false }: WeeklyHoursEditorProps) {
-  const [state, setState] = useState(() => ({ clientId, draft: loadDraft(clientId) }));
+  const activeClientId = useRef(clientId);
+  activeClientId.current = clientId;
+  const [state, setState] = useState(() => ({ clientId, draft: localOnly ? loadDraft(clientId) : createWeeklyHoursDraft() }));
   const [previewServices, setPreviewServices] = useState(() => ({ clientId, enabled: loadPreviewServices(clientId, servicesEnabled, settingsVerified) }));
   const [storageError, setStorageError] = useState(false);
   const [remote, setRemote] = useState<{ clientId: string; revision: string; draft: WeeklyHoursDraft } | null>(null);
+  const [storedDraft, setStoredDraft] = useState<WeeklyHoursDraft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    const localDraftExists = hasStoredDraft(clientId);
-    setState({ clientId, draft: loadDraft(clientId) });
+    const localDraft = loadStoredDraft(clientId);
+    setState({ clientId, draft: localOnly ? localDraft ?? createWeeklyHoursDraft() : createWeeklyHoursDraft() });
     setPreviewServices({ clientId, enabled: loadPreviewServices(clientId, servicesEnabled, settingsVerified) });
     setRemote(null);
+    setStoredDraft(localOnly ? null : localDraft);
+    setIsSaving(false);
     if (localOnly) {
       setMessage('Borrador local cargado. No afecta a las reservas.');
       return () => { cancelled = true; };
     }
+    if (!clientId || !settingsVerified) {
+      setMessage('Esperando la carga verificada de SETTINGS y del restaurante. No se puede guardar.');
+      return () => { cancelled = true; };
+    }
     setMessage('Cargando horarios guardados…');
     if (clientId) {
-      void getWeeklyHours().then((response) => {
+      void getWeeklyHours(clientId).then((response) => {
         if (cancelled) return;
         const serverDraft = draftFromWeeklyRows(response.rules);
         if (!serverDraft) throw new Error('WEEKLY_HOURS_INVALID');
         setRemote({ clientId, revision: response.revision, draft: serverDraft });
-        if (!localDraftExists) setState({ clientId, draft: serverDraft });
-        setMessage(localDraftExists && JSON.stringify(loadDraft(clientId)) !== JSON.stringify(serverDraft)
-          ? 'Existe un borrador local distinto de los horarios guardados. Revisa antes de guardar o carga la versión del servidor.'
+        setState({ clientId, draft: serverDraft });
+        setMessage(localDraft && JSON.stringify(localDraft) !== JSON.stringify(serverDraft)
+          ? 'Existe un borrador local distinto. Se muestra la versión del servidor; puedes cargar el borrador expresamente para revisarlo.'
           : 'Horarios cargados. El calendario semanal sigue sin activar.');
       }).catch((error: unknown) => {
         if (!cancelled) setMessage(`No se pudieron leer los horarios: ${error instanceof Error ? error.message : String(error)}. No se puede guardar.`);
@@ -96,21 +104,22 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
   }, [clientId, localOnly, settingsVerified]);
 
   useEffect(() => {
-    if (!clientId || state.clientId !== clientId) return;
+    if (!localOnly || !clientId || state.clientId !== clientId) return;
     try {
       window.localStorage.setItem(storageKey(clientId), JSON.stringify(state.draft));
       setStorageError(false);
     } catch {
       setStorageError(true);
     }
-  }, [clientId, state]);
+  }, [clientId, localOnly, state]);
 
-  const draft = state.clientId === clientId ? state.draft : loadDraft(clientId);
+  const draft = state.clientId === clientId ? state.draft : localOnly ? loadDraft(clientId) : createWeeklyHoursDraft();
   const localServices = previewServices.clientId === clientId
     ? previewServices.enabled
     : loadPreviewServices(clientId, servicesEnabled, settingsVerified);
   const activeRestaurantServices = RESTAURANT_SERVICES.filter((service) => servicesEnabled.includes(service));
-  const canEdit = localOnly ? Boolean(clientId) : remote?.clientId === clientId && !isSaving;
+  const canEdit = localOnly ? Boolean(clientId) : settingsVerified && remote?.clientId === clientId && !isSaving;
+  const hasRemoteChanges = remote?.clientId === clientId && JSON.stringify(draft) !== JSON.stringify(remote.draft);
   const summary = localOnly && settingsVerified ? summarizeWeeklyDraft(draft, localServices) : null;
 
   function updateDraft(next: WeeklyHoursDraft) {
@@ -143,26 +152,28 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
       }
       return;
     }
-    if (!remote || remote.clientId !== clientId || isSaving || !isCompleteWeeklyDraft(draft)) return;
+    if (!settingsVerified || !remote || remote.clientId !== clientId || isSaving || !hasRemoteChanges || !isCompleteWeeklyDraft(draft)) return;
     setIsSaving(true);
     setMessage('Guardando 21 reglas…');
     try {
-      const response = await saveWeeklyHours(toWeeklyHoursRows(draft), remote.revision);
+      const response = await saveWeeklyHours(clientId, toWeeklyHoursRows(draft), remote.revision);
+      if (activeClientId.current !== clientId) return;
       const savedDraft = draftFromWeeklyRows(response.rules);
       if (!savedDraft) throw new Error('WEEKLY_HOURS_INVALID');
       setRemote({ clientId, revision: response.revision, draft: savedDraft });
       setState({ clientId, draft: savedDraft });
       setMessage('21 reglas guardadas. El calendario semanal sigue sin activar.');
     } catch (error) {
+      if (activeClientId.current !== clientId) return;
       const code = error instanceof Error ? error.message : String(error);
       if (code.includes('WEEKLY_HOURS_CONFLICT')) {
         setRemote(null);
-        setMessage('Otro cambio actualizó los horarios. Conservamos tu borrador local. Recarga la página y compara antes de guardar.');
+        setMessage('Otro cambio actualizó los horarios. Tu borrador permanece en pantalla; cópialo antes de recargar si lo necesitas.');
       } else {
         setMessage(`No se guardaron los horarios: ${code}`);
       }
     } finally {
-      setIsSaving(false);
+      if (activeClientId.current === clientId) setIsSaving(false);
     }
   }
 
@@ -257,13 +268,19 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
         {message || (isCompleteWeeklyDraft(draft) ? '21 reglas en el borrador local. Sin activar.' : 'Completa las horas de los días abiertos.')}
       </p>
       {storageError && <p className="weekly-rule-error">No se pudo conservar el borrador en este navegador.</p>}
+      {!localOnly && storedDraft && remote?.clientId === clientId && JSON.stringify(storedDraft) !== JSON.stringify(remote.draft) && (
+        <button type="button" className="secondary-button" disabled={isSaving} onClick={() => {
+          setState({ clientId, draft: storedDraft });
+          setMessage('Borrador local cargado para revisión. No se ha guardado en Supabase.');
+        }}>Cargar borrador local para revisar</button>
+      )}
       {!localOnly && remote?.clientId === clientId && JSON.stringify(draft) !== JSON.stringify(remote.draft) && (
         <button type="button" className="secondary-button" disabled={isSaving} onClick={() => {
           setState({ clientId, draft: remote.draft });
           setMessage('Versión guardada cargada. El borrador local anterior se ha sustituido.');
         }}>Cargar versión guardada</button>
       )}
-      <button type="button" disabled={localOnly ? !clientId : !remote || remote.clientId !== clientId || isSaving || !isCompleteWeeklyDraft(draft)} onClick={() => { void saveDraft(); }}>
+      <button type="button" disabled={localOnly ? !clientId : !canEdit || !hasRemoteChanges || !isCompleteWeeklyDraft(draft)} onClick={() => { void saveDraft(); }}>
         {localOnly ? 'Guardar borrador en este navegador' : isSaving ? 'Guardando…' : 'Guardar horarios semanales'}
       </button>
     </article>

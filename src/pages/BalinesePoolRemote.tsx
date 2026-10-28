@@ -23,7 +23,7 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
       setMessage('No hay un restaurante autenticado. No se puede guardar.');
       return () => { cancelled = true; };
     }
-    void getPoolHours().then((snapshot) => {
+    void getPoolHours(clientId).then((snapshot) => {
       if (cancelled) return;
       setState(loadedPoolHoursRemoteState(clientId, snapshot));
       setMessage(snapshot.configured
@@ -52,7 +52,7 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
     setState((previous) => previous.clientId === clientId ? { ...previous, status: 'saving' } : previous);
     setMessage('Guardando el horario…');
     try {
-      const saved = await savePoolHours(submitted.openingTime, submitted.closingTime, submitted.revision);
+      const saved = await savePoolHours(clientId, submitted.openingTime, submitted.closingTime, submitted.revision);
       if (activeClientId.current !== clientId) return;
       setState((previous) => previous.clientId === clientId ? loadedPoolHoursRemoteState(clientId, saved) : previous);
       setMessage('Horario guardado. El corte de reservas sigue sin activar.');
