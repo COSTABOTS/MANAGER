@@ -10,6 +10,10 @@ Deno.test('partial general save sends only changed SETTINGS keys', () => {
     'unchanged general settings cause no remote save');
   assert(JSON.stringify(changedSettingValues({ A: '1', B: '2' }, { A: '1', B: '3' })) === JSON.stringify({ B: '3' }),
     'an unrelated key cannot be overwritten');
+  const current = { SERVICES_ENABLED: 'ALMUERZO,CENA', BOOKING_INTERVAL: '30' };
+  const changed = changedSettingValues(current, { ...current, BOOKING_INTERVAL: '60' });
+  assert(JSON.stringify(changed) === JSON.stringify({ BOOKING_INTERVAL: '60' }),
+    'an unchanged SERVICES_ENABLED must never be included in a general save');
 });
 
 Deno.test('general-only changes do not trigger capacity save', () => {
