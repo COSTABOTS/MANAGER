@@ -20,6 +20,10 @@ interface WeeklyHoursEditorProps {
   servicesEnabled: BookingService[];
   localOnly?: boolean;
   settingsVerified?: boolean;
+  onServiceActivationChange?: (service: BookingService, enabled: boolean) => Promise<void>;
+  canActivateServices?: boolean;
+  activationService?: BookingService | null;
+  activationMessage?: string;
 }
 
 const SERVICE_LABELS: Record<ServiceWithHours, string> = {
@@ -58,12 +62,12 @@ function loadDraft(clientId: string): WeeklyHoursDraft {
   return loadStoredDraft(clientId) ?? createWeeklyHoursDraft();
 }
 
-export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false, settingsVerified = false }: WeeklyHoursEditorProps) {
+export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false, settingsVerified = false,
+  onServiceActivationChange, canActivateServices = false, activationService = null, activationMessage = '' }: WeeklyHoursEditorProps) {
   const activeClientId = useRef(clientId);
   activeClientId.current = clientId;
   const [state, setState] = useState(() => ({ clientId, draft: localOnly ? loadDraft(clientId) : createWeeklyHoursDraft() }));
   const [previewServices, setPreviewServices] = useState(() => ({ clientId, enabled: loadPreviewServices(clientId, servicesEnabled, settingsVerified) }));
-  const [visibleServices, setVisibleServices] = useState<{ clientId: string; expanded: Partial<Record<ServiceWithHours, boolean>> }>({ clientId, expanded: {} });
   const [storageError, setStorageError] = useState(false);
   const [remote, setRemote] = useState<{ clientId: string; revision: string; draft: WeeklyHoursDraft } | null>(null);
   const [storedDraft, setStoredDraft] = useState<WeeklyHoursDraft | null>(null);
@@ -189,7 +193,7 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
       <p className="weekly-hours-notice">
         {localOnly
           ? 'Vista de prueba: los horarios se guardan solo en este navegador. No afectan a las reservas.'
-          : 'Puedes guardar las 21 reglas de forma independiente sin activar el calendario semanal. Los interruptores de configuración solo muestran u ocultan campos: no activan servicios ni modifican reservas o capacidades.'}
+          : 'Los interruptores guardan qué servicios ofrece el restaurante en SERVICES_ENABLED. Las 21 reglas semanales se guardan aparte y su estado en HOY es informativo hasta activar la integración pública.'}
       </p>
       {localOnly && <div className="weekly-summary" aria-label="Resumen del borrador semanal">
         <p className="eyebrow">Resumen automático · borrador local</p>
@@ -202,9 +206,6 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
       )}
       {RESTAURANT_SERVICES.map((service) => {
         const globallyEnabled = localOnly ? localServices[service] : servicesEnabled.includes(service);
-        const configurationVisible = visibleServices.clientId === clientId
-          ? visibleServices.expanded[service] ?? globallyEnabled
-          : globallyEnabled;
         return (
           <section className="weekly-service" key={service} aria-label={`Horario de ${SERVICE_LABELS[service]}`}>
             <div className="weekly-service-heading">
@@ -213,23 +214,20 @@ export function WeeklyHoursEditor({ clientId, servicesEnabled, localOnly = false
                 <input type="checkbox" checked={globallyEnabled} disabled={!canEdit} onChange={(event) => updateLocalService(service, event.target.checked)} />
                 <span>{globallyEnabled ? 'Activo en borrador' : 'Inactivo en borrador'}</span>
               </label> : <div className="weekly-service-controls">
-                <span>{globallyEnabled ? 'Servicio activado en Settings' : 'Desactivado en Settings'}</span>
                 <label className="weekly-service-switch">
                   <input
                     type="checkbox"
-                    checked={configurationVisible}
-                    onChange={(event) => setVisibleServices((current) => ({
-                      clientId,
-                      expanded: { ...(current.clientId === clientId ? current.expanded : {}), [service]: event.target.checked },
-                    }))}
+                    checked={globallyEnabled}
+                    disabled={!canActivateServices || !onServiceActivationChange}
+                    onChange={(event) => { void onServiceActivationChange?.(service, event.target.checked); }}
                   />
-                  <span>Mostrar configuración</span>
+                  <span>{globallyEnabled ? 'Servicio activo' : 'Servicio inactivo'}</span>
                 </label>
               </div>}
             </div>
-            {!globallyEnabled && <p className="weekly-service-hint">{localOnly ? 'Activa el servicio en este borrador para editar sus siete días. Los horarios anteriores se conservan.' : 'Servicio desactivado en Settings. Puedes consultar sus horarios guardados, pero no editarlos.'}</p>}
-            {!localOnly && globallyEnabled && !configurationVisible && <p className="weekly-service-hint">Configuración oculta. Los horarios guardados se conservan.</p>}
-            {(localOnly ? globallyEnabled : configurationVisible) && <div className="weekly-days">
+            {!globallyEnabled && <p className="weekly-service-hint">{localOnly ? 'Activa el servicio en este borrador para editar sus siete días. Los horarios anteriores se conservan.' : 'El servicio está desactivado. Sus horarios guardados se conservan y volverán a mostrarse al activarlo.'}</p>}
+            {activationService === service && activationMessage && <p className="weekly-hours-status" role="status">{activationMessage}</p>}
+            {globallyEnabled && <div className="weekly-days">
               {WEEKLY_DAYS.map(({ weekday, label }) => {
                 const rule = draft[service][weekday];
                 const invalid = !isValidWeeklyRule(rule);

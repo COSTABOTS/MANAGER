@@ -8,12 +8,12 @@ import {
   poolHoursErrorState,
 } from '../utils/poolHoursRemoteState';
 
-export function BalinesePoolRemote({ clientId }: { clientId: string }) {
+export function BalinesePoolRemote({ clientId, enabled, onServiceActivationChange, canActivateService, activationMessage }:
+  { clientId: string; enabled: boolean; onServiceActivationChange: (service: 'BALINESA', enabled: boolean) => Promise<void>; canActivateService: boolean; activationMessage: string }) {
   const activeClientId = useRef(clientId);
   activeClientId.current = clientId;
   const [state, setState] = useState(() => initialPoolHoursRemoteState(clientId));
   const [message, setMessage] = useState('');
-  const [sectionVisibility, setSectionVisibility] = useState({ clientId, open: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +40,6 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
 
   const current = state.clientId === clientId ? state : initialPoolHoursRemoteState(clientId);
   const editable = current.status === 'ready' || current.status === 'unconfigured';
-  const configurationVisible = sectionVisibility.clientId === clientId ? sectionVisibility.open : true;
 
   function changeHours(patch: { openingTime?: string; closingTime?: string }) {
     if (!editable) return;
@@ -74,13 +73,15 @@ export function BalinesePoolRemote({ clientId }: { clientId: string }) {
       <div className="section-title compact">
         <div><p className="eyebrow">Configuración remota</p><h2>Balinesa · horario de piscina</h2></div>
         <label className="weekly-service-switch">
-          <input type="checkbox" checked={configurationVisible} onChange={(event) => setSectionVisibility({ clientId, open: event.target.checked })} />
-          <span>Mostrar configuración de piscina</span>
+          <input type="checkbox" checked={enabled} disabled={!canActivateService} onChange={(event) => { void onServiceActivationChange('BALINESA', event.target.checked); }} />
+          <span>{enabled ? 'Servicio activo' : 'Servicio inactivo'}</span>
         </label>
       </div>
-      <p className="weekly-hours-notice">El horario es informativo y sirve como corte de reservas del mismo día cuando esa regla se active. Balinesa se reserva por fecha, sin elegir hora. El interruptor solo muestra u oculta esta configuración; no modifica SERVICES_ENABLED, capacidades ni reservas.</p>
+      <p className="weekly-hours-notice">El interruptor guarda el estado real de Balinesa en SERVICES_ENABLED. El horario de piscina se conserva al desactivar el servicio y sigue siendo informativo hasta activar la regla de corte. Balinesa se reserva por fecha, sin elegir hora.</p>
       <p role="status">{message}</p>
-      {configurationVisible && (
+      {activationMessage && <p className="weekly-hours-status" role="status">{activationMessage}</p>}
+      {!enabled && <p className="weekly-service-hint">La configuración de piscina está oculta. El horario guardado se conserva.</p>}
+      {enabled && (
         <>
           <div className="balinese-pool-hours">
             <label>Hora de apertura de piscina

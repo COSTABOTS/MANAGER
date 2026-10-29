@@ -6,11 +6,14 @@ import { ReservationsTable } from '../components/ReservationsTable';
 import { WalkInForm } from '../components/WalkInForm';
 import { DEFAULT_COSTABOTS_LOGO, RESTAURANT_LOGO } from '../config/branding';
 import { getTodayData, hasTodayDataEndpoint } from '../services/api';
+import { getWeeklyHours } from '../services/weeklyHoursApi';
+import type { WeeklyHoursRow } from '../services/weeklyHoursApiContract';
 import type { TodayData } from '../services/api';
 import type { BookingService, DayState, ReservableResource, Reservation } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation } from '../utils/reservationStatus';
+import { getTodayWeeklyHoursLabel } from '../utils/todayWeeklyHours';
 
 interface TodayProps {
   dayStatus: DayState;
@@ -22,9 +25,12 @@ interface TodayProps {
   bookingInterval: 30 | 60;
   reservations: Reservation[];
   allReservations: Reservation[];
+  inactiveServiceReservations?: Reservation[];
+  clientId?: string;
+  weeklyPreview?: boolean;
   reservableResources: ReservableResource[];
   serviceTabs: BookingService[];
-  selectedService: BookingService;
+  selectedService: BookingService | null;
   onServiceChange: (service: BookingService) => void;
   tableOptions: string[];
   hasLoadedTables: boolean;
@@ -123,6 +129,9 @@ export function Today({
   bookingInterval,
   reservations,
   allReservations,
+  inactiveServiceReservations = [],
+  clientId = '',
+  weeklyPreview = false,
   reservableResources,
   serviceTabs,
   selectedService,
@@ -146,6 +155,7 @@ export function Today({
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [isLoadingToday, setIsLoadingToday] = useState(false);
   const [todayError, setTodayError] = useState<string | null>(null);
+  const [weeklySnapshot, setWeeklySnapshot] = useState<{ clientId: string; rules: WeeklyHoursRow[]; error: boolean } | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [selectedBalineseResource, setSelectedBalineseResource] = useState<ReservableResource | null>(null);
   const [balineseDraft, setBalineseDraft] = useState(EMPTY_BALINESE_DRAFT);
@@ -201,6 +211,17 @@ export function Today({
   }, []);
 
   useEffect(() => {
+    if (!weeklyPreview || !clientId) return;
+    let cancelled = false;
+    void getWeeklyHours(clientId).then((snapshot) => {
+      if (!cancelled) setWeeklySnapshot({ clientId, rules: snapshot.rules, error: false });
+    }).catch(() => {
+      if (!cancelled) setWeeklySnapshot({ clientId, rules: [], error: true });
+    });
+    return () => { cancelled = true; };
+  }, [clientId, weeklyPreview, dayStatus.date]);
+
+  useEffect(() => {
     setManualDraft((current) => (timeSlots.includes(current.time) ? current : { ...current, time: timeSlots[0] ?? getCurrentTime() }));
   }, [timeSlots]);
 
@@ -250,7 +271,13 @@ export function Today({
   const displayCapacity = totalCapacity;
   const displayServicePax = reservations.reduce((total, reservation) => total + reservation.pax, 0);
   const displayOccupancyPercent = displayCapacity > 0 ? Math.min(100, Math.round((displayServicePax / displayCapacity) * 100)) : occupancyPercent;
-  const selectedServiceLabel = selectedService === 'BALINESA' ? 'BALINESAS' : selectedService;
+  const selectedServiceLabel = serviceTabs.length === 0 ? 'SIN SERVICIOS ACTIVOS' : selectedService === 'BALINESA' ? 'BALINESAS' : selectedService ?? 'SIN SERVICIO';
+  const weeklyLabel = !weeklyPreview || !selectedService || selectedService === 'BALINESA' ? null
+    : weeklySnapshot?.clientId !== clientId ? 'Cargando horario semanal…'
+      : weeklySnapshot.error ? 'Horario semanal no disponible'
+        : getTodayWeeklyHoursLabel(dayStatus.date, selectedService, weeklySnapshot.rules);
+  const inactiveRestaurantReservations = inactiveServiceReservations.filter((reservation) => reservation.service !== 'BALINESA');
+  const inactiveBalineseReservations = inactiveServiceReservations.filter((reservation) => reservation.service === 'BALINESA');
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
 
   useEffect(() => {
@@ -493,6 +520,12 @@ export function Today({
         </div>
       </section>
 
+      {weeklyPreview && <p className="weekly-hours-notice today-weekly-status" role="status">
+        {selectedService === 'BALINESA' ? 'Balinesa se reserva por fecha. Su horario de piscina es independiente.'
+          : weeklyLabel ?? 'No hay servicios activos.'}
+        {' '}Este estado semanal es informativo: aún no controla la disponibilidad ni la creación pública.
+      </p>}
+
       {isToastVisible && (
         <div className="toast-notification" role="status">
           <span>{syncLabel}</span>
@@ -530,7 +563,7 @@ export function Today({
       <section className="table-section">
         <div className="today-reservations-toolbar">
           <div className="today-service-tabs-area">
-            {serviceTabs.length > 1 && (
+            {serviceTabs.length > 0 && (
               <div className="segmented-control today-service-tabs" aria-label="Servicio">
                 {serviceTabs.map((service) => (
                   <button
@@ -604,6 +637,8 @@ export function Today({
               </button>
             </div>
           </>
+        ) : serviceTabs.length === 0 ? (
+          <div className="sync-status">No hay servicios activos. Las reservas existentes siguen disponibles abajo.</div>
         ) : isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (
@@ -622,6 +657,23 @@ export function Today({
           />
         )}
       </section>
+
+      {inactiveServiceReservations.length > 0 && <section className="table-section" aria-label="Reservas existentes de servicios desactivados">
+        <h2>Reservas existentes de servicios desactivados</h2>
+        <p className="weekly-hours-notice">Desactivar un servicio no borra ni oculta sus reservas actuales. Puedes seguir gestionándolas aquí.</p>
+        {inactiveRestaurantReservations.length > 0 && <ReservationsTable
+          reservations={inactiveRestaurantReservations} tableOptions={tableOptions} hasLoadedTables={hasLoadedTables}
+          isLoadingTables={isLoadingTables} onEnsureTables={onEnsureTables} onUpdate={onUpdateReservation} onCancel={onCancelReservation}
+        />}
+        {inactiveBalineseReservations.map((reservation) => <article className="weekly-inactive-balinese" key={reservation.id}>
+          <strong>Balinesa · {reservation.name || reservation.room || 'Sin nombre'}</strong>
+          <span>{reservation.pax} pax · {reservation.balinesePackage || 'Paquete sin indicar'}</span>
+          <button className="balinese-paid-badge" type="button" onClick={() => void onBalinesePayment(reservation.id, !reservation.balinesePaid).catch(() => undefined)}>
+            {reservation.balinesePaid ? '● PAGADO' : 'NO PAGADO'}
+          </button>
+          <button className="danger-button compact-action" type="button" onClick={() => onCancelReservation(reservation)}>Cancelar</button>
+        </article>)}
+      </section>}
 
       {isManualModalOpen && (
         <div className="modal-backdrop" role="presentation" onPointerDown={closeManualModal}>

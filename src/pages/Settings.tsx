@@ -33,6 +33,7 @@ interface SettingsProps {
   onUpdateResource: (resource: ReservableResource) => Promise<void>;
   onDeleteResource: (resource: ReservableResource) => Promise<void>;
   onSettingsSave: (settings: ManagerSettings) => Promise<'success' | 'error' | 'skipped'>;
+  onServiceActivationChange?: (service: BookingService, enabled: boolean) => Promise<void>;
   onClientLicenseSave?: (license: ClientLicense) => Promise<'success' | 'error'>;
 }
 
@@ -152,6 +153,7 @@ export function Settings({
   onUpdateResource,
   onDeleteResource,
   onSettingsSave,
+  onServiceActivationChange,
   onClientLicenseSave,
 }: SettingsProps) {
   const [draftSettings, setDraftSettings] = useState(settings);
@@ -164,6 +166,7 @@ export function Settings({
   const [licenseDraft, setLicenseDraft] = useState<ClientLicense>(clientLicense);
   const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [settingsValidationMessage, setSettingsValidationMessage] = useState('');
+  const [activationState, setActivationState] = useState<{ clientId: string; pending: BookingService | null; service: BookingService | null; message: string }>({ clientId, pending: null, service: null, message: '' });
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
   const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
   const weeklyPreview = WEEKLY_HOURS_UI_ENABLED && Boolean(clientId);
@@ -183,6 +186,10 @@ export function Settings({
     setDraftSettings(settings);
     setSaveState('idle');
   }, [settings]);
+
+  useEffect(() => {
+    setActivationState({ clientId, pending: null, service: null, message: '' });
+  }, [clientId]);
 
   useEffect(() => {
     setLicenseDraft(clientLicense);
@@ -228,6 +235,26 @@ export function Settings({
   }, [activeSettingsTab, reservableResources]);
 
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftSettings) !== JSON.stringify(settings), [draftSettings, settings]);
+  const canActivateService = remoteHoursPreview && settingsVerified && !configurationLocked && !hasUnsavedChanges && Boolean(onServiceActivationChange);
+
+  async function handleRemoteServiceActivation(service: BookingService, enabled: boolean) {
+    if (!canActivateService || activationState.pending || !onServiceActivationChange) return;
+    setActivationState({ clientId, pending: service, service, message: 'Guardando activación…' });
+    try {
+      await onServiceActivationChange(service, enabled);
+      setActivationState((current) => current.clientId === clientId
+        ? { clientId, pending: null, service, message: `${service} ${enabled ? 'activado' : 'desactivado'} en Settings.` }
+        : current);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : String(error);
+      const message = code === 'LAST_SERVICE_UNSAFE'
+        ? 'No se puede apagar el último servicio: la API pública aún interpreta una lista vacía como CENA.'
+        : code === 'SERVICES_CONFLICT'
+          ? 'Los servicios cambiaron en otra sesión. Recarga Settings antes de intentarlo de nuevo.'
+          : `No se pudo guardar la activación (${code}). El interruptor conserva su estado anterior.`;
+      setActivationState((current) => current.clientId === clientId ? { clientId, pending: null, service, message } : current);
+    }
+  }
 
   useEffect(() => {
     if (hasUnsavedChanges && saveState !== 'saving') {
@@ -311,7 +338,7 @@ export function Settings({
 
   function updateServiceEnabled(service: BookingService, enabled: boolean) {
     setDraftSettings((current) => {
-      const currentServices: BookingService[] = current.servicesEnabled.length > 0 ? current.servicesEnabled : ['CENA'];
+      const currentServices: BookingService[] = current.servicesEnabled;
       const nextServices = enabled
         ? [...currentServices, service]
         : currentServices.filter((item) => item !== service);
@@ -319,7 +346,7 @@ export function Settings({
 
       return {
         ...current,
-        servicesEnabled: uniqueServices.length > 0 ? uniqueServices : ['CENA'],
+        servicesEnabled: uniqueServices,
       };
     });
   }
@@ -731,12 +758,16 @@ export function Settings({
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview} />
+          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview}
+            onServiceActivationChange={handleRemoteServiceActivation} canActivateServices={canActivateService && !activationState.pending}
+            activationService={activationState.service} activationMessage={activationState.message} />
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
           remoteHoursPreview
-            ? <BalinesePoolRemote clientId={clientId} />
+            ? <BalinesePoolRemote clientId={clientId} enabled={settings.servicesEnabled.includes('BALINESA')}
+                onServiceActivationChange={handleRemoteServiceActivation} canActivateService={canActivateService && !activationState.pending}
+                activationMessage={activationState.service === 'BALINESA' ? activationState.message : ''} />
             : <BalinesePoolPreview clientId={clientId} />
         )}
 
