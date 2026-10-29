@@ -9,12 +9,12 @@ import { getTodayData, hasTodayDataEndpoint } from '../services/api';
 import { getWeeklyHours } from '../services/weeklyHoursApi';
 import type { WeeklyHoursRow } from '../services/weeklyHoursApiContract';
 import type { TodayData } from '../services/api';
-import type { BookingService, DayState, ReservableResource, Reservation } from '../types';
+import type { BookingService, DayState, ReservableResource, Reservation, ServiceWithHours } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation } from '../utils/reservationStatus';
-import { getTodayWeeklyHoursLabel } from '../utils/todayWeeklyHours';
 import { getInactiveServiceReservations, getScheduledTodayTabs } from '../utils/todayServices';
+import { getMadridClock, getManualRestaurantServices, getManualRestaurantSlots, getOpenRestaurantServiceAt } from '../utils/internalBookingPreview';
 
 interface TodayProps {
   dayStatus: DayState;
@@ -39,7 +39,7 @@ interface TodayProps {
   arrivals: number;
   occupancyPercent: number;
   totalCapacity: number;
-  onAddWalkIn: (nameOrRoom: string, pax: number) => Promise<void>;
+  onAddWalkIn: (nameOrRoom: string, pax: number, selection?: { service: ServiceWithHours; date: string; time: string }) => Promise<void>;
   onAddManualReservation: (reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) => void | Promise<void>;
   onBookingStatus: () => void;
   onUpdateReservation: (id: string, field: 'table' | 'arrived', value: string | boolean) => Promise<void>;
@@ -54,6 +54,7 @@ interface TodayProps {
 const EMPTY_MANUAL_RESERVATION = {
   date: '',
   time: '',
+  service: '' as ServiceWithHours | '',
   name: '',
   room: '',
   phone: '',
@@ -166,13 +167,27 @@ export function Today({
   });
   const [otherDayBalineseError, setOtherDayBalineseError] = useState('');
   const [manualError, setManualError] = useState('');
+  const [madridNow, setMadridNow] = useState(getMadridClock);
   const [isToastVisible, setIsToastVisible] = useState(false);
   const timeSlots = useMemo(() => generateTimeSlots(openingTime, closingTime, bookingInterval), [bookingInterval, closingTime, openingTime]);
   const [manualDraft, setManualDraft] = useState({
     ...EMPTY_MANUAL_RESERVATION,
-    date: dayStatus.date,
-    time: timeSlots[0] ?? getCurrentTime(),
+    date: weeklyPreview ? getMadridClock().date : dayStatus.date,
+    time: weeklyPreview ? '' : timeSlots[0] ?? getCurrentTime(),
   });
+
+  useEffect(() => {
+    if (!weeklyPreview) return;
+    const refresh = () => setMadridNow(getMadridClock());
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [weeklyPreview]);
 
   useEffect(() => {
     if (!hasTodayDataEndpoint()) {
@@ -221,8 +236,9 @@ export function Today({
   }, [clientId, weeklyPreview, dayStatus.date]);
 
   useEffect(() => {
+    if (weeklyPreview) return;
     setManualDraft((current) => (timeSlots.includes(current.time) ? current : { ...current, time: timeSlots[0] ?? getCurrentTime() }));
-  }, [timeSlots]);
+  }, [timeSlots, weeklyPreview]);
 
   useEffect(() => {
     if (!isManualModalOpen) {
@@ -248,6 +264,16 @@ export function Today({
     ? getScheduledTodayTabs(serviceTabs, dayStatus.date, weeklySnapshot?.clientId === clientId && !weeklySnapshot.error ? weeklySnapshot.rules : null)
     : { tabs: serviceTabs, status: 'ready' as const };
   const visibleServiceTabs = scheduledTabs.tabs;
+  const verifiedWeeklyRows = weeklyPreview && weeklySnapshot?.clientId === clientId && !weeklySnapshot.error
+    ? weeklySnapshot.rules : null;
+  const walkInService = weeklyPreview ? getOpenRestaurantServiceAt(serviceTabs, madridNow, verifiedWeeklyRows) : null;
+  const walkInDisabledReason = !weeklyPreview ? undefined
+    : scheduledTabs.status === 'unavailable' ? 'Horario semanal no disponible; no se puede crear un walk-in desde Preview.'
+      : madridNow.date !== dayStatus.date ? 'La fecha de HOY ha cambiado. Actualiza la página antes de crear un walk-in.'
+        : !walkInService ? 'No hay ningún servicio de restaurante abierto ahora.' : undefined;
+  const manualServices = weeklyPreview ? getManualRestaurantServices(serviceTabs, manualDraft.date, verifiedWeeklyRows) : [];
+  const manualSlots = weeklyPreview && manualDraft.service
+    ? getManualRestaurantSlots(serviceTabs, manualDraft.date, manualDraft.service, verifiedWeeklyRows, bookingInterval) : [];
   const selectedService = requestedService && visibleServiceTabs.includes(requestedService)
     ? requestedService : visibleServiceTabs[0] ?? null;
   useEffect(() => {
@@ -310,8 +336,14 @@ export function Today({
     setManualError('');
   }
 
+  function changeManualDate(date: string) {
+    setManualDraft((current) => ({ ...current, date, service: '', time: '' }));
+    setManualError('');
+  }
+
   function resetManualDraft() {
-    setManualDraft({ ...EMPTY_MANUAL_RESERVATION, date: dayStatus.date, time: timeSlots[0] ?? getCurrentTime() });
+    setManualDraft({ ...EMPTY_MANUAL_RESERVATION, date: weeklyPreview ? getMadridClock().date : dayStatus.date,
+      time: weeklyPreview ? '' : timeSlots[0] ?? getCurrentTime() });
     setManualError('');
   }
 
@@ -481,6 +513,12 @@ export function Today({
     const pax = parseIntegerInput(manualDraft.pax);
 
     if (!manualDraft.date || !manualDraft.time) {
+      setManualError('Selecciona una fecha y una hora válidas.');
+      return;
+    }
+    if (weeklyPreview && (!manualDraft.service || !manualServices.includes(manualDraft.service)
+      || !manualSlots.includes(manualDraft.time))) {
+      setManualError('Selecciona un servicio abierto y una hora válida para esa fecha. Si falta el horario, no se enviará la reserva.');
       return;
     }
 
@@ -498,6 +536,7 @@ export function Today({
       await onAddManualReservation({
         date: manualDraft.date,
         time: manualDraft.time,
+        ...(weeklyPreview ? { service: manualDraft.service as ServiceWithHours } : {}),
         name: manualDraft.name.trim(),
         room: manualDraft.room.trim(),
         phone: manualDraft.phone.trim(),
@@ -553,7 +592,13 @@ export function Today({
       </section>
 
       <section className="today-main-grid" aria-label="Acciones operativas de hoy">
-        <WalkInForm onAddWalkIn={onAddWalkIn} />
+        <WalkInForm disabledReason={walkInDisabledReason} onAddWalkIn={async (nameOrRoom, pax) => {
+          if (!weeklyPreview) return onAddWalkIn(nameOrRoom, pax);
+          const clock = getMadridClock();
+          const service = getOpenRestaurantServiceAt(serviceTabs, clock, verifiedWeeklyRows);
+          if (!service || clock.date !== dayStatus.date) throw new Error('WALKIN_HOURS_CLOSED');
+          return onAddWalkIn(nameOrRoom, pax, { service, date: clock.date, time: clock.time.slice(0, 5) });
+        }} />
 
         <button className="manual-reservation-card" type="button" onClick={() => setIsManualModalOpen(true)}>
           <span>Reserva manual</span>
@@ -577,19 +622,12 @@ export function Today({
                     onClick={() => onServiceChange(service)}
                   >
                     {service}
-                    {weeklyPreview && scheduledTabs.status === 'ready' && service !== 'BALINESA' && (
-                      <small className="today-tab-hours">{getTodayWeeklyHoursLabel(dayStatus.date, service, weeklySnapshot?.rules ?? [])
-                        ?.replace(/^Horario hoy: /, '').replace(/ \(fin exclusivo\)$/, '')}</small>
-                    )}
                   </button>
                 ))}
               </div>
             )}
             {weeklyPreview && scheduledTabs.status === 'unavailable' && (
               <span className="today-hours-warning" role="status">Horario semanal sin configurar o no disponible: se mantienen las pestañas habituales.</span>
-            )}
-            {weeklyPreview && scheduledTabs.status === 'ready' && (
-              <span className="today-hours-warning">Horario de HOY informativo; aún no controla las reservas públicas.</span>
             )}
           </div>
           <div className="today-refresh-actions">
@@ -652,7 +690,7 @@ export function Today({
             </div>
           </>
         ) : visibleServiceTabs.length === 0 ? (
-          <div className="sync-status">No hay servicios abiertos hoy. Las reservas existentes siguen disponibles abajo.</div>
+          <div className="sync-status today-no-services">No hay servicios abiertos hoy. Las reservas existentes siguen disponibles abajo.</div>
         ) : isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (
@@ -707,18 +745,34 @@ export function Today({
             <div className="manual-form-grid">
               <label>
                 Fecha
-                <input value={manualDraft.date} type="date" onChange={(event) => updateManualDraft('date', event.target.value)} />
+                <input value={manualDraft.date} type="date" onChange={(event) => weeklyPreview
+                  ? changeManualDate(event.target.value) : updateManualDraft('date', event.target.value)} />
               </label>
+              {weeklyPreview && <label>
+                Servicio
+                <select value={manualDraft.service} onChange={(event) => {
+                  setManualDraft((current) => ({ ...current, service: event.target.value as ServiceWithHours | '', time: '' }));
+                  setManualError('');
+                }}>
+                  <option value="">Selecciona un servicio</option>
+                  {manualServices.map((service) => <option key={service} value={service}>{service}</option>)}
+                </select>
+              </label>}
               <label>
                 Hora
-                <select value={manualDraft.time} onChange={(event) => updateManualDraft('time', event.target.value)}>
-                  {timeSlots.map((slot) => (
+                <select value={manualDraft.time} disabled={weeklyPreview && !manualDraft.service}
+                  onChange={(event) => updateManualDraft('time', event.target.value)}>
+                  {weeklyPreview && <option value="">Selecciona una hora</option>}
+                  {(weeklyPreview ? manualSlots : timeSlots).map((slot) => (
                     <option key={slot} value={slot}>
                       {slot}
                     </option>
                   ))}
                 </select>
               </label>
+              {weeklyPreview && manualServices.length === 0 && <p className="manual-hours-status" role="status">
+                No hay servicios de restaurante abiertos para esta fecha, o no se pudo verificar el horario.
+              </p>}
               <label>
                 Nombre
                 <input value={manualDraft.name} onChange={(event) => updateManualDraft('name', event.target.value)} />

@@ -2287,12 +2287,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     // Future Make integration: updateBookingStatus({ bookingsOpen, fullyBooked })
   }
 
-  async function handleAddWalkIn(nameOrRoom: string, pax: number) {
-    const walkInTime = getCurrentTime();
-    const walkInService = getWalkInServiceForTime(walkInTime, settings);
+  async function handleAddWalkIn(nameOrRoom: string, pax: number,
+    selection?: { service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; date: string; time: string }) {
+    if (SERVICE_ACTIVATION_PREVIEW && (!selection || !shouldUseManagerApiForReservations())) {
+      throw new Error('WALKIN_HOURS_NOT_VERIFIED');
+    }
+    const walkInTime = selection?.time ?? getCurrentTime();
+    const walkInService = selection?.service ?? getWalkInServiceForTime(walkInTime, settings);
+    const walkInDate = selection?.date ?? dayStatus.date;
 
     if (shouldUseManagerApiForReservations()) {
-      const date = dayStatus.date;
+      const date = walkInDate;
       try {
         console.log('[MANAGER_API][WALKIN] creating', {
           clientId: clientConfig?.client_id,
@@ -2323,11 +2328,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[MANAGER_API][WALKIN] append confirmed', response);
         setLastSync('Mesa añadida correctamente');
         console.log('[DEMO][WALKIN] refresh list');
-        await loadReservations();
+        try {
+          await loadReservations();
+        } catch {
+          setLastSync('Walk-in creado; no se pudo actualizar la lista. Usa Actualizar datos antes de repetir.');
+        }
         return;
       } catch (error) {
         console.warn('[MANAGER_API] walkin.create failed', error);
         setLastSync('No se pudo crear walk-in con manager-api');
+        if (SERVICE_ACTIVATION_PREVIEW) throw error;
         return;
       }
     }
@@ -2336,7 +2346,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const payload: WalkInPayload = {
       nameOrRoom,
       pax,
-      date: dayStatus.date,
+      date: walkInDate,
       time: walkInTime,
       status: 'CONFIRMADA',
       source: 'WALKIN',
@@ -2379,6 +2389,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+    if (SERVICE_ACTIVATION_PREVIEW && (!reservation.service || !shouldUseManagerApiForReservations())) {
+      throw new Error('MANUAL_SERVICE_NOT_VERIFIED');
+    }
     const reservationService = reservation.service ?? getWalkInServiceForTime(reservation.time, settings);
 
     if (shouldUseManagerApiForReservations()) {
@@ -2428,7 +2441,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[MANAGER_API][RESERVATION_CREATE] append confirmed', response);
         setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
-        await loadReservations();
+        try {
+          await loadReservations();
+        } catch {
+          setLastSync('Reserva creada; no se pudo actualizar la lista. Usa Actualizar datos antes de repetir.');
+        }
         return;
       } catch (error) {
         console.warn('[MANAGER_API] reservation.create failed', error);
