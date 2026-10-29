@@ -53,6 +53,8 @@ function fakeServer(enabled?: string, allowedClientIds?: string) {
         : identity === 'tenant-B' ? { clientId: 'B', role: 'ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-A-client-admin' ? { clientId: 'A', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
         : identity === 'tenant-B-client-admin' ? { clientId: 'B', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-A-client-admin-underscore' ? { clientId: 'A', role: 'ADMIN_CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-B-client-admin-underscore' ? { clientId: 'B', role: 'ADMIN_CLIENTE', serviceRoleAvailable: true }
         : identity === 'tenant-A-super-admin' ? { clientId: 'A', role: 'SUPER_ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-A-manager' ? { clientId: 'A', role: 'MANAGER', serviceRoleAvailable: true }
         : identity === 'tenant-A-viewer' ? { clientId: 'A', role: 'VIEWER', serviceRoleAvailable: true }
@@ -144,8 +146,8 @@ Deno.test('pool writes require an authorized profile role even for an allowliste
   assert(server.writes === 0 && server.accessCreated === 0, 'role denial occurs before database access');
 });
 
-Deno.test('pool role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN for the resolved tenant', async () => {
-  for (const token of ['tenant-A', 'tenant-A-client-admin', 'tenant-A-super-admin']) {
+Deno.test('pool role hotfix permits only ADMIN, ADMIN-CLIENTE, ADMIN_CLIENTE and SUPER_ADMIN for the resolved tenant', async () => {
+  for (const token of ['tenant-A', 'tenant-A-client-admin', 'tenant-A-client-admin-underscore', 'tenant-A-super-admin']) {
     const server = fakeServer('true', 'A');
     const saved = await server.send('poolHours.save', token, {
       client_id: 'B', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
@@ -154,7 +156,7 @@ Deno.test('pool role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN fo
     assert(server.writes === 1 && server.rows.has('A') && !server.rows.has('B'), `${token} never writes forged tenant B`);
   }
   const closed = fakeServer('false', 'A');
-  const deniedByFlag = await closed.send('poolHours.save', 'tenant-A-client-admin', {
+  const deniedByFlag = await closed.send('poolHours.save', 'tenant-A-client-admin-underscore', {
     opening_time: '10:00', closing_time: '19:00', expected_revision: null,
   });
   assert(deniedByFlag.status === 403 && deniedByFlag.body.code === 'POOL_HOURS_WRITE_DISABLED', 'false flag blocks client admin');
@@ -166,4 +168,8 @@ Deno.test('pool role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN fo
   });
   assert(deniedByTenant.status === 403 && deniedByTenant.body.code === 'POOL_HOURS_WRITE_DISABLED', 'other client admin cannot use Safari allowlist');
   assert(restricted.writes === 0 && restricted.accessCreated === 0, 'foreign tenant causes no database access');
+  const deniedUnderscore = await restricted.send('poolHours.save', 'tenant-B-client-admin-underscore', {
+    client_id: 'A', opening_time: '10:00', closing_time: '19:00', expected_revision: null,
+  });
+  assert(deniedUnderscore.status === 403 && deniedUnderscore.body.code === 'POOL_HOURS_WRITE_DISABLED', 'underscored role cannot bypass tenant allowlist');
 });

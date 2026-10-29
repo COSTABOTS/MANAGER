@@ -44,6 +44,8 @@ function fakeServer(enabled?: string, allowedClientIds?: string) {
         : identity === 'tenant-B' ? { clientId: 'B', role: 'ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-A-client-admin' ? { clientId: 'A', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
         : identity === 'tenant-B-client-admin' ? { clientId: 'B', role: 'ADMIN-CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-A-client-admin-underscore' ? { clientId: 'A', role: 'ADMIN_CLIENTE', serviceRoleAvailable: true }
+        : identity === 'tenant-B-client-admin-underscore' ? { clientId: 'B', role: 'ADMIN_CLIENTE', serviceRoleAvailable: true }
         : identity === 'tenant-A-super-admin' ? { clientId: 'A', role: 'SUPER_ADMIN', serviceRoleAvailable: true }
         : identity === 'tenant-A-manager' ? { clientId: 'A', role: 'MANAGER', serviceRoleAvailable: true }
         : identity === 'tenant-A-viewer' ? { clientId: 'A', role: 'VIEWER', serviceRoleAvailable: true }
@@ -120,8 +122,8 @@ Deno.test('weekly writes require an authorized profile role even for an allowlis
   assert(server.writes === 0 && server.accessCreated === 0, 'role denial occurs before database access');
 });
 
-Deno.test('weekly role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN for the resolved tenant', async () => {
-  for (const token of ['tenant-A', 'tenant-A-client-admin', 'tenant-A-super-admin']) {
+Deno.test('weekly role hotfix permits only ADMIN, ADMIN-CLIENTE, ADMIN_CLIENTE and SUPER_ADMIN for the resolved tenant', async () => {
+  for (const token of ['tenant-A', 'tenant-A-client-admin', 'tenant-A-client-admin-underscore', 'tenant-A-super-admin']) {
     const server = fakeServer('true', 'A');
     const saved = await server.send('weeklyHours.save', token, {
       client_id: 'B', rules, expected_revision: emptyRevision,
@@ -130,7 +132,7 @@ Deno.test('weekly role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN 
     assert(server.writes === 1 && server.rows.has('A') && !server.rows.has('B'), `${token} never writes forged tenant B`);
   }
   const closed = fakeServer('false', 'A');
-  const deniedByFlag = await closed.send('weeklyHours.save', 'tenant-A-client-admin', { rules, expected_revision: emptyRevision });
+  const deniedByFlag = await closed.send('weeklyHours.save', 'tenant-A-client-admin-underscore', { rules, expected_revision: emptyRevision });
   assert(deniedByFlag.status === 403 && deniedByFlag.body.code === 'WEEKLY_HOURS_WRITE_DISABLED', 'false flag blocks client admin');
   assert(closed.writes === 0 && closed.accessCreated === 0, 'closed flag creates no database access');
 
@@ -140,4 +142,8 @@ Deno.test('weekly role hotfix permits only ADMIN, ADMIN-CLIENTE and SUPER_ADMIN 
   });
   assert(deniedByTenant.status === 403 && deniedByTenant.body.code === 'WEEKLY_HOURS_WRITE_DISABLED', 'other client admin cannot use Safari allowlist');
   assert(restricted.writes === 0 && restricted.accessCreated === 0, 'foreign tenant causes no database access');
+  const deniedUnderscore = await restricted.send('weeklyHours.save', 'tenant-B-client-admin-underscore', {
+    client_id: 'A', rules, expected_revision: emptyRevision,
+  });
+  assert(deniedUnderscore.status === 403 && deniedUnderscore.body.code === 'WEEKLY_HOURS_WRITE_DISABLED', 'underscored role cannot bypass tenant allowlist');
 });

@@ -21,7 +21,7 @@ export async function handleWeeklyHoursHttp(
   if (context instanceof Response) return context;
   if (!context?.clientId) return respond.failure(request, 'UNAUTHENTICATED', 401);
   if (!context.serviceRoleAvailable) return respond.failure(request, 'WEEKLY_HOURS_UNAVAILABLE', 503);
-  if (action === 'weeklyHours.save' && context.role !== 'ADMIN' && context.role !== 'ADMIN-CLIENTE' && context.role !== 'SUPER_ADMIN') {
+  if (action === 'weeklyHours.save' && context.role !== 'ADMIN' && context.role !== 'ADMIN-CLIENTE' && context.role !== 'ADMIN_CLIENTE' && context.role !== 'SUPER_ADMIN') {
     return respond.failure(request, 'FORBIDDEN', 403);
   }
   if (action === 'weeklyHours.save' && !canWrite(context.clientId)) {
