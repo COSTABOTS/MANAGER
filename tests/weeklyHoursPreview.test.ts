@@ -1,0 +1,44 @@
+import { isWeeklyHoursPreview, isWeeklyHoursManagerProduction, isWeeklyHoursSettingsSurface } from '../src/utils/weeklyHoursPreview.ts';
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+const preview = {
+  environment: 'preview',
+  branch: 'feature/weekly-hours-availability',
+  deploymentUrl: 'manager-newbuild123-costabots-projects.vercel.app',
+  branchUrl: 'manager-git-feature-weekly-hours-availability-costabots-projects.vercel.app',
+};
+
+Deno.test('only this branch deployment and its stable branch URL show the weekly editor', () => {
+  assert(isWeeklyHoursPreview({ ...preview, origin: `https://${preview.deploymentUrl}` }), 'deployment preview should be allowed');
+  assert(isWeeklyHoursPreview({ ...preview, origin: `https://${preview.branchUrl}` }), 'branch preview should be allowed');
+  assert(isWeeklyHoursPreview({ ...preview, origin: 'https://manager-preview.costabots.com' }), 'fixed preview origin should be allowed');
+});
+
+Deno.test('production, other branches and other deployments never show the weekly editor', () => {
+  assert(!isWeeklyHoursPreview({ ...preview, origin: 'https://manager.costabots.com' }), 'production must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, environment: 'production', origin: `https://${preview.deploymentUrl}` }), 'production build must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, environment: 'production', origin: 'https://manager-preview.costabots.com' }), 'production build on fixed preview origin must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, branch: 'main', origin: 'https://manager-preview.costabots.com' }), 'main on fixed preview origin must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, environment: 'development', origin: 'http://localhost:5173' }), 'local development must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, branch: 'main', origin: `https://${preview.deploymentUrl}` }), 'main must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, origin: 'https://manager-otherbuild-costabots-projects.vercel.app' }), 'other deployment must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, origin: 'https://another-project-costabots-projects.vercel.app' }), 'other project must be hidden');
+  assert(!isWeeklyHoursPreview({ ...preview, deploymentUrl: 'another-project-costabots-projects.vercel.app', origin: 'https://another-project-costabots-projects.vercel.app' }), 'other project metadata must be rejected');
+  assert(!isWeeklyHoursPreview({ ...preview, deploymentUrl: undefined, branchUrl: undefined, origin: `https://${preview.deploymentUrl}` }), 'missing Vercel metadata must fail closed');
+});
+
+Deno.test('production Settings surface requires exact Manager origin, environment and main branch', () => {
+  const production = { origin: 'https://manager.costabots.com', environment: 'production', branch: 'main' };
+  assert(isWeeklyHoursManagerProduction(production), 'exact production Manager is allowed');
+  assert(isWeeklyHoursSettingsSurface(production), 'production Settings may show the editor');
+  assert(!isWeeklyHoursPreview(production), 'Preview-only internal booking guard remains off in production');
+  for (const context of [
+    { ...production, origin: 'https://manager-preview.costabots.com' },
+    { ...production, origin: 'https://manager.costabots.com.evil.example' },
+    { ...production, environment: 'preview' },
+    { ...production, branch: 'feature/weekly-hours-availability' },
+  ]) assert(!isWeeklyHoursSettingsSurface(context), 'other production contexts remain closed');
+});

@@ -181,7 +181,7 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
     POST_DINNER_MESSAGE_ENABLED: settings.mensajePostCena,
     POST_DINNER_MESSAGE_TIME: normalizeTimeValue(settings.mensajePostCenaHora, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
     FEEDBACK_ALERT_PHONE: settings.feedbackAlertPhone,
-    SERVICES_ENABLED: (settings.servicesEnabled.length > 0 ? settings.servicesEnabled : ['CENA']).join(','),
+    SERVICES_ENABLED: settings.servicesEnabled.join(','),
     DESAYUNO_START: settings.serviceHours.DESAYUNO.start,
     DESAYUNO_END: settings.serviceHours.DESAYUNO.end,
     ALMUERZO_START: settings.serviceHours.ALMUERZO.start,
@@ -207,9 +207,10 @@ export function buildOperationalSettingsPayload(settings: ManagerSettings) {
 }
 
 export function applyOperationalSettings(currentSettings: ManagerSettings, rawSettings: SettingsValueMap | SettingsRow[] | undefined): ManagerSettings {
+  const rawSettingsMap = normalizeSettingsMap(rawSettings);
   const settingsMap = {
     ...DEFAULT_OPERATIONAL_SETTINGS,
-    ...normalizeSettingsMap(rawSettings),
+    ...rawSettingsMap,
   };
   const openingDays = { ...currentSettings.openingDays };
 
@@ -217,7 +218,9 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     openingDays[appKey] = toBooleanValue(settingsMap[settingKey], DEFAULT_OPERATIONAL_SETTINGS[settingKey] as boolean);
   });
 
-  const servicesEnabledSetting = (settingsMap as SettingsValueMap).SERVICES_ENABLED ?? (settingsMap as SettingsValueMap).services_enabled;
+  const hasServicesSetting = Object.prototype.hasOwnProperty.call(rawSettingsMap, 'SERVICES_ENABLED')
+    || Object.prototype.hasOwnProperty.call(rawSettingsMap, 'services_enabled');
+  const servicesEnabledSetting = (rawSettingsMap as SettingsValueMap).SERVICES_ENABLED ?? (rawSettingsMap as SettingsValueMap).services_enabled;
   const normalizedSettings: ManagerSettings = {
     ...currentSettings,
     maxPaxPerBooking: Math.max(1, Math.floor(toNumberValue(settingsMap.MAX_PAX_PER_BOOKING, DEFAULT_OPERATIONAL_SETTINGS.MAX_PAX_PER_BOOKING))),
@@ -229,7 +232,7 @@ export function applyOperationalSettings(currentSettings: ManagerSettings, rawSe
     mensajePostCena: toBooleanValue(settingsMap.POST_DINNER_MESSAGE_ENABLED, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_ENABLED),
     mensajePostCenaHora: normalizeTimeValue(settingsMap.POST_DINNER_MESSAGE_TIME, DEFAULT_OPERATIONAL_SETTINGS.POST_DINNER_MESSAGE_TIME),
     feedbackAlertPhone: toStringValue(settingsMap.FEEDBACK_ALERT_PHONE),
-    servicesEnabled: toServicesEnabled(servicesEnabledSetting, DEFAULT_OPERATIONAL_SETTINGS.SERVICES_ENABLED),
+    servicesEnabled: toServicesEnabled(servicesEnabledSetting, hasServicesSetting ? [] : DEFAULT_OPERATIONAL_SETTINGS.SERVICES_ENABLED),
     serviceHours: {
       DESAYUNO: {
         start: normalizeTimeValue(settingsMap.DESAYUNO_START, DEFAULT_OPERATIONAL_SETTINGS.DESAYUNO_START),

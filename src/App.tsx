@@ -31,7 +31,8 @@ import { loadFeedbacks as loadFeedbacksFromWebhook, loadFeedbacksFromManagerApi 
 import type { Feedback } from './services/feedbacks';
 import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
 import { loadCapacityFromManagerApi, loadCapacitySettings, saveCapacityWithManagerApi } from './services/capacitySettings';
-import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings, saveOperationalSettingsWithManagerApi } from './services/operationalSettings';
+import { applyOperationalDefaults, applyOperationalSettings, buildOperationalSettingsPayload, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings, saveOperationalSettingsWithManagerApi } from './services/operationalSettings';
+import { invokeManagerApi } from './services/managerApiClient';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -41,11 +42,15 @@ import { loadResourcesWithManagerApi, saveResourceWithManagerApi } from './servi
 import { saveClientLicenseWithManagerApi } from './services/clientLicense';
 import { saveClientBrandingWithManagerApi } from './services/clientBranding';
 import { loadManagedClientsWithManagerApi } from './services/clients';
+import { saveServiceActivation } from './services/serviceActivation';
 import type { BookingService, BookingStatus, ClientLicense, ClientLicensePlan, ClientLicenseStatus, DateBookingStatus, DateBookingStatusValue, DayState, ManagerSettings, ReservableResource, Reservation, RestaurantTable, WalkInPayload } from './types';
 import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
+import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
+import { getTodayTabServices } from './utils/todayServices';
+import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from './utils/previewSettingsChanges';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
@@ -55,7 +60,20 @@ const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
 const PROTECTED_DEMO_EMAIL = 'demo2@costabots.local';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
-const TODAY_TAB_SERVICES: BookingService[] = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'];
+const SERVICE_ACTIVATION_PREVIEW = isWeeklyHoursPreview({
+  origin: window.location.origin,
+  environment: import.meta.env.VITE_VERCEL_ENV,
+  branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
+  deploymentUrl: import.meta.env.VITE_VERCEL_URL,
+  branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
+});
+const HOURS_SETTINGS_SURFACE = isWeeklyHoursSettingsSurface({
+  origin: window.location.origin,
+  environment: import.meta.env.VITE_VERCEL_ENV,
+  branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
+  deploymentUrl: import.meta.env.VITE_VERCEL_URL,
+  branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
+});
 const TIMED_SERVICE_ORDER: Array<'DESAYUNO' | 'ALMUERZO' | 'CENA'> = ['DESAYUNO', 'ALMUERZO', 'CENA'];
 const CLIENT_PRIMARY_FALLBACK = '#3b63a3';
 const DEFAULT_SERVICE_HOURS: ManagerSettings['serviceHours'] = {
@@ -88,12 +106,7 @@ function normalizeEnabledServices(services: unknown): BookingService[] {
   const normalized = source.map(normalizeBookingService);
   const uniqueServices = normalized.filter((service, index) => normalized.indexOf(service) === index);
 
-  return uniqueServices.length > 0 ? uniqueServices : ['CENA'];
-}
-
-function getTodayTabServices(services: BookingService[]): BookingService[] {
-  const visibleServices = TODAY_TAB_SERVICES.filter((service) => services.includes(service));
-  return visibleServices.length > 0 ? visibleServices : ['CENA'];
+  return uniqueServices;
 }
 
 function getServiceForCurrentHour(): Exclude<BookingService, 'BALINESA'> {
@@ -110,7 +123,7 @@ function getServiceForCurrentHour(): Exclude<BookingService, 'BALINESA'> {
   return 'CENA';
 }
 
-function getInitialTodayService(serviceTabs: BookingService[]): BookingService {
+function getInitialTodayService(serviceTabs: BookingService[]): BookingService | null {
   const timedService = getServiceForCurrentHour();
 
   if (serviceTabs.includes(timedService)) {
@@ -121,7 +134,7 @@ function getInitialTodayService(serviceTabs: BookingService[]): BookingService {
     return 'CENA';
   }
 
-  return serviceTabs.find((service) => service !== 'BALINESA') ?? serviceTabs[0] ?? 'CENA';
+  return serviceTabs.find((service) => service !== 'BALINESA') ?? serviceTabs[0] ?? null;
 }
 
 function normalizeUserRole(role: unknown) {
@@ -748,7 +761,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
   const cancelResolverRef = useRef<((result: boolean) => void) | null>(null);
   const selectedTodayServiceWasManualRef = useRef(false);
-  const [selectedTodayService, setSelectedTodayService] = useState<BookingService>(() => {
+  const [selectedTodayService, setSelectedTodayService] = useState<BookingService | null>(() => {
     const initialServices = getTodayTabServices(normalizeEnabledServices(settings.servicesEnabled));
     return getInitialTodayService(initialServices);
   });
@@ -819,7 +832,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return;
     }
 
-    if (!todayTabServices.includes(selectedTodayService)) {
+    if (!selectedTodayService || !todayTabServices.includes(selectedTodayService)) {
       selectedTodayServiceWasManualRef.current = false;
       setSelectedTodayService(getInitialTodayService(todayTabServices));
     }
@@ -2015,12 +2028,64 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     return syncWebhook(webhookUrl, payload, missingMessage);
   }
 
+  async function handleServiceActivationChange(service: BookingService, enabled: boolean) {
+    const clientId = String(clientConfig?.client_id ?? '').trim();
+    if (!HOURS_SETTINGS_SURFACE || !clientId || isProtectedDemoUser
+      || !['SETTINGS cargados correctamente', 'SETTINGS guardados correctamente'].includes(settingsMessage)) {
+      throw new Error('SERVICES_NOT_READY');
+    }
+    const next = await saveServiceActivation(clientId, settings.servicesEnabled, service, enabled);
+    updateSettings((current) => ({ ...current, servicesEnabled: next }));
+    setSettingsMessage('SETTINGS guardados correctamente');
+  }
+
   async function handleSettingsSave(nextSettings: ManagerSettings): Promise<'success' | 'error' | 'skipped'> {
     const isBalineseSettingsTrial = isProtectedDemoUser
       && String(clientConfig?.client_id ?? '').trim() === 'CB-DEMO-002'
       && Object.keys(nextSettings).filter((key) => !['servicesEnabled', 'serviceHours'].includes(key)).every((key) => JSON.stringify(nextSettings[key as keyof ManagerSettings]) === JSON.stringify(settings[key as keyof ManagerSettings]));
     if (!isBalineseSettingsTrial && blockProtectedDemoAction('Modo demo: guardar configuracion esta bloqueado')) {
       return 'skipped';
+    }
+
+    if (HOURS_SETTINGS_SURFACE && isSupabaseDemoRoute()) {
+      const clientId = String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim();
+      const currentValues = Object.fromEntries(buildOperationalSettingsPayload(settings).map(({ variable, value }) => [variable, value]));
+      const nextValues = Object.fromEntries(buildOperationalSettingsPayload(nextSettings).map(({ variable, value }) => [variable, value]));
+      const changedSettings = changedSettingValues(currentValues, nextValues);
+      const capacityChanged = capacitySettingsChanged(settings, nextSettings);
+      try {
+        if (capacityChanged && !nextSettings.serviceSlotCapacity) throw new Error('CAPACITY_NOT_LOADED');
+        if (Object.keys(changedSettings).length) {
+          const read = await invokeManagerApi<{ ok?: boolean; client_id?: string; settings?: Record<string, unknown> }>({ action: 'settings.get' });
+          if (!read.ok || read.client_id !== clientId || !read.settings) throw new Error('SETTINGS_READ_FAILED');
+          const remoteValues = Object.fromEntries(buildOperationalSettingsPayload(applyOperationalSettings(settings, read.settings))
+            .map(({ variable, value }) => [variable, value]));
+          if (changedSettingsConflict(currentValues, remoteValues, changedSettings)) throw new Error('SETTINGS_CONFLICT');
+          const saved = await invokeManagerApi<{ ok?: boolean; client_id?: string }>({ action: 'settings.save', settings: changedSettings });
+          if (!saved.ok || saved.client_id !== clientId) throw new Error('SETTINGS_SAVE_FAILED');
+          const verified = await invokeManagerApi<{ ok?: boolean; client_id?: string; settings?: Record<string, unknown> }>({ action: 'settings.get' });
+          if (!verified.ok || verified.client_id !== clientId || !verified.settings
+            || Object.entries(changedSettings).some(([key, value]) => String(verified.settings?.[key]) !== value)) {
+            throw new Error('SETTINGS_SAVE_UNCONFIRMED');
+          }
+        }
+        if (!(await syncClientBranding(nextSettings))) throw new Error('BRANDING_SAVE_FAILED');
+        if (capacityChanged && nextSettings.serviceSlotCapacity) {
+          for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
+            if (!nextSettings.servicesEnabled.includes(service)) continue;
+            const configured = nextSettings.serviceSlotCapacity[service] ?? {};
+            const hours = generateTimeSlots(nextSettings.serviceHours[service].start, nextSettings.serviceHours[service].end, nextSettings.bookingInterval);
+            const slots = hours.map((hora) => ({ hora, limite: configured[hora] ?? 20, activo: (configured[hora] ?? 20) > 0 }));
+            await saveCapacityWithManagerApi(slots, service);
+          }
+        }
+        updateSettings({ ...nextSettings, primaryColor: normalizeHexColor(nextSettings.primaryColor) });
+        setSettingsMessage('SETTINGS guardados correctamente');
+        return 'success';
+      } catch (error) {
+        console.warn('[MANAGER_API] Preview general settings save failed', error instanceof Error ? error.message : 'UNKNOWN');
+        return 'error';
+      }
     }
 
     const settingsToSave = {
@@ -2229,12 +2294,17 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     // Future Make integration: updateBookingStatus({ bookingsOpen, fullyBooked })
   }
 
-  async function handleAddWalkIn(nameOrRoom: string, pax: number) {
-    const walkInTime = getCurrentTime();
-    const walkInService = getWalkInServiceForTime(walkInTime, settings);
+  async function handleAddWalkIn(nameOrRoom: string, pax: number,
+    selection?: { service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; date: string; time: string }) {
+    if (SERVICE_ACTIVATION_PREVIEW && (!selection || !shouldUseManagerApiForReservations())) {
+      throw new Error('WALKIN_HOURS_NOT_VERIFIED');
+    }
+    const walkInTime = selection?.time ?? getCurrentTime();
+    const walkInService = selection?.service ?? getWalkInServiceForTime(walkInTime, settings);
+    const walkInDate = selection?.date ?? dayStatus.date;
 
     if (shouldUseManagerApiForReservations()) {
-      const date = dayStatus.date;
+      const date = walkInDate;
       try {
         console.log('[MANAGER_API][WALKIN] creating', {
           clientId: clientConfig?.client_id,
@@ -2265,11 +2335,16 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[MANAGER_API][WALKIN] append confirmed', response);
         setLastSync('Mesa añadida correctamente');
         console.log('[DEMO][WALKIN] refresh list');
-        await loadReservations();
+        try {
+          await loadReservations();
+        } catch {
+          setLastSync('Walk-in creado; no se pudo actualizar la lista. Usa Actualizar datos antes de repetir.');
+        }
         return;
       } catch (error) {
         console.warn('[MANAGER_API] walkin.create failed', error);
         setLastSync('No se pudo crear walk-in con manager-api');
+        if (SERVICE_ACTIVATION_PREVIEW) throw error;
         return;
       }
     }
@@ -2278,7 +2353,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     const payload: WalkInPayload = {
       nameOrRoom,
       pax,
-      date: dayStatus.date,
+      date: walkInDate,
       time: walkInTime,
       status: 'CONFIRMADA',
       source: 'WALKIN',
@@ -2321,6 +2396,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
+    if (SERVICE_ACTIVATION_PREVIEW && (!reservation.service || !shouldUseManagerApiForReservations())) {
+      throw new Error('MANUAL_SERVICE_NOT_VERIFIED');
+    }
     const reservationService = reservation.service ?? getWalkInServiceForTime(reservation.time, settings);
 
     if (shouldUseManagerApiForReservations()) {
@@ -2370,7 +2448,11 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         console.log('[MANAGER_API][RESERVATION_CREATE] append confirmed', response);
         setLastSync('Reserva añadida correctamente');
         console.log('[DEMO][RESERVATION] refresh list');
-        await loadReservations();
+        try {
+          await loadReservations();
+        } catch {
+          setLastSync('Reserva creada; no se pudo actualizar la lista. Usa Actualizar datos antes de repetir.');
+        }
         return;
       } catch (error) {
         console.warn('[MANAGER_API] reservation.create failed', error);
@@ -2666,6 +2748,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           onUpdateResource={handleUpdateResource}
           onDeleteResource={handleDeleteResource}
           onSettingsSave={handleSettingsSave}
+          onServiceActivationChange={handleServiceActivationChange}
           onClientLicenseSave={handleClientLicenseSave}
         />
       );
@@ -2686,6 +2769,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
         allReservations={allReservations}
+        clientId={clientConfig?.client_id ?? ''}
+        weeklyPreview={SERVICE_ACTIVATION_PREVIEW}
         reservableResources={reservableResources}
         serviceTabs={todayTabServices}
         selectedService={selectedTodayService}

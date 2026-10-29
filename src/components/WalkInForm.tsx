@@ -1,8 +1,10 @@
 import { FormEvent, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { attemptWalkInCreate } from '../utils/internalBookingPreview';
 
 interface WalkInFormProps {
   onAddWalkIn: (nameOrRoom: string, pax: number) => Promise<void>;
+  disabledReason?: string;
 }
 
 function selectPaxInput(event: { currentTarget: HTMLInputElement }) {
@@ -16,25 +18,31 @@ function numericInputValue(value: string) {
   return value.replace(/\D/g, '');
 }
 
-export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
+export function WalkInForm({ onAddWalkIn, disabledReason }: WalkInFormProps) {
   const [nameOrRoom, setNameOrRoom] = useState('');
   const [pax, setPax] = useState('2');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const parsedPax = Number(pax);
 
-    if (!nameOrRoom.trim() || !pax.trim() || !Number.isInteger(parsedPax) || parsedPax < 1) {
+    if (disabledReason || !nameOrRoom.trim() || !pax.trim() || !Number.isInteger(parsedPax) || parsedPax < 1) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onAddWalkIn(nameOrRoom.trim(), parsedPax);
-      setNameOrRoom('');
-      setPax('2');
+      const created = await attemptWalkInCreate(() => onAddWalkIn(nameOrRoom.trim(), parsedPax));
+      if (created) {
+        setNameOrRoom('');
+        setPax('2');
+        setError('');
+      } else {
+        setError('No se pudo crear el walk-in. Los datos permanecen en el formulario; inténtalo de nuevo.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -71,7 +79,9 @@ export function WalkInForm({ onAddWalkIn }: WalkInFormProps) {
           max="30"
         />
       </label>
-      <button type="submit" disabled={isSubmitting}>
+      {disabledReason && <p className="walkin-status" role="status">{disabledReason}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button type="submit" disabled={isSubmitting || Boolean(disabledReason)}>
         <Plus size={18} />
         {isSubmitting ? 'Añadiendo...' : '+AÑADIR MESA'}
       </button>
