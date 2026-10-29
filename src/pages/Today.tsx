@@ -14,6 +14,7 @@ import { generateTimeSlots } from '../utils/capacity';
 import { formatDisplayDate, getCurrentTime, normalizeDateForCompare } from '../utils/date';
 import { isActiveReservation } from '../utils/reservationStatus';
 import { getTodayWeeklyHoursLabel } from '../utils/todayWeeklyHours';
+import { getInactiveServiceReservations, getScheduledTodayTabs } from '../utils/todayServices';
 
 interface TodayProps {
   dayStatus: DayState;
@@ -25,7 +26,6 @@ interface TodayProps {
   bookingInterval: 30 | 60;
   reservations: Reservation[];
   allReservations: Reservation[];
-  inactiveServiceReservations?: Reservation[];
   clientId?: string;
   weeklyPreview?: boolean;
   reservableResources: ReservableResource[];
@@ -129,12 +129,11 @@ export function Today({
   bookingInterval,
   reservations,
   allReservations,
-  inactiveServiceReservations = [],
   clientId = '',
   weeklyPreview = false,
   reservableResources,
   serviceTabs,
-  selectedService,
+  selectedService: requestedService,
   onServiceChange,
   tableOptions,
   hasLoadedTables,
@@ -245,7 +244,22 @@ export function Today({
     };
   }, [isManualModalOpen]);
 
-  const displayReservations = reservations;
+  const scheduledTabs = weeklyPreview
+    ? getScheduledTodayTabs(serviceTabs, dayStatus.date, weeklySnapshot?.clientId === clientId && !weeklySnapshot.error ? weeklySnapshot.rules : null)
+    : { tabs: serviceTabs, status: 'ready' as const };
+  const visibleServiceTabs = scheduledTabs.tabs;
+  const selectedService = requestedService && visibleServiceTabs.includes(requestedService)
+    ? requestedService : visibleServiceTabs[0] ?? null;
+  useEffect(() => {
+    if (selectedService && selectedService !== requestedService) onServiceChange(selectedService);
+  }, [onServiceChange, requestedService, selectedService]);
+  const displayReservations = requestedService === selectedService ? reservations
+    : allReservations.filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date
+      && isActiveReservation(reservation) && (reservation.service ?? 'CENA') === selectedService);
+  const inactiveServiceReservations = weeklyPreview
+    ? getInactiveServiceReservations(allReservations.filter((reservation) =>
+        normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation)), visibleServiceTabs)
+    : [];
   const activeBalineseResources = useMemo(
     () =>
       reservableResources
@@ -256,11 +270,11 @@ export function Today({
   const balineseReservationsByResource = useMemo(
     () =>
       new Map(
-        reservations
+        displayReservations
           .filter((reservation) => normalizeResourceName(reservation.resource))
           .map((reservation) => [normalizeResourceName(reservation.resource), reservation]),
       ),
-    [reservations],
+    [displayReservations],
   );
   const otherDaySelectedResource = useMemo(
     () => activeBalineseResources.find((resource) => resource.id === otherDayBalineseDraft.resourceId) ?? null,
@@ -269,13 +283,9 @@ export function Today({
   const displayDate = dayStatus.date;
   const displayBookingsOpen = todayData?.bookingsOpen ?? dayStatus.bookingsOpen;
   const displayCapacity = totalCapacity;
-  const displayServicePax = reservations.reduce((total, reservation) => total + reservation.pax, 0);
+  const displayServicePax = displayReservations.reduce((total, reservation) => total + reservation.pax, 0);
   const displayOccupancyPercent = displayCapacity > 0 ? Math.min(100, Math.round((displayServicePax / displayCapacity) * 100)) : occupancyPercent;
-  const selectedServiceLabel = serviceTabs.length === 0 ? 'SIN SERVICIOS ACTIVOS' : selectedService === 'BALINESA' ? 'BALINESAS' : selectedService ?? 'SIN SERVICIO';
-  const weeklyLabel = !weeklyPreview || !selectedService || selectedService === 'BALINESA' ? null
-    : weeklySnapshot?.clientId !== clientId ? 'Cargando horario semanal…'
-      : weeklySnapshot.error ? 'Horario semanal no disponible'
-        : getTodayWeeklyHoursLabel(dayStatus.date, selectedService, weeklySnapshot.rules);
+  const selectedServiceLabel = visibleServiceTabs.length === 0 ? 'SIN SERVICIOS ABIERTOS' : selectedService === 'BALINESA' ? 'BALINESAS' : selectedService ?? 'SIN SERVICIO';
   const inactiveRestaurantReservations = inactiveServiceReservations.filter((reservation) => reservation.service !== 'BALINESA');
   const inactiveBalineseReservations = inactiveServiceReservations.filter((reservation) => reservation.service === 'BALINESA');
   const syncLabel = isLoadingToday ? 'Cargando datos de HOY...' : todayError ? `Error: ${todayError}` : lastSync;
@@ -520,12 +530,6 @@ export function Today({
         </div>
       </section>
 
-      {weeklyPreview && <p className="weekly-hours-notice today-weekly-status" role="status">
-        {selectedService === 'BALINESA' ? 'Balinesa se reserva por fecha. Su horario de piscina es independiente.'
-          : weeklyLabel ?? 'No hay servicios activos.'}
-        {' '}Este estado semanal es informativo: aún no controla la disponibilidad ni la creación pública.
-      </p>}
-
       {isToastVisible && (
         <div className="toast-notification" role="status">
           <span>{syncLabel}</span>
@@ -563,9 +567,9 @@ export function Today({
       <section className="table-section">
         <div className="today-reservations-toolbar">
           <div className="today-service-tabs-area">
-            {serviceTabs.length > 0 && (
+            {visibleServiceTabs.length > 0 && (
               <div className="segmented-control today-service-tabs" aria-label="Servicio">
-                {serviceTabs.map((service) => (
+                {visibleServiceTabs.map((service) => (
                   <button
                     key={service}
                     className={selectedService === service ? 'is-active' : undefined}
@@ -573,9 +577,19 @@ export function Today({
                     onClick={() => onServiceChange(service)}
                   >
                     {service}
+                    {weeklyPreview && scheduledTabs.status === 'ready' && service !== 'BALINESA' && (
+                      <small className="today-tab-hours">{getTodayWeeklyHoursLabel(dayStatus.date, service, weeklySnapshot?.rules ?? [])
+                        ?.replace(/^Horario hoy: /, '').replace(/ \(fin exclusivo\)$/, '')}</small>
+                    )}
                   </button>
                 ))}
               </div>
+            )}
+            {weeklyPreview && scheduledTabs.status === 'unavailable' && (
+              <span className="today-hours-warning" role="status">Horario semanal sin configurar o no disponible: se mantienen las pestañas habituales.</span>
+            )}
+            {weeklyPreview && scheduledTabs.status === 'ready' && (
+              <span className="today-hours-warning">Horario de HOY informativo; aún no controla las reservas públicas.</span>
             )}
           </div>
           <div className="today-refresh-actions">
@@ -637,8 +651,8 @@ export function Today({
               </button>
             </div>
           </>
-        ) : serviceTabs.length === 0 ? (
-          <div className="sync-status">No hay servicios activos. Las reservas existentes siguen disponibles abajo.</div>
+        ) : visibleServiceTabs.length === 0 ? (
+          <div className="sync-status">No hay servicios abiertos hoy. Las reservas existentes siguen disponibles abajo.</div>
         ) : isLoadingToday ? (
           <div className="sync-status">Cargando reservas...</div>
         ) : todayError ? (
@@ -658,9 +672,9 @@ export function Today({
         )}
       </section>
 
-      {inactiveServiceReservations.length > 0 && <section className="table-section" aria-label="Reservas existentes de servicios desactivados">
-        <h2>Reservas existentes de servicios desactivados</h2>
-        <p className="weekly-hours-notice">Desactivar un servicio no borra ni oculta sus reservas actuales. Puedes seguir gestionándolas aquí.</p>
+      {inactiveServiceReservations.length > 0 && <section className="table-section" aria-label="Reservas existentes de servicios cerrados o desactivados">
+        <h2>Reservas existentes de servicios cerrados o desactivados</h2>
+        <p className="weekly-hours-notice">Cerrar un día o desactivar un servicio no borra sus reservas actuales. Puedes seguir gestionándolas aquí.</p>
         {inactiveRestaurantReservations.length > 0 && <ReservationsTable
           reservations={inactiveRestaurantReservations} tableOptions={tableOptions} hasLoadedTables={hasLoadedTables}
           isLoadingTables={isLoadingTables} onEnsureTables={onEnsureTables} onUpdate={onUpdateReservation} onCancel={onCancelReservation}

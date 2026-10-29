@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BookingService, ClientLicense, ClientLicensePlan, ClientLicenseStatus, ManagerSettings, ReservableResource, RestaurantTable, RestaurantTableType, ServiceWithHours, Weekday } from '../types';
 import { generateTimeSlots } from '../utils/capacity';
-import { WeeklyHoursEditor } from './WeeklyHoursEditor';
+import { WeeklyHoursEditor, type WeeklyHoursEditorHandle } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
-import { BalinesePoolRemote } from './BalinesePoolRemote';
+import { BalinesePoolRemote, type BalinesePoolRemoteHandle } from './BalinesePoolRemote';
 import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
 import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
+import { saveChangedSections } from '../utils/changedSettingsSave';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -166,6 +167,11 @@ export function Settings({
   const [licenseDraft, setLicenseDraft] = useState<ClientLicense>(clientLicense);
   const [licenseSaveState, setLicenseSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [settingsValidationMessage, setSettingsValidationMessage] = useState('');
+  const weeklyEditorRef = useRef<WeeklyHoursEditorHandle>(null);
+  const poolEditorRef = useRef<BalinesePoolRemoteHandle>(null);
+  const [remotePending, setRemotePending] = useState({ weekly: false, pool: false });
+  const [unifiedSaving, setUnifiedSaving] = useState(false);
+  const [sectionResults, setSectionResults] = useState('');
   const [activationState, setActivationState] = useState<{ clientId: string; pending: BookingService | null; service: BookingService | null; message: string }>({ clientId, pending: null, service: null, message: '' });
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
   const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
@@ -189,6 +195,8 @@ export function Settings({
 
   useEffect(() => {
     setActivationState({ clientId, pending: null, service: null, message: '' });
+    setRemotePending({ weekly: false, pool: false });
+    setSectionResults('');
   }, [clientId]);
 
   useEffect(() => {
@@ -235,6 +243,13 @@ export function Settings({
   }, [activeSettingsTab, reservableResources]);
 
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftSettings) !== JSON.stringify(settings), [draftSettings, settings]);
+  const hasPendingChanges = hasUnsavedChanges || remotePending.weekly || remotePending.pool;
+  const onWeeklyPendingChange = useCallback((pending: boolean) => {
+    setRemotePending((current) => current.weekly === pending ? current : { ...current, weekly: pending });
+  }, []);
+  const onPoolPendingChange = useCallback((pending: boolean) => {
+    setRemotePending((current) => current.pool === pending ? current : { ...current, pool: pending });
+  }, []);
   const canActivateService = remoteHoursPreview && settingsVerified && !configurationLocked && !hasUnsavedChanges && Boolean(onServiceActivationChange);
 
   async function handleRemoteServiceActivation(service: BookingService, enabled: boolean) {
@@ -257,10 +272,10 @@ export function Settings({
   }
 
   useEffect(() => {
-    if (hasUnsavedChanges && saveState !== 'saving') {
-      setSaveState('dirty');
-    }
-  }, [hasUnsavedChanges, saveState]);
+    setSaveState((current) => hasUnsavedChanges
+      ? current === 'idle' || current === 'saved' ? 'dirty' : current
+      : current === 'dirty' ? 'idle' : current);
+  }, [hasUnsavedChanges]);
 
   function updateDraft<T extends keyof ManagerSettings>(key: T, value: ManagerSettings[T]) {
     setSettingsValidationMessage('');
@@ -493,16 +508,16 @@ export function Settings({
     setLicenseSaveState(result === 'success' ? 'saved' : 'error');
   }
 
-  async function handleSaveSettings() {
+  async function handleSaveSettings(): Promise<'success' | 'error' | 'skipped'> {
     if (configurationLocked) {
       setSaveState('error');
-      return;
+      return 'error';
     }
 
     if (!TIME_VALUE_PATTERN.test(draftSettings.mensajePostCenaHora)) {
       setSettingsValidationMessage('La hora del mensaje post-cena debe tener formato HH:mm.');
       setSaveState('error');
-      return;
+      return 'error';
     }
 
     if (
@@ -512,13 +527,30 @@ export function Settings({
     ) {
       setSettingsValidationMessage('Los minutos del recordatorio pre-cena deben ser un entero entre 15 y 1440.');
       setSaveState('error');
-      return;
+      return 'error';
     }
 
     setSaveState('saving');
     const result = await onSettingsSave(draftSettings);
-    setSettingsValidationMessage('');
-    setSaveState(result === 'error' ? 'error' : 'saved');
+    setSettingsValidationMessage(result === 'success' ? '' : 'No se guardó la configuración general. Recarga y compara los cambios antes de reintentar.');
+    setSaveState(result === 'success' ? 'saved' : 'error');
+    return result;
+  }
+
+  async function handleUnifiedSave() {
+    if (!remoteHoursPreview || configurationLocked || unifiedSaving || !hasPendingChanges) return;
+    setUnifiedSaving(true);
+    setSectionResults('');
+    try {
+      const results = await saveChangedSections([
+        { name: 'General', changed: hasUnsavedChanges, save: async () => await handleSaveSettings() === 'success' },
+        { name: 'Horarios semanales', changed: remotePending.weekly, save: async () => await weeklyEditorRef.current?.savePending() === 'saved' },
+        { name: 'Horario de piscina', changed: remotePending.pool, save: async () => await poolEditorRef.current?.savePending() === 'saved' },
+      ]);
+      setSectionResults(results.map(({ name, saved }) => `${name}: ${saved ? 'guardado' : 'no guardado'}`).join(' · '));
+    } finally {
+      setUnifiedSaving(false);
+    }
   }
 
   const webhookFields = (
@@ -758,14 +790,16 @@ export function Settings({
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
-          <WeeklyHoursEditor clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview}
+          <WeeklyHoursEditor ref={weeklyEditorRef} clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview}
+            unifiedSave={remoteHoursPreview} onPendingChange={onWeeklyPendingChange}
             onServiceActivationChange={handleRemoteServiceActivation} canActivateServices={canActivateService && !activationState.pending}
             activationService={activationState.service} activationMessage={activationState.message} />
         )}
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
           remoteHoursPreview
-            ? <BalinesePoolRemote clientId={clientId} enabled={settings.servicesEnabled.includes('BALINESA')}
+            ? <BalinesePoolRemote ref={poolEditorRef} clientId={clientId} enabled={settings.servicesEnabled.includes('BALINESA')}
+                unifiedSave onPendingChange={onPoolPendingChange}
                 onServiceActivationChange={handleRemoteServiceActivation} canActivateService={canActivateService && !activationState.pending}
                 activationMessage={activationState.service === 'BALINESA' ? activationState.message : ''} />
             : <BalinesePoolPreview clientId={clientId} />
@@ -1140,11 +1174,14 @@ export function Settings({
       </section>
 
       <section className="settings-save-bar">
-        <span className={`save-indicator is-${saveState}`}>
-          {settingsValidationMessage || (saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada')}
+        <span className={`save-indicator is-${hasPendingChanges ? 'dirty' : saveState}`}>
+          {remoteHoursPreview
+            ? unifiedSaving ? 'Guardando cambios…' : `${sectionResults ? `${sectionResults} · ` : ''}${settingsValidationMessage ? `${settingsValidationMessage} · ` : ''}${hasPendingChanges ? '● Cambios pendientes' : '✓ Sin cambios pendientes'}`
+            : settingsValidationMessage || (saveState === 'dirty' ? '● Cambios pendientes' : saveState === 'saving' ? 'Guardando...' : saveState === 'error' ? 'Guardado local, sin sincronizar' : '✓ Configuración guardada')}
         </span>
-        <button type="button" disabled={configurationLocked || saveState === 'saving'} onClick={handleSaveSettings}>
-          Guardar configuración
+        <button type="button" disabled={configurationLocked || (remoteHoursPreview ? unifiedSaving || !hasPendingChanges : saveState === 'saving')}
+          onClick={() => { void (remoteHoursPreview ? handleUnifiedSave() : handleSaveSettings()); }}>
+          {remoteHoursPreview ? 'GUARDAR CAMBIOS' : 'Guardar configuración'}
         </button>
       </section>
 

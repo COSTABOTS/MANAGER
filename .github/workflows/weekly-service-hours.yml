@@ -66,9 +66,9 @@ jobs:
       - name: Test Manager CORS and Preview origin gate
         run: deno test supabase/functions/manager-api/cors.test.ts tests/weeklyHoursPreview.test.ts
       - name: Check Manager service activation and HOY status tests
-        run: deno check tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts
+        run: deno check tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts tests/changedSettingsSave.test.ts tests/previewSettingsChanges.test.ts
       - name: Test Manager service activation and HOY status
-        run: deno test tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts
+        run: deno test tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts tests/changedSettingsSave.test.ts tests/previewSettingsChanges.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password

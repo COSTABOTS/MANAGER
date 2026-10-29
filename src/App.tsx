@@ -31,7 +31,8 @@ import { loadFeedbacks as loadFeedbacksFromWebhook, loadFeedbacksFromManagerApi 
 import type { Feedback } from './services/feedbacks';
 import { loadFullyBookedFromManagerApi, saveFullyBookedWithManagerApi } from './services/fullyBooked';
 import { loadCapacityFromManagerApi, loadCapacitySettings, saveCapacityWithManagerApi } from './services/capacitySettings';
-import { applyOperationalDefaults, applyOperationalSettings, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings, saveOperationalSettingsWithManagerApi } from './services/operationalSettings';
+import { applyOperationalDefaults, applyOperationalSettings, buildOperationalSettingsPayload, loadOperationalSettings, loadOperationalSettingsFromManagerApi, saveOperationalSettings, saveOperationalSettingsWithManagerApi } from './services/operationalSettings';
+import { invokeManagerApi } from './services/managerApiClient';
 import { clearSettingsStorage, loadSettingsFromStorage, saveSettingsToStorage } from './services/settingsStorage';
 import { loadRestaurantTables, loadTablesFromSupabaseEdge, saveRestaurantTable, saveRestaurantTableWithManagerApi } from './services/tables';
 import { sendWebhook } from './services/webhookClient';
@@ -48,7 +49,8 @@ import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './u
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
 import { isWeeklyHoursPreview } from './utils/weeklyHoursPreview';
-import { getInactiveServiceReservations, getTodayTabServices } from './utils/todayServices';
+import { getTodayTabServices } from './utils/todayServices';
+import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from './utils/previewSettingsChanges';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
@@ -839,12 +841,6 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const todayReservations = useMemo(
     () => todayActiveReservations.filter((reservation) => normalizeBookingService(reservation.service) === selectedTodayService),
     [selectedTodayService, todayActiveReservations],
-  );
-  const inactiveServiceReservations = useMemo(
-    () => SERVICE_ACTIVATION_PREVIEW
-      ? getInactiveServiceReservations(todayActiveReservations, enabledServices)
-      : [],
-    [enabledServices, todayActiveReservations],
   );
 
   const reservationsList = useMemo(() => allReservations, [allReservations]);
@@ -2044,6 +2040,47 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return 'skipped';
     }
 
+    if (SERVICE_ACTIVATION_PREVIEW && isSupabaseDemoRoute()) {
+      const clientId = String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim();
+      const currentValues = Object.fromEntries(buildOperationalSettingsPayload(settings).map(({ variable, value }) => [variable, value]));
+      const nextValues = Object.fromEntries(buildOperationalSettingsPayload(nextSettings).map(({ variable, value }) => [variable, value]));
+      const changedSettings = changedSettingValues(currentValues, nextValues);
+      const capacityChanged = capacitySettingsChanged(settings, nextSettings);
+      try {
+        if (capacityChanged && !nextSettings.serviceSlotCapacity) throw new Error('CAPACITY_NOT_LOADED');
+        if (Object.keys(changedSettings).length) {
+          const read = await invokeManagerApi<{ ok?: boolean; client_id?: string; settings?: Record<string, unknown> }>({ action: 'settings.get' });
+          if (!read.ok || read.client_id !== clientId || !read.settings) throw new Error('SETTINGS_READ_FAILED');
+          const remoteValues = Object.fromEntries(buildOperationalSettingsPayload(applyOperationalSettings(settings, read.settings))
+            .map(({ variable, value }) => [variable, value]));
+          if (changedSettingsConflict(currentValues, remoteValues, changedSettings)) throw new Error('SETTINGS_CONFLICT');
+          const saved = await invokeManagerApi<{ ok?: boolean; client_id?: string }>({ action: 'settings.save', settings: changedSettings });
+          if (!saved.ok || saved.client_id !== clientId) throw new Error('SETTINGS_SAVE_FAILED');
+          const verified = await invokeManagerApi<{ ok?: boolean; client_id?: string; settings?: Record<string, unknown> }>({ action: 'settings.get' });
+          if (!verified.ok || verified.client_id !== clientId || !verified.settings
+            || Object.entries(changedSettings).some(([key, value]) => String(verified.settings?.[key]) !== value)) {
+            throw new Error('SETTINGS_SAVE_UNCONFIRMED');
+          }
+        }
+        if (!(await syncClientBranding(nextSettings))) throw new Error('BRANDING_SAVE_FAILED');
+        if (capacityChanged && nextSettings.serviceSlotCapacity) {
+          for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
+            if (!nextSettings.servicesEnabled.includes(service)) continue;
+            const configured = nextSettings.serviceSlotCapacity[service] ?? {};
+            const hours = generateTimeSlots(nextSettings.serviceHours[service].start, nextSettings.serviceHours[service].end, nextSettings.bookingInterval);
+            const slots = hours.map((hora) => ({ hora, limite: configured[hora] ?? 20, activo: (configured[hora] ?? 20) > 0 }));
+            await saveCapacityWithManagerApi(slots, service);
+          }
+        }
+        updateSettings({ ...nextSettings, primaryColor: normalizeHexColor(nextSettings.primaryColor) });
+        setSettingsMessage('SETTINGS guardados correctamente');
+        return 'success';
+      } catch (error) {
+        console.warn('[MANAGER_API] Preview general settings save failed', error instanceof Error ? error.message : 'UNKNOWN');
+        return 'error';
+      }
+    }
+
     const settingsToSave = {
       ...nextSettings,
       primaryColor: normalizeHexColor(nextSettings.primaryColor),
@@ -2708,7 +2745,6 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         bookingInterval={settings.bookingInterval}
         reservations={todayReservations}
         allReservations={allReservations}
-        inactiveServiceReservations={inactiveServiceReservations}
         clientId={clientConfig?.client_id ?? ''}
         weeklyPreview={SERVICE_ACTIVATION_PREVIEW}
         reservableResources={reservableResources}
