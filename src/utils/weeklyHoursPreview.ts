@@ -14,3 +14,13 @@ export function isWeeklyHoursPreview(context: PreviewContext): boolean {
   );
   return allowedHosts.some((host) => context.origin === `https://${host}`);
 }
+
+export function isWeeklyHoursManagerProduction(context: PreviewContext): boolean {
+  return context.origin === 'https://manager.costabots.com'
+    && context.environment === 'production'
+    && context.branch === 'main';
+}
+
+export function isWeeklyHoursSettingsSurface(context: PreviewContext): boolean {
+  return isWeeklyHoursPreview(context) || isWeeklyHoursManagerProduction(context);
+}

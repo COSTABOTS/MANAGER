@@ -48,7 +48,7 @@ import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
-import { isWeeklyHoursPreview } from './utils/weeklyHoursPreview';
+import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
 import { getTodayTabServices } from './utils/todayServices';
 import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from './utils/previewSettingsChanges';
 
@@ -61,6 +61,13 @@ const DEMO_PASSWORD = 'Demo2026';
 const PROTECTED_DEMO_EMAIL = 'demo2@costabots.local';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
 const SERVICE_ACTIVATION_PREVIEW = isWeeklyHoursPreview({
+  origin: window.location.origin,
+  environment: import.meta.env.VITE_VERCEL_ENV,
+  branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
+  deploymentUrl: import.meta.env.VITE_VERCEL_URL,
+  branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
+});
+const HOURS_SETTINGS_SURFACE = isWeeklyHoursSettingsSurface({
   origin: window.location.origin,
   environment: import.meta.env.VITE_VERCEL_ENV,
   branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
@@ -2023,7 +2030,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function handleServiceActivationChange(service: BookingService, enabled: boolean) {
     const clientId = String(clientConfig?.client_id ?? '').trim();
-    if (!SERVICE_ACTIVATION_PREVIEW || !clientId || isProtectedDemoUser
+    if (!HOURS_SETTINGS_SURFACE || !clientId || isProtectedDemoUser
       || !['SETTINGS cargados correctamente', 'SETTINGS guardados correctamente'].includes(settingsMessage)) {
       throw new Error('SERVICES_NOT_READY');
     }
@@ -2040,7 +2047,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       return 'skipped';
     }
 
-    if (SERVICE_ACTIVATION_PREVIEW && isSupabaseDemoRoute()) {
+    if (HOURS_SETTINGS_SURFACE && isSupabaseDemoRoute()) {
       const clientId = String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim();
       const currentValues = Object.fromEntries(buildOperationalSettingsPayload(settings).map(({ variable, value }) => [variable, value]));
       const nextValues = Object.fromEntries(buildOperationalSettingsPayload(nextSettings).map(({ variable, value }) => [variable, value]));

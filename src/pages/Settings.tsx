@@ -4,7 +4,7 @@ import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor, type WeeklyHoursEditorHandle } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
 import { BalinesePoolRemote, type BalinesePoolRemoteHandle } from './BalinesePoolRemote';
-import { isWeeklyHoursPreview } from '../utils/weeklyHoursPreview';
+import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
 import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
 import { saveChangedSections } from '../utils/changedSettingsSave';
 
@@ -90,7 +90,8 @@ const HOURS_PREVIEW_CONTEXT = {
   deploymentUrl: import.meta.env.VITE_VERCEL_URL,
   branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
 };
-const WEEKLY_HOURS_UI_ENABLED = isWeeklyHoursPreview(HOURS_PREVIEW_CONTEXT);
+const WEEKLY_HOURS_UI_ENABLED = isWeeklyHoursSettingsSurface(HOURS_PREVIEW_CONTEXT);
+const HIDE_LEGACY_SCHEDULE = isWeeklyHoursPreview(HOURS_PREVIEW_CONTEXT);
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -676,7 +677,7 @@ export function Settings({
           <div className="settings-subsection">
             <p className="eyebrow">Horario del restaurante</p>
             <div className="settings-grid inner">
-              {!weeklyPreview && <>
+              {!HIDE_LEGACY_SCHEDULE && <>
               <label>
                 Hora apertura
                 <input type="time" value={draftSettings.openingTime} onChange={(event) => updateSchedule({ openingTime: event.target.value })} />
@@ -699,9 +700,9 @@ export function Settings({
             </div>
           </div>
 
-          {weeklyPreview && <p className="weekly-hours-notice">Las horas de apertura de esta vista se calculan desde el borrador semanal local. Los valores generales anteriores se conservan internamente.</p>}
+          {weeklyPreview && <p className="weekly-hours-notice">El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.</p>}
 
-          {!weeklyPreview && <div className="settings-subsection">
+          {!HIDE_LEGACY_SCHEDULE && <div className="settings-subsection">
             <p className="eyebrow">Horarios de servicio</p>
             <label className="service-enabled-toggle service-enabled-toggle-inline">
               <input
@@ -744,7 +745,7 @@ export function Settings({
             </div>
           </div>}
 
-          {!weeklyPreview && <div className="settings-subsection">
+          {!HIDE_LEGACY_SCHEDULE && <div className="settings-subsection">
             <p className="eyebrow">Dias de apertura</p>
             <div className="opening-days-grid">
               {WEEKDAYS.map((day) => (

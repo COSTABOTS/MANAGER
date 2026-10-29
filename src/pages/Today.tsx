@@ -282,10 +282,8 @@ export function Today({
   const displayReservations = requestedService === selectedService ? reservations
     : allReservations.filter((reservation) => normalizeDateForCompare(reservation.date) === dayStatus.date
       && isActiveReservation(reservation) && (reservation.service ?? 'CENA') === selectedService);
-  const inactiveServiceReservations = weeklyPreview
-    ? getInactiveServiceReservations(allReservations.filter((reservation) =>
-        normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation)), visibleServiceTabs)
-    : [];
+  const inactiveServiceReservations = getInactiveServiceReservations(allReservations.filter((reservation) =>
+    normalizeDateForCompare(reservation.date) === dayStatus.date && isActiveReservation(reservation)), visibleServiceTabs);
   const activeBalineseResources = useMemo(
     () =>
       reservableResources

@@ -14,12 +14,16 @@ const preview = {
 const revision = 'a'.repeat(64);
 const rules = toWeeklyHoursRows(createWeeklyHoursDraft());
 
-Deno.test('remote editors are enabled only for the authorized Preview', () => {
+Deno.test('remote editors require a verified tenant on authorized Preview or production Manager', () => {
   assert(REMOTE_HOURS_PREVIEW_ENABLED === true, 'the reviewed Preview gate must be enabled');
   assert(canUseRemoteHoursPreview(preview, 'A', true, false), 'authorized Preview may use remote hours');
-  assert(!canUseRemoteHoursPreview({ ...preview, environment: 'production' }, 'A', true, false), 'production environment must stay closed');
-  assert(!canUseRemoteHoursPreview({ ...preview, origin: 'https://manager.costabots.com' }, 'A', true, false), 'production must stay local-only');
-  assert(!canUseRemoteHoursPreview({ ...preview, branch: 'main' }, 'A', true, false), 'main must stay local-only');
+  const production = { origin: 'https://manager.costabots.com', environment: 'production', branch: 'main' };
+  assert(canUseRemoteHoursPreview(production, 'A', true, false), 'exact production Manager may edit hours');
+  assert(!canUseRemoteHoursPreview({ ...preview, environment: 'production' }, 'A', true, false), 'Preview origin cannot claim production');
+  assert(!canUseRemoteHoursPreview({ ...preview, origin: 'https://manager.costabots.com' }, 'A', true, false), 'Preview build cannot claim production');
+  assert(!canUseRemoteHoursPreview({ ...preview, branch: 'main' }, 'A', true, false), 'main branch cannot claim Preview');
+  assert(!canUseRemoteHoursPreview(production, 'A', false, false), 'production requires verified Settings');
+  assert(!canUseRemoteHoursPreview(production, 'A', true, true), 'production demo remains closed');
   assert(!canUseRemoteHoursPreview(preview, '', true, false), 'missing tenant must fail closed');
   assert(!canUseRemoteHoursPreview(preview, 'A', false, false), 'unverified Settings must fail closed');
   assert(!canUseRemoteHoursPreview(preview, 'A', true, true), 'demo mode must fail closed');
