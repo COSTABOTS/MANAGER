@@ -28,6 +28,14 @@ jobs:
       - uses: denoland/setup-deno@v1
         with:
           deno-version: v2.9.7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install and build Manager frontend
+        run: |
+          npm ci
+          npm run build
       - name: Check weekly-hours helper
         run: deno check supabase/functions/_shared/booking-hours/weeklyHours.ts
       - name: Test weekly-hours helper
@@ -42,6 +50,13 @@ jobs:
         run: deno check --node-modules-dir=auto supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
       - name: Test availability regressions
         run: deno test --node-modules-dir=auto --allow-net supabase/functions/public-api/routes/availabilityByDay.test.ts supabase/functions/_shared/reservation-store/supabaseReservationStore.test.ts
+      - name: Check and test legacy daily availability
+        run: |
+          deno check --node-modules-dir=auto supabase/functions/public-api/routes/availabilityByDay.legacy.test.ts
+          deno test --node-modules-dir=auto --allow-net supabase/functions/public-api/routes/availabilityByDay.legacy.test.ts
+      - name: Test availability mode HTTP contract
+        # availabilityByHour.ts retains unrelated inherited type diagnostics.
+        run: deno test --node-modules-dir=auto --no-check --allow-net supabase/functions/public-api/routes/availabilityByHour.mode.test.ts
       - name: Test public restaurant 30-minute lead time
         # The global public-api typecheck has inherited errors in the base commit.
         # Run these focused tests without typechecking their unrelated imports.
@@ -80,7 +95,7 @@ jobs:
       - name: Test full Manager creation HTTP with intercepted stores
         # index.ts has inherited type diagnostics; the test itself is checked locally against that baseline.
         # No --allow-net: every runtime fetch must hit the in-memory mock.
-        run: deno test --no-lock --no-check --allow-env supabase/functions/manager-api/managerApi.weeklyCreate.http.test.ts
+        run: deno test --no-lock --no-check --allow-env supabase/functions/manager-api/managerApi.weeklyCreate.http.test.ts supabase/functions/manager-api/settingsSave.weeklyActivation.http.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password

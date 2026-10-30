@@ -94,7 +94,8 @@ begin
     from public.booking_service_hours where client_id=new.client_id
       and weekday=extract(dow from new.booking_date)::integer and service=v_service;
   if not found or not v_open then
-    raise exception using errcode='P0001', message='WALKIN_OUTSIDE_WEEKLY_HOURS';
+    raise exception using errcode='P0001', message=case when new.source_channel='walk_in'
+      then 'WALKIN_OUTSIDE_WEEKLY_HOURS' else 'RESERVATION_OUTSIDE_WEEKLY_HOURS' end;
   end if;
   v_start_min := extract(hour from v_start)::integer*60 + extract(minute from v_start)::integer;
   v_arrival_min := extract(hour from new.booking_time)::integer*60 + extract(minute from new.booking_time)::integer;
