@@ -4,7 +4,7 @@ import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor, type WeeklyHoursEditorHandle } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
 import { BalinesePoolRemote, type BalinesePoolRemoteHandle } from './BalinesePoolRemote';
-import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
+import { isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
 import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
 import { saveChangedSections } from '../utils/changedSettingsSave';
 
@@ -18,6 +18,7 @@ interface SettingsProps {
   isLoadingResources: boolean;
   isLoadingSettings: boolean;
   settingsMessage: string;
+  weeklyMode?: 'legacy' | 'weekly' | 'unknown';
   isDemoMode?: boolean;
   isDemoUser?: boolean;
   isSuperAdmin?: boolean;
@@ -91,7 +92,7 @@ const HOURS_PREVIEW_CONTEXT = {
   branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
 };
 const WEEKLY_HOURS_UI_ENABLED = isWeeklyHoursSettingsSurface(HOURS_PREVIEW_CONTEXT);
-const HIDE_LEGACY_SCHEDULE = isWeeklyHoursPreview(HOURS_PREVIEW_CONTEXT);
+const HIDE_LEGACY_SCHEDULE = WEEKLY_HOURS_UI_ENABLED;
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -139,6 +140,7 @@ export function Settings({
   isLoadingResources,
   isLoadingSettings,
   settingsMessage,
+  weeklyMode = 'legacy',
   isDemoMode = false,
   isDemoUser = false,
   isSuperAdmin = false,
@@ -700,7 +702,11 @@ export function Settings({
             </div>
           </div>
 
-          {weeklyPreview && <p className="weekly-hours-notice">El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.</p>}
+          {weeklyPreview && <p className="weekly-hours-notice">{weeklyMode === 'weekly'
+            ? 'El calendario semanal está activo para este restaurante.'
+            : weeklyMode === 'unknown'
+              ? 'No se pudo confirmar el modo de horarios. No se permiten nuevas reservas hasta verificar SETTINGS.'
+              : 'El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.'}</p>}
 
           {!HIDE_LEGACY_SCHEDULE && <div className="settings-subsection">
             <p className="eyebrow">Horarios de servicio</p>
@@ -792,6 +798,7 @@ export function Settings({
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
           <WeeklyHoursEditor ref={weeklyEditorRef} clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview}
+            weeklyHoursEnabled={weeklyMode === 'weekly'}
             unifiedSave={remoteHoursPreview} onPendingChange={onWeeklyPendingChange}
             onServiceActivationChange={handleRemoteServiceActivation} canActivateServices={canActivateService && !activationState.pending}
             activationService={activationState.service} activationMessage={activationState.message} />

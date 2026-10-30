@@ -69,6 +69,18 @@ jobs:
         run: deno check tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts tests/changedSettingsSave.test.ts tests/previewSettingsChanges.test.ts tests/internalBookingPreview.test.ts
       - name: Test Manager service activation and HOY status
         run: deno test tests/serviceActivation.test.ts tests/todayServices.test.ts tests/todayWeeklyHours.test.ts tests/changedSettingsSave.test.ts tests/previewSettingsChanges.test.ts tests/internalBookingPreview.test.ts
+      - name: Check and test verified tenant mode
+        run: |
+          deno check tests/weeklyMode.test.ts
+          deno test tests/weeklyMode.test.ts
+      - name: Check Manager internal weekly creation guard
+        run: deno check supabase/functions/manager-api/internalWeeklyCreateGuard.test.ts
+      - name: Test Manager internal weekly creation guard
+        run: deno test supabase/functions/manager-api/internalWeeklyCreateGuard.test.ts
+      - name: Test full Manager creation HTTP with intercepted stores
+        # index.ts has inherited type diagnostics; the test itself is checked locally against that baseline.
+        # No --allow-net: every runtime fetch must hit the in-memory mock.
+        run: deno test --no-lock --no-check --allow-env supabase/functions/manager-api/managerApi.weeklyCreate.http.test.ts
       - name: Prepare disposable PostgreSQL fixture
         env:
           PGPASSWORD: weekly-test-password
@@ -207,3 +219,16 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/weekly_reservation_rpc_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test
+      - name: Apply internal weekly capacity migration only in disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261029180000_weekly_walkin_capacity.sql
+      - name: Test internal weekly capacity and legacy isolation
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_walkin_capacity_isolated.sql
+      - name: Test concurrent manual and public last-slot creation
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/weekly_internal_capacity_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test

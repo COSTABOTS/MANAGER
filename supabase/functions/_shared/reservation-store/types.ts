@@ -18,6 +18,7 @@ export interface AvailabilityResult {
   requestedPax: number;
   availableTimes: string[];
   requestedTimeAvailable: boolean;
+  availabilityMode?: 'WEEKLY';
 }
 
 export interface ReservationRecord {

@@ -145,6 +145,7 @@ export async function handleAvailabilityByHour(request: Request, dbClient: DbCli
       horas_disponibles_texto: availableTimes.join(', '),
       DISPONIBLE: requestedTimeAvailable,
       resultado: requestedTimeAvailable ? 'TRUE' : 'FALSE',
+      availability_mode: result.availabilityMode === 'WEEKLY' ? 'WEEKLY' : 'LEGACY',
     });
   } catch (error) {
     const headerIssues = (error as { headerIssues?: unknown }).headerIssues;

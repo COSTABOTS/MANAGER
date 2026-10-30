@@ -298,9 +298,13 @@ export async function loadOperationalSettingsFromManagerApi(): Promise<SettingsV
     throw new Error(response?.code || response?.message || 'manager-api settings.get no devolvio ok=true');
   }
 
+  if (!response.settings || typeof response.settings !== 'object') {
+    throw new Error('manager-api settings.get no devolvio SETTINGS verificables');
+  }
+
   console.log('[DEMO][MANAGER_API] settings received', response.settings);
 
-  return response.settings ?? DEFAULT_OPERATIONAL_SETTINGS;
+  return response.settings;
 }
 
 export async function saveOperationalSettings(webhookUrl: string, settings: ManagerSettings) {

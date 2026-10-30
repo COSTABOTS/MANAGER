@@ -179,7 +179,52 @@ test('empty Hospitality tables return valid empty read models', async () => {
   assert.equal(await store.getReservation('RES-NOT-FOUND'), null);
 });
 
-test('weekly Sunday rule filters slots while preserving weekday NULL capacity', async () => {
+test('legacy Sunday capacity keeps deployed ISODOW=7 and weekday NULL behavior', async () => {
+  for (const setting of [undefined, 'false']) {
+    const settings = setting === undefined ? [] : [{ CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: setting }];
+    const client = new FixtureClient({
+      SETTINGS: settings,
+      booking_capacity_slots: [
+        { client_id: context.clientId, slot_time: '11:00:00', capacity: 3, active: true, service: 'CENA', weekday: 7, valid_from: null, valid_until: null },
+        { client_id: context.clientId, slot_time: '12:00:00', capacity: 3, active: true, service: null, weekday: null, valid_from: null, valid_until: null },
+        { client_id: context.clientId, slot_time: '13:00:00', capacity: 3, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
+        { client_id: context.clientId, slot_time: '14:00:00', capacity: 3, active: true, service: 'ALMUERZO', weekday: 7, valid_from: null, valid_until: null },
+      ],
+    });
+    const store = new SupabaseReservationStore(context, client);
+    const sunday = await store.getAvailability({ date: '2026-08-16', requestedPax: 2, service: 'CENA' });
+    assert.deepEqual(sunday.availableTimes, ['11:00', '12:00']);
+    assert.equal(sunday.availabilityMode, undefined);
+    assert.equal(client.calls.includes('booking_service_hours'), false);
+  }
+});
+
+test('legacy Monday matches weekday 1 and a general capacity slot', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '11:00:00', capacity: 3, active: true, service: 'CENA', weekday: 1, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '12:00:00', capacity: 3, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '13:00:00', capacity: 3, active: true, service: 'CENA', weekday: 7, valid_from: null, valid_until: null },
+    ],
+  });
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-17', requestedPax: 1, service: 'CENA' });
+  assert.deepEqual(result.availableTimes, ['11:00', '12:00']);
+});
+
+test('BALINESA remains independent of weekly SETTINGS and uses deployed capacity weekdays', async () => {
+  const client = new FixtureClient({
+    booking_capacity_slots: [
+      { client_id: context.clientId, slot_time: '11:00:00', capacity: 3, active: true, service: 'BALINESA', weekday: 7, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '12:00:00', capacity: 3, active: true, service: 'BALINESA', weekday: 0, valid_from: null, valid_until: null },
+    ],
+  });
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'BALINESA' });
+  assert.deepEqual(result.availableTimes, ['11:00']);
+  assert.equal(client.calls.includes('SETTINGS'), false);
+  assert.equal(client.calls.includes('booking_service_hours'), false);
+});
+
+test('weekly Sunday capacity uses weekday 0 and NULL while legacy Sunday retains 7', async () => {
   const client = new FixtureClient({
     SETTINGS: [
       { CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
@@ -189,11 +234,79 @@ test('weekly Sunday rule filters slots while preserving weekday NULL capacity', 
     booking_capacity_slots: [
       { client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
       { client_id: context.clientId, slot_time: '12:00:00', capacity: 10, active: true, service: 'CENA', weekday: null, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '13:00:00', capacity: 10, active: true, service: 'CENA', weekday: 7, valid_from: null, valid_until: null },
       { client_id: context.clientId, slot_time: '18:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
     ],
   });
   const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' });
   assert.deepEqual(result.availableTimes, ['11:00', '12:00']);
+  assert.equal(result.availabilityMode, 'WEEKLY');
+});
+
+test('weekly walk-ins at 17:50, 18:10 and 18:20 consume one 18:00 dinner slot without affecting lunch', async () => {
+  const rules = weeklyRows().map((row) => {
+    if (row.weekday !== 0) return row;
+    if (row.service === 'CENA') return { ...row, enabled: true, start_time: '18:00:00', end_time: '23:00:00' };
+    if (row.service === 'ALMUERZO') return { ...row, enabled: true, start_time: '11:00:00', end_time: '19:00:00' };
+    return row;
+  });
+  const bookings = [
+    reservation({ id: '10000000-0000-4000-8000-000000000011', booking_date: '2026-08-16',
+      booking_time: '17:50:00', capacity_slot_time: '18:00:00', source_channel: 'walk_in', service: 'CENA', pax: 2 }),
+    reservation({ id: '10000000-0000-4000-8000-000000000012', booking_date: '2026-08-16',
+      booking_time: '18:10:00', capacity_slot_time: '18:00:00', source_channel: 'walk_in', service: 'CENA', pax: 1 }),
+    reservation({ id: '10000000-0000-4000-8000-000000000013', booking_date: '2026-08-16',
+      booking_time: '18:20:00', capacity_slot_time: '18:00:00', source_channel: 'walk_in', service: 'CENA', pax: 1 }),
+  ];
+  const settings: Row[] = [
+    { CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA' },
+  ];
+  const client = new FixtureClient({
+    SETTINGS: settings,
+    booking_service_hours: rules,
+    booking_capacity_slots: ['ALMUERZO', 'CENA'].map((service) => ({ client_id: context.clientId,
+      slot_time: '18:00:00', capacity: 4, active: true, service, weekday: null, valid_from: null, valid_until: null })),
+    reservations: bookings,
+  });
+  const store = new SupabaseReservationStore(context, client);
+  const dinner = await store.getAvailability({ date: '2026-08-16', requestedPax: 1, requestedTime: '18:00', service: 'CENA' });
+  const lunch = await store.getAvailability({ date: '2026-08-16', requestedPax: 1, requestedTime: '18:00', service: 'ALMUERZO' });
+  assert.deepEqual(dinner.availableTimes, [], 'all four dinner places consumed once');
+  assert.deepEqual(lunch.availableTimes, ['18:00'], 'lunch capacity remains separate');
+  bookings[0].status = 'cancelled';
+  const afterCancellation = await store.getAvailability({ date: '2026-08-16', requestedPax: 2, requestedTime: '18:00', service: 'CENA' });
+  assert.deepEqual(afterCancellation.availableTimes, ['18:00'], 'cancellation releases only its two places');
+  bookings.push(reservation({ id: '10000000-0000-4000-8000-000000000014', booking_date: '2026-08-16',
+    booking_time: '18:00:00', capacity_slot_time: null, source_channel: 'widget', service: 'CENA', pax: 2 }));
+  const withPublicBooking = await store.getAvailability({ date: '2026-08-16', requestedPax: 1, requestedTime: '18:00', service: 'CENA' });
+  assert.deepEqual(withPublicBooking.availableTimes, [], 'public booking and walk-ins share the same four places');
+  settings[0].VALOR = 'false';
+  const afterDeactivation = await store.getAvailability({ date: '2026-08-16', requestedPax: 1, requestedTime: '18:00', service: 'CENA' });
+  assert.deepEqual(afterDeactivation.availableTimes, [], 'existing attributed walk-ins still consume capacity after weekly deactivation');
+});
+
+test('weekly lunch opens on Sunday, closes on Monday, and dinner remains independent', async () => {
+  const rules = weeklyRows().map((row) => {
+    const enabled = (row.weekday === 0 && row.service === 'ALMUERZO') || (row.weekday === 1 && row.service === 'CENA');
+    return { ...row, enabled, start_time: enabled ? (row.service === 'CENA' ? '19:00:00' : '11:00:00') : null,
+      end_time: enabled ? (row.service === 'CENA' ? '23:00:00' : '18:00:00') : null };
+  });
+  const capacity = ['11:00:00', '18:00:00', '20:00:00'].map((slot_time) => ({ client_id: context.clientId,
+    slot_time, capacity: 8, active: true, service: null, weekday: null, valid_from: null, valid_until: null }));
+  const client = new FixtureClient({ SETTINGS: [
+    { CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'ALMUERZO,CENA' },
+  ], booking_service_hours: rules, booking_capacity_slots: capacity });
+  const store = new SupabaseReservationStore(context, client);
+  const sundayLunch = await store.getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'ALMUERZO' });
+  const mondayLunch = await store.getAvailability({ date: '2026-08-17', requestedPax: 1, service: 'ALMUERZO' });
+  const mondayDinner = await store.getAvailability({ date: '2026-08-17', requestedPax: 1, service: 'CENA' });
+  assert.deepEqual(sundayLunch.availableTimes, ['11:00']);
+  assert.deepEqual(mondayLunch.availableTimes, []);
+  assert.deepEqual(mondayDinner.availableTimes, ['20:00']);
+  assert.deepEqual([sundayLunch.availabilityMode, mondayLunch.availabilityMode, mondayDinner.availabilityMode],
+    ['WEEKLY', 'WEEKLY', 'WEEKLY']);
 });
 
 test('BALINESA-only global service does not expose weekly CENA capacity', async () => {
@@ -204,21 +317,24 @@ test('BALINESA-only global service does not expose weekly CENA capacity', async 
     ],
     booking_service_hours: weeklyRows(),
     booking_capacity_slots: [
-      { client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null },
+      { client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 7, valid_from: null, valid_until: null },
     ],
   });
   const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' });
   assert.deepEqual(result.availableTimes, []);
+  assert.equal(result.availabilityMode, 'WEEKLY');
 });
 
 test('weekly Fully Booked still overrides an open weekly service', async () => {
   const client = new FixtureClient({
     SETTINGS: [{ CLIENTE_ID: context.clientId, CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }, { CLIENTE_ID: context.clientId, CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' }],
     booking_service_hours: weeklyRows(),
-    booking_capacity_slots: [{ client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 0, valid_from: null, valid_until: null }],
+    booking_capacity_slots: [{ client_id: context.clientId, slot_time: '11:00:00', capacity: 10, active: true, service: 'CENA', weekday: 7, valid_from: null, valid_until: null }],
     booking_day_controls: [{ client_id: context.clientId, booking_date: '2026-08-16', service: 'CENA', status: 'open', fully_booked: true }],
   });
-  assert.deepEqual((await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' })).availableTimes, []);
+  const result = await new SupabaseReservationStore(context, client).getAvailability({ date: '2026-08-16', requestedPax: 1, service: 'CENA' });
+  assert.deepEqual(result.availableTimes, []);
+  assert.equal(result.availabilityMode, 'WEEKLY');
 });
 
 test('weekly settings read errors do not fall back to legacy', async () => {

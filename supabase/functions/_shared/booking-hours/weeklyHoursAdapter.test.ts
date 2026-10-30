@@ -141,3 +141,47 @@ Deno.test('explicit restaurant services accept whitespace separators consistentl
   if (result.mode !== 'weekly') throw new Error('Expected weekly hours');
   assertEquals([...result.servicesEnabled ?? []], ['ALMUERZO', 'CENA']);
 });
+
+Deno.test('malformed SETTINGS result cannot be interpreted as absent weekly mode', async () => {
+  const result = await loadWeeklyHours({
+    readSettings: async () => ({ data: null, error: null }),
+    readRules: async () => { throw new Error('rules must not be read'); },
+  });
+  assertEquals(result.mode, 'error');
+  if (result.mode !== 'error') throw new Error('Expected read error');
+  assertEquals(result.error.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
+});
+
+Deno.test('contradictory weekly flag rows never fall back to legacy', async () => {
+  const result = await loadWeeklyHours({
+    readSettings: async () => ({ data: [
+      { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+      { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'false' },
+    ], error: null }),
+    readRules: async () => { throw new Error('ambiguous flags must not read rules'); },
+  });
+  assertEquals(result.mode, 'error');
+  if (result.mode !== 'error') throw new Error('Expected invalid configuration');
+  assertEquals(result.error.code, 'WEEKLY_HOURS_CONFIG_INVALID');
+});
+
+Deno.test('duplicate global services setting is rejected in weekly mode', async () => {
+  const result = await loadWeeklyHours(mockDb([
+    { CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'CENA' },
+    { CLAVE: 'SERVICES_ENABLED', VALOR: 'BALINESA' },
+  ], rows()).reader());
+  assertEquals(result.mode, 'error');
+  if (result.mode !== 'error') throw new Error('Expected invalid configuration');
+  assertEquals(result.error.code, 'WEEKLY_HOURS_CONFIG_INVALID');
+});
+
+Deno.test('malformed weekly rules result is a read failure', async () => {
+  const result = await loadWeeklyHours({
+    readSettings: async () => ({ data: [{ CLAVE: 'WEEKLY_HOURS_ENABLED', VALOR: 'true' }], error: null }),
+    readRules: async () => ({ data: null, error: null }),
+  });
+  assertEquals(result.mode, 'error');
+  if (result.mode !== 'error') throw new Error('Expected read error');
+  assertEquals(result.error.code, 'WEEKLY_HOURS_CONFIG_READ_FAILED');
+});

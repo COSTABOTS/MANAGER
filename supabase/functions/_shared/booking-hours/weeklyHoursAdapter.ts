@@ -110,7 +110,10 @@ export interface WeeklyHoursReader {
 export async function loadWeeklyHours(reader: WeeklyHoursReader): Promise<WeeklyHoursResolution> {
   const settingsResult = await reader.readSettings();
   if (settingsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
-  const settings = Array.isArray(settingsResult.data) ? settingsResult.data as Array<Record<string, unknown>> : [];
+  if (!Array.isArray(settingsResult.data)) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
+  const settings = settingsResult.data as Array<Record<string, unknown>>;
+  const flagRows = settings.filter((row) => row.CLAVE === 'WEEKLY_HOURS_ENABLED');
+  if (flagRows.length > 1) return invalid('WEEKLY_HOURS_ENABLED must be unique');
   const settingsMap = new Map(settings.map((row) => [String(row.CLAVE ?? '').trim(), row.VALOR]));
   const resolution = resolveWeeklyHours(settingsMap.get('WEEKLY_HOURS_ENABLED'), [], null);
   const rawEnabled = settingsMap.get('WEEKLY_HOURS_ENABLED');
@@ -118,8 +121,12 @@ export async function loadWeeklyHours(reader: WeeklyHoursReader): Promise<Weekly
   if (!weeklyEnabled) return resolution;
   const rowsResult = await reader.readRules();
   if (rowsResult.error) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
-  const weekly = resolveWeeklyHours(rawEnabled, Array.isArray(rowsResult.data) ? rowsResult.data as BookingServiceHoursRow[] : [], null);
+  if (!Array.isArray(rowsResult.data)) return { mode: 'error', error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED', message: 'Weekly hours configuration could not be read' } };
+  const weekly = resolveWeeklyHours(rawEnabled, rowsResult.data as BookingServiceHoursRow[], null);
   if (weekly.mode !== 'weekly') return weekly;
+  if (settings.filter((row) => row.CLAVE === 'SERVICES_ENABLED').length > 1) {
+    return invalid('SERVICES_ENABLED must be unique');
+  }
   const rawServices = String(settingsMap.get('SERVICES_ENABLED') ?? '').trim();
   const servicesEnabled = rawServices
     ? new Set(rawServices.split(/[,;\s]+/).map((value) => value.trim().toUpperCase()).filter((value): value is WeeklyService => SERVICES.includes(value as WeeklyService)))

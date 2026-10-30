@@ -7,6 +7,9 @@ import type { PoolHoursAccess } from './poolHoursActions.ts';
 import { handlePoolHoursHttp } from './poolHoursHttp.ts';
 import { canWriteRemoteHours, hoursAuthFailureStatus } from './hoursWriteGate.ts';
 import { getCorsHeaders } from './cors.ts';
+import { guardInternalWeeklyCreate } from './internalWeeklyCreateGuard.ts';
+import { RestaurantRpcRejection } from '../_shared/reservation-store/errors.ts';
+import type { WeeklyHoursReader } from '../_shared/booking-hours/weeklyHoursAdapter.ts';
 
 type ManagerAction =
   | 'tables.list'
@@ -2043,8 +2046,11 @@ async function getSettings(request: Request, clientId: string, sheetId: string, 
 
 async function saveSettings(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>, debug: ManagerApiDebug) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
+  const settingsMap = normalizeSettingsInput(body.settings);
+  if (Object.prototype.hasOwnProperty.call(settingsMap, 'WEEKLY_HOURS_ENABLED')) {
+    return errorResponse(request, 'WEEKLY_HOURS_ACTIVATION_FORBIDDEN', 'La activación semanal requiere un procedimiento controlado', 403);
+  }
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
-    const settingsMap = normalizeSettingsInput(body.settings);
     const variables = Object.keys(settingsMap);
     if (variables.length === 0) return errorResponse(request, 'SETTINGS_REQUIRED', 'No se recibieron SETTINGS para guardar', 400);
     for (const variable of variables) {
@@ -2061,7 +2067,6 @@ async function saveSettings(request: Request, clientId: string, sheetId: string,
   }
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
 
-  const settingsMap = normalizeSettingsInput(body.settings);
   const variables = Object.keys(settingsMap);
 
   if (variables.length === 0) {
@@ -2318,6 +2323,21 @@ async function updateReservationCell(
   return null;
 }
 
+function weeklyCreateReader(dbClient: any, clientId: string): WeeklyHoursReader {
+  return {
+    readSettings: async () => {
+      const result = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', clientId)
+        .in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
+      return { data: result.data, error: result.error ?? (!Array.isArray(result.data) ? { message: 'invalid settings result' } : null) };
+    },
+    readRules: async () => {
+      const result = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time')
+        .eq('client_id', clientId);
+      return { data: result.data, error: result.error ?? (!Array.isArray(result.data) ? { message: 'invalid rules result' } : null) };
+    },
+  };
+}
+
 async function createReservation(request: Request, clientId: string, sheetId: string, reservationStore: unknown, dbClient: any, body: Record<string, unknown>) {
   console.log(`[MANAGER_API] client_id=${clientId}`);
   console.log(`[MANAGER_API] sheet_id=${sheetId}`);
@@ -2337,7 +2357,7 @@ async function createReservation(request: Request, clientId: string, sheetId: st
   const origen = toSheetString(reservation.origen ?? reservation.origin) || 'MANUAL';
   const mesa = toSheetString(reservation.mesa ?? reservation.table);
   const rawServicio = toSheetString(reservation.servicio ?? reservation.service).toUpperCase();
-  const servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
+  let servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
   const paqueteBalinesa = toSheetString(reservation.paqueteBalinesa ?? reservation.balinesePackage ?? reservation.paquete_balinesa);
   const recurso = toSheetString(reservation.recurso ?? reservation.resource);
   const rawArrival = reservation.llego ?? reservation.arrived ?? false;
@@ -2347,9 +2367,23 @@ async function createReservation(request: Request, clientId: string, sheetId: st
     return errorResponse(request, 'RESERVATION_REQUIRED_FIELDS', 'Faltan datos obligatorios para crear la reserva', 400);
   }
 
+  const weeklyGuard = await guardInternalWeeklyCreate('reservation.create',
+    { service: rawServicio, date: fecha, time: hora }, weeklyCreateReader(dbClient, clientId), new Date(),
+    Deno.env.get('ENABLE_MANAGER_WEEKLY_CREATE_GUARD') === 'true');
+  if (weeklyGuard.mode === 'error') return errorResponse(request, weeklyGuard.code, 'Horario no disponible para esta reserva', weeklyGuard.status);
+  if (weeklyGuard.mode === 'weekly') servicio = weeklyGuard.service;
+
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
     const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
-    await store.createManualReservation({ id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL', table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: paqueteBalinesa, resource: recurso });
+    try {
+      await store.createManualReservation({ id: idReserva, date: fecha, time: hora, name: nombre, phone: telefono, pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'MANUAL', table: mesa, arrived: llego, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: paqueteBalinesa, resource: recurso });
+    } catch (error) {
+      if (error instanceof RestaurantRpcRejection) {
+        const status = error.publicCode.startsWith('WEEKLY_HOURS_CONFIG_') ? 503 : 409;
+        return errorResponse(request, error.publicCode, 'No se pudo crear la reserva', status);
+      }
+      throw error;
+    }
     return jsonResponse(request, { ok: true, action: 'reservation.create', client_id: clientId, idReserva });
   }
 
@@ -2436,8 +2470,8 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   console.log(`[MANAGER_API] walkin idReserva=${idReserva}`);
 
   const nombre = toSheetString(walkin.nombre ?? walkin.name) || 'Walk-in';
-  const fecha = toSheetString(walkin.fecha ?? walkin.date) || new Date().toISOString().slice(0, 10);
-  const hora = toSheetString(walkin.hora ?? walkin.time) || new Intl.DateTimeFormat('es-ES', {
+  let fecha = toSheetString(walkin.fecha ?? walkin.date) || new Date().toISOString().slice(0, 10);
+  let hora = toSheetString(walkin.hora ?? walkin.time) || new Intl.DateTimeFormat('es-ES', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -2448,15 +2482,33 @@ async function createWalkIn(request: Request, clientId: string, sheetId: string,
   const peticionEspecial = toSheetString(walkin.peticionEspecial ?? walkin.peticiones ?? walkin.specialRequest);
   const mesa = toSheetString(walkin.mesa ?? walkin.table);
   const rawServicio = toSheetString(walkin.servicio ?? walkin.service).toUpperCase();
-  const servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
+  let servicio = ['DESAYUNO', 'ALMUERZO', 'CENA', 'BALINESA'].includes(rawServicio) ? rawServicio : 'CENA';
 
   if (!pax) {
     return errorResponse(request, 'WALKIN_REQUIRED_FIELDS', 'Faltan pax para crear el walk-in', 400);
   }
 
+  const weeklyGuard = await guardInternalWeeklyCreate('walkin.create',
+    { service: rawServicio, date: fecha, time: hora }, weeklyCreateReader(dbClient, clientId), new Date(),
+    Deno.env.get('ENABLE_MANAGER_WEEKLY_CREATE_GUARD') === 'true');
+  if (weeklyGuard.mode === 'error') return errorResponse(request, weeklyGuard.code, 'No hay un servicio abierto ahora', weeklyGuard.status);
+  if (weeklyGuard.mode === 'weekly') {
+    servicio = weeklyGuard.service;
+    fecha = weeklyGuard.date;
+    hora = weeklyGuard.time;
+  }
+
   if (String(reservationStore ?? 'sheets').trim().toLowerCase() === 'supabase') {
     const store = resolveReservationStore({ clientId, sheetId, reservationStore: 'supabase' }, {}, dbClient);
-    await store.createWalkIn({ id: idReserva, date: fecha, time: hora, name: nombre, phone: '', pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'WALK-IN', table: mesa, arrived: true, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: '', resource: '' });
+    try {
+      await store.createWalkIn({ id: idReserva, date: fecha, time: hora, name: nombre, phone: '', pax, language: idioma, specialRequest: peticionEspecial, status: 'CONFIRMADA', origin: 'WALK-IN', table: mesa, arrived: true, feedbackSent: false, room: habitacion, service: servicio, balinesePackage: '', resource: '' });
+    } catch (error) {
+      if (error instanceof RestaurantRpcRejection) {
+        const status = error.publicCode.startsWith('WEEKLY_HOURS_CONFIG_') ? 503 : 409;
+        return errorResponse(request, error.publicCode, 'No se pudo crear el walk-in', status);
+      }
+      throw error;
+    }
     return jsonResponse(request, { ok: true, action: 'walkin.create', client_id: clientId, idReserva });
   }
 

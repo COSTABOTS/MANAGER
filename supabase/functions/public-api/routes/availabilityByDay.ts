@@ -53,25 +53,24 @@ export async function handleAvailabilityByDay(request: Request, dbClient: DbClie
       .select('service,status,fully_booked')
       .eq('client_id', context.clientId)
       .eq('booking_date', date),
-    dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', context.clientId).in('CLAVE', ['BOOKINGS_ENABLED']),
+    dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', context.clientId).in('CLAVE', ['BOOKINGS_ENABLED', 'WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']),
   ]);
-  if (controlsResult.error || settingsResult.error) {
+  if (controlsResult.error || settingsResult.error || !Array.isArray(settingsResult.data)) {
     return errorResponse(request, 'AVAILABILITY_BY_DAY_FAILED', 500);
   }
-  const settingsValue = toStringValue((settingsResult.data?.[0] as Record<string, unknown> | undefined)?.VALOR).toLowerCase();
-  const bookingsEnabled = !settingsResult.data?.length || !['false', '0', 'no', 'off', 'disabled'].includes(settingsValue);
+  const settingsRows = settingsResult.data as Array<Record<string, unknown>>;
+  const bookingsRow = settingsRows.find((row) => toStringValue(row.CLAVE) === 'BOOKINGS_ENABLED');
+  const settingsValue = toStringValue(bookingsRow?.VALOR).toLowerCase();
+  const bookingsEnabled = !bookingsRow || !['false', '0', 'no', 'off', 'disabled'].includes(settingsValue);
   const weeklyHours = normalizedService === 'BALINESA'
     ? { mode: 'legacy' as const, config: null, servicesEnabled: null }
     : await loadWeeklyHours({
-      readSettings: async () => {
-        const result = await dbClient.from('SETTINGS').select('CLAVE,VALOR').eq('CLIENTE_ID', context.clientId).in('CLAVE', ['WEEKLY_HOURS_ENABLED', 'SERVICES_ENABLED']);
-        return { data: result.data, error: result.error };
-      },
+      readSettings: async () => ({ data: settingsRows, error: null }),
       readRules: async () => {
         const result = await dbClient.from('booking_service_hours').select('weekday,service,enabled,start_time,end_time').eq('client_id', context.clientId);
         return { data: result.data, error: result.error };
       },
-    });
+    }).catch(() => ({ mode: 'error' as const, error: { code: 'WEEKLY_HOURS_CONFIG_READ_FAILED' } }));
   if (weeklyHours.mode === 'error') return errorResponse(request, weeklyHours.error.code, 500);
   const weeklyOpen = weeklyHours.mode !== 'weekly'
     || resolveWeeklyServiceRule(weeklyHours.config, date, normalizedService as 'DESAYUNO' | 'ALMUERZO' | 'CENA').rule?.enabled === true;

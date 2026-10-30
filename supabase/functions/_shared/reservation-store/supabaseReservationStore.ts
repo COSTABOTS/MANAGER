@@ -9,7 +9,7 @@ import type {
   ReservationMutationResult,
   CreateFeedbackCommand,
 } from './types.ts';
-import { isServiceOpenAt, isWeeklyService } from '../booking-hours/weeklyHours.ts';
+import { getWeekday, isServiceOpenAt, isWeeklyService } from '../booking-hours/weeklyHours.ts';
 import { loadWeeklyHours } from '../booking-hours/weeklyHoursAdapter.ts';
 import { parseRestaurantRpcRejection } from './errors.ts';
 
@@ -98,8 +98,11 @@ function isDateWithinRule(date: string, from: unknown, until: unknown) {
   return (!validFrom || validFrom <= date) && (!validUntil || validUntil >= date);
 }
 
+// Capacity slots retain the deployed ISODOW convention (Sunday = 7).
+// Weekly service rules resolve their own weekday separately (Sunday = 0).
 export function getBookingWeekday(date: string) {
-  return new Date(`${date}T00:00:00Z`).getUTCDay();
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
 }
 
 function normalizeStatus(row: DatabaseRow) {
@@ -197,12 +200,13 @@ export class SupabaseReservationStore implements ReservationStore {
         },
       });
     if (weeklyHours.mode === 'error') throw new Error(weeklyHours.error.code);
+    const appliedWeeklyMode = weeklyHours.mode === 'weekly' ? { availabilityMode: 'WEEKLY' as const } : {};
     const weeklyService = isWeeklyService(requestedService) ? requestedService : null;
     if (weeklyHours.mode === 'weekly' && !weeklyService) {
-      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };
+      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false, ...appliedWeeklyMode };
     }
     if (weeklyHours.mode === 'weekly' && weeklyHours.servicesEnabled && weeklyService && !weeklyHours.servicesEnabled.has(weeklyService)) {
-      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false };
+      return { requestedPax: query.requestedPax, availableTimes: [], requestedTimeAvailable: false, ...appliedWeeklyMode };
     }
     const capacityResult = await this.dbClient
       .from('booking_capacity_slots')
@@ -212,7 +216,7 @@ export class SupabaseReservationStore implements ReservationStore {
       .order('slot_time', { ascending: true });
     const reservationResult = await this.dbClient
       .from('reservations')
-      .select('booking_date,booking_time,service,pax,status,legacy_status')
+      .select('booking_date,booking_time,capacity_slot_time,service,pax,status,legacy_status')
       .eq('client_id', this.context.clientId)
       .eq('booking_date', bookingDate);
     const dayControlResult = await this.dbClient
@@ -233,7 +237,7 @@ export class SupabaseReservationStore implements ReservationStore {
       .filter((row) => isApplicableService(row.service, requestedService));
     const blockRows = requireRows(blockResult, 'GET_AVAILABILITY_BLOCKS_FAILED')
       .filter((row) => isApplicableService(row.service, requestedService) && row.active === true);
-    const weekday = getBookingWeekday(bookingDate);
+    const weekday = weeklyHours.mode === 'weekly' ? getWeekday(bookingDate) : getBookingWeekday(bookingDate);
     const applicableCapacityRows = capacityRows.filter((row) => {
       const ruleWeekday = row.weekday === null || row.weekday === undefined ? null : toNumberValue(row.weekday);
       return row.active === true
@@ -248,7 +252,7 @@ export class SupabaseReservationStore implements ReservationStore {
     const availableTimes: string[] = [];
 
     if (dayControlRows.some((row) => toStringValue(row.status).toLowerCase() === 'closed' || row.fully_booked === true)) {
-      return { requestedPax: query.requestedPax, availableTimes, requestedTimeAvailable: false };
+      return { requestedPax: query.requestedPax, availableTimes, requestedTimeAvailable: false, ...appliedWeeklyMode };
     }
 
     const capacityOverride = dayControlRows.reduce<number | null>((maximum, row) => {
@@ -274,7 +278,7 @@ export class SupabaseReservationStore implements ReservationStore {
       if (capacity <= 0) continue;
 
       const occupied = activeReservations
-        .filter((reservation) => normalizeTime(reservation.booking_time) === slotTime)
+        .filter((reservation) => normalizeTime(reservation.capacity_slot_time ?? reservation.booking_time) === slotTime)
         .reduce((total, reservation) => total + toNumberValue(reservation.pax), 0);
       if (occupied + query.requestedPax <= capacity
         && (weeklyHours.mode !== 'weekly'
@@ -288,6 +292,7 @@ export class SupabaseReservationStore implements ReservationStore {
       requestedPax: query.requestedPax,
       availableTimes,
       requestedTimeAvailable: Boolean(requestedTime) && availableTimes.includes(requestedTime),
+      ...appliedWeeklyMode,
     };
   }
 
@@ -456,7 +461,13 @@ export class SupabaseReservationStore implements ReservationStore {
   private async insertDirect(command: CreateReservationCommand, channel: string) {
     const payload = await this.toDatabasePayload(command, channel);
     const result = await (this.dbClient.from('reservations') as any).insert(payload).select('id').maybeSingle();
-    if (result.error) throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+    if (result.error) {
+      if (channel === 'walk_in' || channel === 'manager_manual') {
+        const rejection = parseRestaurantRpcRejection(result.error);
+        if (rejection) throw rejection;
+      }
+      throw new Error(`SUPABASE_RESERVATION_STORE_CREATE_FAILED: ${result.error.message}`);
+    }
   }
 
   private async toDatabasePayload(command: CreateReservationCommand, channel: string) {

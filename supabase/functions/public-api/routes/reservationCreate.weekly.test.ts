@@ -80,11 +80,11 @@ function harness(tenants: Tenant[], weeklyCreateGuardEnabled = true, rpcSimulati
       },
     },
   }) as DbClient;
-  async function submit(id: string, service = 'ALMUERZO', time = '11:00', now: Date | (() => Date) = new Date('2026-10-24T10:00:00Z')) {
+  async function submit(id: string, service = 'ALMUERZO', time = '11:00', now: Date | (() => Date) = new Date('2026-10-24T10:00:00Z'), date = '25/10/2026') {
     const request = new Request('https://isolated.test/public-api/reservation/create', {
       method: 'POST',
       body: JSON.stringify({ client_id: id, public_token: 'local-public-token', nombre: 'LOCAL TEST',
-        telefono: '000000000', fecha: '25/10/2026', hora: time, personas: 2, servicio: service }),
+        telefono: '000000000', fecha: date, hora: time, personas: 2, servicio: service }),
     });
     const response = await handleReservationCreate(request, db, {
       now: () => typeof now === 'function' ? now() : now,
@@ -167,6 +167,8 @@ Deno.test('full create handler enforces Sunday opening, inclusive start and excl
       const result = await test.submit(store, 'ALMUERZO', time);
       assertEquals([result.status, result.body.code], [409, 'RESERVATION_OUTSIDE_WEEKLY_HOURS']);
     }
+    const monday = await test.submit(store, 'ALMUERZO', '11:00', new Date('2026-10-24T10:00:00Z'), '26/10/2026');
+    assertEquals([monday.status, monday.body.code], [409, 'RESERVATION_OUTSIDE_WEEKLY_HOURS']);
     assertEquals(test.writes.length, 1);
   }
 });
