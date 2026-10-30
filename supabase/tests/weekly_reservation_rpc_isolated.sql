@@ -254,9 +254,9 @@ select weekly_test.expect_rejection('TEST-RPC-WEEKLY','weekly-read-error',
   'WEEKLY_HOURS_CONFIG_READ_FAILED');
 alter table public.booking_service_hours_unavailable rename to booking_service_hours;
 
--- Direct Manager writes and the independent Balinese RPC are unaffected.
+-- Direct LEGACY Manager writes and the independent Balinese RPC are unaffected.
 insert into public.reservations(client_id,booking_date,booking_time,service,pax,source_channel)
-values ('TEST-RPC-WEEKLY','2026-10-25','20:00','CENA',1,'manager_manual');
+values ('TEST-RPC-LEGACY','2026-10-25','20:00','CENA',1,'manager_manual');
 insert into public.reservable_resources(client_id,resource_type,label,capacity)
 values ('TEST-RPC-WEEKLY','balinese','ISOLATED-BALINESE',4);
 select public.create_hospitality_balinese_reservation(
@@ -266,7 +266,7 @@ select public.create_hospitality_balinese_reservation(
 
 do $$
 begin
-  if (select count(*) from public.reservations where client_id='TEST-RPC-WEEKLY' and source_channel='manager_manual') <> 1
+  if (select count(*) from public.reservations where client_id='TEST-RPC-LEGACY' and source_channel='manager_manual') <> 1
      or (select count(*) from public.reservations where client_id='TEST-RPC-WEEKLY' and service='BALINESA') <> 1 then
     raise exception 'Manager or Balinese isolation failed';
   end if;
