@@ -20,6 +20,8 @@ El editor semanal reconoce `https://manager-preview.costabots.com` únicamente s
 
 Dependencias versionadas: `20261025120000_booking_service_hours.sql` crea la tabla y RPC inicial; `20261026120000_booking_service_hours_revision_cas.sql` depende de la inicial y sustituye la firma insegura por CAS; `20261027120000_booking_pool_hours.sql` es independiente de CAS, pero requiere `CLIENTES`. `20261025180000_weekly_hospitality_reservation_guard.sql` requiere la tabla semanal y las tablas/RPC de reservas versionadas; **no depende técnicamente de CAS**, pero reemplaza la RPC de creación y añade una lectura de `SETTINGS` incluso para legacy. En orden de nombres, una aplicación automática la ejecutaría entre la tabla inicial y CAS: técnicamente posible según las pruebas aisladas, pero incompatible con separar la liberación de persistencia y la de creación. No ejecutar `db push` a ciegas. Antes de cualquier aplicación real, verificar historial, dependencias y un procedimiento autorizado que permita separar etapas sin crear una discrepancia de migraciones. Ningún script preflight activa flags ni escribe datos.
 
+Actualización 30/10/2026: esta descripción histórica queda sustituida para futuras instalaciones. Las dos migraciones de creación semanales no aplicadas se consolidaron en `20261030120000_weekly_restaurant_creation_capacity.sql`; revisar el historial remoto y el dry-run contra esa versión antes de instalar. No hay cambio de tablas ni flags por esta actualización documental.
+
 ## Contrato compartido y orden de integración posterior
 
 | Dato / regla | Fuente autorizada | Consumo previsto |

@@ -217,10 +217,10 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_reservation_rpc_legacy_comparison.sql
-      - name: Apply proposed weekly RPC migration only in disposable PostgreSQL
+      - name: Apply consolidated weekly creation and capacity migration only in disposable PostgreSQL
         env:
           PGPASSWORD: weekly-test-password
-        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261025180000_weekly_hospitality_reservation_guard.sql
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261030120000_weekly_restaurant_creation_capacity.sql
       - name: Compare legacy behavior after weekly RPC migration
         env:
           PGPASSWORD: weekly-test-password
@@ -234,10 +234,6 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/weekly_reservation_rpc_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test
-      - name: Apply internal weekly capacity migration only in disposable PostgreSQL
-        env:
-          PGPASSWORD: weekly-test-password
-        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261029180000_weekly_walkin_capacity.sql
       - name: Test internal weekly capacity and legacy isolation
         env:
           PGPASSWORD: weekly-test-password
