@@ -49,6 +49,7 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
 
   const current = state.clientId === clientId ? state : initialPoolHoursRemoteState(clientId);
   const editable = current.status === 'ready' || current.status === 'unconfigured';
+  const activationError = activationMessage.startsWith('No se') || activationMessage.startsWith('Los servicios');
   const pending = baseline?.clientId === clientId
     && (current.openingTime !== (baseline.snapshot.opening_time ?? '')
       || current.closingTime !== (baseline.snapshot.closing_time ?? ''));
@@ -98,10 +99,11 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
           <span>{enabled ? 'Servicio activo' : 'Servicio inactivo'}</span>
         </label>
       </div>
-      <p className="weekly-hours-notice">Balinesa se reserva por fecha, sin elegir hora. Su horario de piscina se conserva aunque desactives el servicio.</p>
-      <p role="status">{message}</p>
-      {activationMessage && <p className="weekly-hours-status" role="status">{activationMessage}</p>}
-      {!enabled && <p className="weekly-service-hint">La configuración de piscina está oculta. El horario guardado se conserva.</p>}
+      {enabled
+        ? <p className="weekly-hours-notice">Balinesa se reserva por fecha, sin elegir hora. Su horario de piscina se conserva aunque desactives el servicio.</p>
+        : <p className="weekly-service-hint">Balinesas desactivadas. La configuración guardada se conservará hasta que vuelvas a activar el servicio</p>}
+      {(enabled || current.status === 'error' || current.status === 'conflict') && <p role="status">{message}</p>}
+      {activationMessage && (enabled || activationError) && <p className="weekly-hours-status" role="status">{activationMessage}</p>}
       {enabled && (
         <>
           <div className="balinese-pool-hours">

@@ -275,7 +275,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
                       />
                     </label>
                     <label>
-                      Fin (exclusivo)
+                      Hora de cierre
                       <input
                         type="time"
                         value={rule.end}

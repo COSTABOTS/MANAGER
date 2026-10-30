@@ -2637,7 +2637,14 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   color: var(--premium-text);
 }
 
-.weekly-copy-button {
+.weekly-day .weekly-copy-button {
+  justify-self: start;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.8;
+  box-shadow: none;
   white-space: nowrap;
 }
 
@@ -2661,9 +2668,16 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
     grid-column: 1 / -1;
   }
 
-  .weekly-copy-button {
+  .weekly-day .weekly-copy-button {
     grid-column: 1 / -1;
   }
+}
+
+.walkin-form button[type='submit']:disabled {
+  opacity: 0.42;
+  filter: grayscale(1);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 .admin-card {
