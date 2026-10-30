@@ -4,6 +4,8 @@ import { generateTimeSlots } from './capacity';
 import { getScheduledTodayTabs } from './todayServices';
 
 export type MadridClock = { date: string; time: string };
+// Early admission stays disabled until capacity attribution is deployed and verified.
+export const WALK_IN_EARLY_MINUTES = 0;
 
 export function getMadridClock(now = new Date()): MadridClock {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -35,7 +37,12 @@ export function getOpenRestaurantServiceAt(enabled: readonly BookingService[], c
     const rule = openRule(enabled, clock.date, service, rows);
     const start = normalizedTime(rule?.start_time ?? '');
     const end = normalizedTime(rule?.end_time ?? '');
-    if (start && end && time >= start && time < end) return service;
+    if (start && end) {
+      const startMinutes = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5));
+      const earliest = Math.max(0, startMinutes - WALK_IN_EARLY_MINUTES);
+      const earliestTime = `${String(Math.floor(earliest / 60)).padStart(2, '0')}:${String(earliest % 60).padStart(2, '0')}:00`;
+      if (time >= earliestTime && time < end) return service;
+    }
   }
   return null;
 }

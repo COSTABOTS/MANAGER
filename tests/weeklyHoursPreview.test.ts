@@ -34,7 +34,7 @@ Deno.test('production Settings surface requires exact Manager origin, environmen
   const production = { origin: 'https://manager.costabots.com', environment: 'production', branch: 'main' };
   assert(isWeeklyHoursManagerProduction(production), 'exact production Manager is allowed');
   assert(isWeeklyHoursSettingsSurface(production), 'production Settings may show the editor');
-  assert(!isWeeklyHoursPreview(production), 'Preview-only internal booking guard remains off in production');
+  assert(!isWeeklyHoursPreview(production), 'Preview origin detection remains distinct from the tenant WEEKLY mode');
   for (const context of [
     { ...production, origin: 'https://manager-preview.costabots.com' },
     { ...production, origin: 'https://manager.costabots.com.evil.example' },

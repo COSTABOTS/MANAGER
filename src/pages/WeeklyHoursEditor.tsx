@@ -20,6 +20,7 @@ interface WeeklyHoursEditorProps {
   servicesEnabled: BookingService[];
   localOnly?: boolean;
   settingsVerified?: boolean;
+  weeklyHoursEnabled?: boolean;
   onServiceActivationChange?: (service: BookingService, enabled: boolean) => Promise<void>;
   canActivateServices?: boolean;
   activationService?: BookingService | null;
@@ -67,7 +68,7 @@ function loadDraft(clientId: string): WeeklyHoursDraft {
 }
 
 export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHoursEditorProps>(function WeeklyHoursEditor({
-  clientId, servicesEnabled, localOnly = false, settingsVerified = false,
+  clientId, servicesEnabled, localOnly = false, settingsVerified = false, weeklyHoursEnabled = false,
   onServiceActivationChange, canActivateServices = false, activationService = null, activationMessage = '',
   unifiedSave = false, onPendingChange,
 }: WeeklyHoursEditorProps, ref) {
@@ -76,7 +77,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
   const [state, setState] = useState(() => ({ clientId, draft: localOnly ? loadDraft(clientId) : createWeeklyHoursDraft() }));
   const [previewServices, setPreviewServices] = useState(() => ({ clientId, enabled: loadPreviewServices(clientId, servicesEnabled, settingsVerified) }));
   const [storageError, setStorageError] = useState(false);
-  const [remote, setRemote] = useState<{ clientId: string; revision: string; draft: WeeklyHoursDraft } | null>(null);
+  const [remote, setRemote] = useState<{ clientId: string; revision: string; draft: WeeklyHoursDraft; configured: boolean } | null>(null);
   const [storedDraft, setStoredDraft] = useState<WeeklyHoursDraft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -105,17 +106,17 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
         if (cancelled) return;
         const serverDraft = draftFromWeeklyRows(response.rules);
         if (!serverDraft) throw new Error('WEEKLY_HOURS_INVALID');
-        setRemote({ clientId, revision: response.revision, draft: serverDraft });
+        setRemote({ clientId, revision: response.revision, draft: serverDraft, configured: response.rules.length === 21 });
         setState({ clientId, draft: serverDraft });
         setMessage(localDraft && JSON.stringify(localDraft) !== JSON.stringify(serverDraft)
           ? 'Existe un borrador local distinto. Se muestra la versión del servidor; puedes cargar el borrador expresamente para revisarlo.'
-          : 'Horarios cargados. El calendario semanal sigue sin activar.');
+          : weeklyHoursEnabled ? 'Horarios cargados. El calendario semanal está activo.' : 'Horarios cargados. El calendario semanal sigue sin activar.');
       }).catch((error: unknown) => {
         if (!cancelled) setMessage(`No se pudieron leer los horarios: ${error instanceof Error ? error.message : String(error)}. No se puede guardar.`);
       });
     }
     return () => { cancelled = true; };
-  }, [clientId, localOnly, settingsVerified]);
+  }, [clientId, localOnly, settingsVerified, weeklyHoursEnabled]);
 
   useEffect(() => {
     if (!localOnly || !clientId || state.clientId !== clientId) return;
@@ -137,11 +138,15 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
   useEffect(() => {
     onPendingChange?.(Boolean(!localOnly && hasRemoteChanges));
   }, [hasRemoteChanges, localOnly, onPendingChange]);
-  const summary = localOnly && settingsVerified ? summarizeWeeklyDraft(draft, localServices) : null;
+  const summaryVerified = settingsVerified && (localOnly || remote?.clientId === clientId);
+  const summaryConfigured = localOnly || remote?.configured === true;
+  const summary = summaryVerified && summaryConfigured
+    ? summarizeWeeklyDraft(draft, localOnly ? localServices : initialPreviewServices(servicesEnabled)) : null;
 
   function updateDraft(next: WeeklyHoursDraft) {
     setState({ clientId, draft: next });
-    setMessage(localOnly ? 'Borrador local actualizado. No afecta a las reservas.' : 'Cambios pendientes. El calendario semanal sigue sin activar.');
+    setMessage(localOnly ? 'Borrador local actualizado. No afecta a las reservas.' : weeklyHoursEnabled
+      ? 'Cambios pendientes en el calendario semanal activo.' : 'Cambios pendientes. El calendario semanal sigue sin activar.');
   }
 
   function updateLocalService(service: ServiceWithHours, enabled: boolean) {
@@ -179,9 +184,10 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
       if (activeClientId.current !== clientId) return 'error';
       const savedDraft = draftFromWeeklyRows(response.rules);
       if (!savedDraft) throw new Error('WEEKLY_HOURS_INVALID');
-      setRemote({ clientId, revision: response.revision, draft: savedDraft });
+      setRemote({ clientId, revision: response.revision, draft: savedDraft, configured: true });
       setState({ clientId, draft: savedDraft });
-      setMessage('21 reglas guardadas. El calendario semanal sigue sin activar.');
+      setMessage(weeklyHoursEnabled ? '21 reglas guardadas. El calendario semanal está activo.'
+        : '21 reglas guardadas. El calendario semanal sigue sin activar.');
       return 'saved';
     } catch (error) {
       if (activeClientId.current !== clientId) return 'error';
@@ -205,21 +211,24 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
     <article className="settings-card weekly-hours-editor" aria-label="Horarios semanales">
       <div className="section-title compact">
         <div>
-          <p className="eyebrow">{localOnly ? 'Vista de prueba' : 'Configuración en desarrollo'}</p>
+          <p className="eyebrow">{localOnly ? 'Vista de prueba' : 'Configuración semanal'}</p>
           <h2>Horarios semanales por servicio</h2>
         </div>
       </div>
       <p className="weekly-hours-notice">
         {localOnly
           ? 'Vista de prueba: los horarios se guardan solo en este navegador. No afectan a las reservas.'
-          : 'Los interruptores guardan qué servicios ofrece el restaurante en SERVICES_ENABLED. Las 21 reglas semanales se guardan aparte y su estado en HOY es informativo hasta activar la integración pública.'}
+          : weeklyHoursEnabled
+            ? 'Los interruptores controlan SERVICES_ENABLED. Las 21 reglas semanales determinan los días y horas de reserva de cada servicio.'
+            : 'Los interruptores guardan qué servicios ofrece el restaurante en SERVICES_ENABLED. Las 21 reglas semanales se guardan aparte y entrarán en vigor cuando se active el modo semanal.'}
       </p>
-      {localOnly && <div className="weekly-summary" aria-label="Resumen del borrador semanal">
-        <p className="eyebrow">Resumen automático · borrador local</p>
-        {!settingsVerified ? <p>No se han verificado los Settings del restaurante. El resumen no se muestra hasta que carguen correctamente.</p>
+      <div className="weekly-summary" aria-label="Resumen semanal derivado">
+        <p className="eyebrow">Resumen automático · {localOnly || hasRemoteChanges ? 'borrador' : 'calendario guardado'}</p>
+        {!summaryVerified ? <p>No se han verificado los horarios y Settings del restaurante. El resumen no se muestra hasta que carguen correctamente.</p>
+          : !summaryConfigured ? <p>Este restaurante aún no tiene un calendario semanal guardado.</p>
           : summary === null ? <p>Completa las horas de los días abiertos para ver un resumen fiable.</p>
           : summary.map((group) => <p key={group.days.join('-')}><strong>{group.days.join(', ')}</strong>: {group.turns.length ? group.turns.join(' · ') : 'Cerrado'}</p>)}
-      </div>}
+      </div>
       {!localOnly && activeRestaurantServices.length === 0 && (
         <p className="weekly-hours-notice">No hay servicios de restaurante activados. Balinesa usa su configuración independiente.</p>
       )}

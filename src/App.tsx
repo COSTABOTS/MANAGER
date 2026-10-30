@@ -48,9 +48,10 @@ import { buildCapacityPayload, generateTimeSlots } from './utils/capacity';
 import { getCurrentTime, getLocalDateString, normalizeDateForCompare } from './utils/date';
 import { createReservationId } from './utils/reservationId';
 import { isActiveReservation } from './utils/reservationStatus';
-import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
+import { isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
 import { getTodayTabServices } from './utils/todayServices';
-import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from './utils/previewSettingsChanges';
+import { resolveWeeklyModeFromSettings } from './utils/weeklyMode';
+import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from './utils/previewSettingsChanges';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
@@ -60,13 +61,6 @@ const DEMO_EMAIL = 'demo@costabots.local';
 const DEMO_PASSWORD = 'Demo2026';
 const PROTECTED_DEMO_EMAIL = 'demo2@costabots.local';
 const USE_MANAGER_API = import.meta.env.VITE_USE_MANAGER_API === 'true';
-const SERVICE_ACTIVATION_PREVIEW = isWeeklyHoursPreview({
-  origin: window.location.origin,
-  environment: import.meta.env.VITE_VERCEL_ENV,
-  branch: import.meta.env.VITE_VERCEL_GIT_COMMIT_REF,
-  deploymentUrl: import.meta.env.VITE_VERCEL_URL,
-  branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
-});
 const HOURS_SETTINGS_SURFACE = isWeeklyHoursSettingsSurface({
   origin: window.location.origin,
   environment: import.meta.env.VITE_VERCEL_ENV,
@@ -757,6 +751,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   const [isLoadingOperationalSettings, setIsLoadingOperationalSettings] = useState(false);
   const [operationalSettingsLoaded, setOperationalSettingsLoaded] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
+  const [weeklyModeState, setWeeklyModeState] = useState<{ clientId: string; mode: 'legacy' | 'weekly' | 'unknown' } | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [reservationToCancel, setReservationToCancel] = useState<Reservation | null>(null);
   const cancelResolverRef = useRef<((result: boolean) => void) | null>(null);
@@ -803,6 +798,9 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   const enabledServices = useMemo(() => normalizeEnabledServices(settings.servicesEnabled), [settings.servicesEnabled]);
   const todayTabServices = useMemo(() => getTodayTabServices(enabledServices), [enabledServices]);
+  const weeklyMode = isSupabaseDemoRoute()
+    ? weeklyModeState?.clientId === clientConfig?.client_id ? weeklyModeState?.mode ?? 'unknown' : 'unknown'
+    : 'legacy';
   const activeUserRole = useMemo(() => normalizeUserRole(clientConfig?.role), [clientConfig?.role]);
   const isSuperAdmin = activeUserRole === 'SUPER_ADMIN';
   const clientLicense = useMemo(() => getClientLicenseFromConfig(clientConfig), [clientConfig]);
@@ -1709,9 +1707,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     if (isDemo) {
       setIsLoadingOperationalSettings(true);
       setSettingsMessage('Cargando SETTINGS...');
+      const loadingClientId = clientConfig?.client_id ?? '';
+      setWeeklyModeState({ clientId: loadingClientId, mode: 'unknown' });
 
       try {
         const rawSettings = await loadOperationalSettingsFromManagerApi();
+        setWeeklyModeState({ clientId: loadingClientId, mode: resolveWeeklyModeFromSettings(rawSettings) });
         let nextSettingsSnapshot: ManagerSettings | null = null;
         setSettings((current) => {
           const nextSettings = applyOperationalSettings(current, rawSettings);
@@ -2048,11 +2049,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     if (HOURS_SETTINGS_SURFACE && isSupabaseDemoRoute()) {
+      if (weeklyMode === 'unknown') return 'error';
       const clientId = String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim();
       const currentValues = Object.fromEntries(buildOperationalSettingsPayload(settings).map(({ variable, value }) => [variable, value]));
       const nextValues = Object.fromEntries(buildOperationalSettingsPayload(nextSettings).map(({ variable, value }) => [variable, value]));
       const changedSettings = changedSettingValues(currentValues, nextValues);
-      const capacityChanged = capacitySettingsChanged(settings, nextSettings);
+      const capacityChanged = capacitySettingsChanged(settings, nextSettings, weeklyMode === 'weekly');
       try {
         if (capacityChanged && !nextSettings.serviceSlotCapacity) throw new Error('CAPACITY_NOT_LOADED');
         if (Object.keys(changedSettings).length) {
@@ -2074,8 +2076,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
             if (!nextSettings.servicesEnabled.includes(service)) continue;
             const configured = nextSettings.serviceSlotCapacity[service] ?? {};
-            const hours = generateTimeSlots(nextSettings.serviceHours[service].start, nextSettings.serviceHours[service].end, nextSettings.bookingInterval);
-            const slots = hours.map((hora) => ({ hora, limite: configured[hora] ?? 20, activo: (configured[hora] ?? 20) > 0 }));
+            const slots = serviceCapacitySlotsForSave(configured, nextSettings.serviceHours[service], nextSettings.bookingInterval, weeklyMode === 'weekly');
+            if (!slots.length) continue;
             await saveCapacityWithManagerApi(slots, service);
           }
         }
@@ -2296,7 +2298,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
 
   async function handleAddWalkIn(nameOrRoom: string, pax: number,
     selection?: { service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; date: string; time: string }) {
-    if (SERVICE_ACTIVATION_PREVIEW && (!selection || !shouldUseManagerApiForReservations())) {
+    if (weeklyMode === 'unknown' || (weeklyMode === 'weekly' && (!selection || !shouldUseManagerApiForReservations()))) {
       throw new Error('WALKIN_HOURS_NOT_VERIFIED');
     }
     const walkInTime = selection?.time ?? getCurrentTime();
@@ -2344,7 +2346,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       } catch (error) {
         console.warn('[MANAGER_API] walkin.create failed', error);
         setLastSync('No se pudo crear walk-in con manager-api');
-        if (SERVICE_ACTIVATION_PREVIEW) throw error;
+        if (weeklyMode !== 'legacy') throw error;
         return;
       }
     }
@@ -2396,7 +2398,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
   }
 
   async function addManualReservation(reservation: Omit<Reservation, 'id' | 'idReserva' | 'status' | 'source' | 'table' | 'arrived'>) {
-    if (SERVICE_ACTIVATION_PREVIEW && (!reservation.service || !shouldUseManagerApiForReservations())) {
+    if (weeklyMode === 'unknown' || (weeklyMode === 'weekly' && (!reservation.service || !shouldUseManagerApiForReservations()))) {
       throw new Error('MANUAL_SERVICE_NOT_VERIFIED');
     }
     const reservationService = reservation.service ?? getWalkInServiceForTime(reservation.time, settings);
@@ -2728,6 +2730,7 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           isLoadingResources={isLoadingResources}
           isLoadingSettings={isLoadingOperationalSettings}
           settingsMessage={settingsMessage}
+          weeklyMode={weeklyMode}
           isDemoMode={isSupabaseDemoRoute()}
           isDemoUser={isProtectedDemoUser}
           isSuperAdmin={isSuperAdmin && !isProtectedDemoUser}
@@ -2770,7 +2773,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         reservations={todayReservations}
         allReservations={allReservations}
         clientId={clientConfig?.client_id ?? ''}
-        weeklyPreview={SERVICE_ACTIVATION_PREVIEW}
+        weeklyPreview={weeklyMode === 'weekly'}
+        weeklyModeUnknown={weeklyMode === 'unknown'}
         reservableResources={reservableResources}
         serviceTabs={todayTabServices}
         selectedService={selectedTodayService}

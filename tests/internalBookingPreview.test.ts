@@ -26,6 +26,23 @@ Deno.test('walk-in requires a globally enabled service open at the current Madri
     'Balinesa is independent and never chosen as restaurant walk-in');
 });
 
+Deno.test('walk-in requires the service to be open at the actual arrival time', () => {
+  const dinnerAtSix = rows.map((row) => row.service === 'CENA'
+    ? { ...row, start_time: '18:00:00' } : row);
+  const serviceAt = (time: string, services: readonly ('ALMUERZO' | 'CENA' | 'BALINESA')[] = enabled) =>
+    getOpenRestaurantServiceAt(services, { date: '2026-10-29', time }, dinnerAtSix);
+  assert(serviceAt('17:44:59') === null, 'before the service');
+  assert(serviceAt('17:45:00') === null, 'early admission is disabled');
+  assert(serviceAt('17:50:00') === null, '17:50 cannot be assigned to an 18:00 dinner');
+  assert(serviceAt('18:00:00') === 'CENA', 'service start remains inclusive');
+  assert(serviceAt('23:00:00') === null, 'service end remains exclusive');
+  assert(serviceAt('17:50:00', ['ALMUERZO', 'BALINESA']) === null, 'disabled dinner cannot open early');
+  assert(getOpenRestaurantServiceAt(enabled, { date: '2026-10-30', time: '01:29:00' }, dinnerAtSix) === null,
+    '01:29 cannot become a breakfast walk-in');
+  assert(getOpenRestaurantServiceAt(enabled, { date: '2026-10-30', time: '10:50:00' }, dinnerAtSix) === null,
+    'another day does not inherit an early opening');
+});
+
 Deno.test('failed or incomplete weekly read never enables a new internal reservation in Preview', () => {
   const clock = { date: '2026-11-01', time: '11:30:00' };
   assert(getOpenRestaurantServiceAt(enabled, clock, null) === null, 'read failure closes walk-in');

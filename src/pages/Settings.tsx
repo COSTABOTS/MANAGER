@@ -4,7 +4,7 @@ import { generateTimeSlots } from '../utils/capacity';
 import { WeeklyHoursEditor, type WeeklyHoursEditorHandle } from './WeeklyHoursEditor';
 import { BalinesePoolPreview } from './BalinesePoolPreview';
 import { BalinesePoolRemote, type BalinesePoolRemoteHandle } from './BalinesePoolRemote';
-import { isWeeklyHoursPreview, isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
+import { isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
 import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
 import { saveChangedSections } from '../utils/changedSettingsSave';
 
@@ -18,6 +18,7 @@ interface SettingsProps {
   isLoadingResources: boolean;
   isLoadingSettings: boolean;
   settingsMessage: string;
+  weeklyMode?: 'legacy' | 'weekly' | 'unknown';
   isDemoMode?: boolean;
   isDemoUser?: boolean;
   isSuperAdmin?: boolean;
@@ -91,7 +92,7 @@ const HOURS_PREVIEW_CONTEXT = {
   branchUrl: import.meta.env.VITE_VERCEL_BRANCH_URL,
 };
 const WEEKLY_HOURS_UI_ENABLED = isWeeklyHoursSettingsSurface(HOURS_PREVIEW_CONTEXT);
-const HIDE_LEGACY_SCHEDULE = isWeeklyHoursPreview(HOURS_PREVIEW_CONTEXT);
+const HIDE_LEGACY_SCHEDULE = WEEKLY_HOURS_UI_ENABLED;
 
 function toDateTimeLocal(value: string) {
   if (!value) {
@@ -139,6 +140,7 @@ export function Settings({
   isLoadingResources,
   isLoadingSettings,
   settingsMessage,
+  weeklyMode = 'legacy',
   isDemoMode = false,
   isDemoUser = false,
   isSuperAdmin = false,
@@ -287,7 +289,7 @@ export function Settings({
     setDraftSettings((current) => ({
       ...current,
       totalCapacity,
-      slotCapacity: rebuildSlotCapacity(
+      slotCapacity: weeklyMode === 'weekly' ? current.slotCapacity : rebuildSlotCapacity(
         current.openingTime,
         current.closingTime,
         current.bookingInterval,
@@ -308,7 +310,7 @@ export function Settings({
         openingTime,
         closingTime,
         bookingInterval,
-        slotCapacity: rebuildSlotCapacity(
+        slotCapacity: weeklyMode === 'weekly' ? current.slotCapacity : rebuildSlotCapacity(
           openingTime,
           closingTime,
           bookingInterval,
@@ -675,7 +677,7 @@ export function Settings({
           </div>
 
           <div className="settings-subsection">
-            <p className="eyebrow">Horario del restaurante</p>
+            <p className="eyebrow">Configuración de reservas</p>
             <div className="settings-grid inner">
               {!HIDE_LEGACY_SCHEDULE && <>
               <label>
@@ -700,7 +702,11 @@ export function Settings({
             </div>
           </div>
 
-          {weeklyPreview && <p className="weekly-hours-notice">El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.</p>}
+          {weeklyPreview && <p className="weekly-hours-notice">{weeklyMode === 'weekly'
+            ? 'El calendario semanal está activo para este restaurante.'
+            : weeklyMode === 'unknown'
+              ? 'No se pudo confirmar el modo de horarios. No se permiten nuevas reservas hasta verificar SETTINGS.'
+              : 'El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.'}</p>}
 
           {!HIDE_LEGACY_SCHEDULE && <div className="settings-subsection">
             <p className="eyebrow">Horarios de servicio</p>
@@ -770,7 +776,8 @@ export function Settings({
               {(!isDemoMode ? [['', draftSettings.slotCapacity] as const] : SERVICE_HOUR_FIELDS.filter(({ key }) => draftSettings.servicesEnabled.includes(key)).map(({ key }) => [key, draftSettings.serviceSlotCapacity?.[key] ?? {}] as const)).map(([service, capacities]) => (
                 <div key={service || 'legacy'} className="service-capacity-block">
                 {service && <p className="eyebrow">Capacidad · {service}</p>}
-                {Object.entries(service ? (Object.keys(capacities).length ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
+                {service && weeklyMode === 'weekly' && !Object.keys(capacities).length && <p className="muted-cell">Sin franjas de capacidad configuradas para este servicio.</p>}
+                {Object.entries(service ? (Object.keys(capacities).length || weeklyMode === 'weekly' ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
                 <label key={slot} className="slot-input">
                   <span>{slot}</span>
                   <select value={value} onChange={(event) => service ? setDraftSettings((current) => ({ ...current, serviceSlotCapacity: { DESAYUNO: current.serviceSlotCapacity?.DESAYUNO ?? {}, ALMUERZO: current.serviceSlotCapacity?.ALMUERZO ?? {}, CENA: current.serviceSlotCapacity?.CENA ?? {}, [service]: { ...(current.serviceSlotCapacity?.[service as ServiceWithHours] ?? {}), [slot]: Number(event.target.value) } } })) : updateSlotCapacity(slot, Number(event.target.value))}>
@@ -792,6 +799,7 @@ export function Settings({
 
         {weeklyPreview && (!isDemoMode || activeSettingsTab === 'general') && (
           <WeeklyHoursEditor ref={weeklyEditorRef} clientId={clientId} servicesEnabled={settings.servicesEnabled} settingsVerified={settingsVerified} localOnly={!remoteHoursPreview}
+            weeklyHoursEnabled={weeklyMode === 'weekly'}
             unifiedSave={remoteHoursPreview} onPendingChange={onWeeklyPendingChange}
             onServiceActivationChange={handleRemoteServiceActivation} canActivateServices={canActivateService && !activationState.pending}
             activationService={activationState.service} activationMessage={activationState.message} />

@@ -28,6 +28,7 @@ interface TodayProps {
   allReservations: Reservation[];
   clientId?: string;
   weeklyPreview?: boolean;
+  weeklyModeUnknown?: boolean;
   reservableResources: ReservableResource[];
   serviceTabs: BookingService[];
   selectedService: BookingService | null;
@@ -132,6 +133,7 @@ export function Today({
   allReservations,
   clientId = '',
   weeklyPreview = false,
+  weeklyModeUnknown = false,
   reservableResources,
   serviceTabs,
   selectedService: requestedService,
@@ -267,7 +269,8 @@ export function Today({
   const verifiedWeeklyRows = weeklyPreview && weeklySnapshot?.clientId === clientId && !weeklySnapshot.error
     ? weeklySnapshot.rules : null;
   const walkInService = weeklyPreview ? getOpenRestaurantServiceAt(serviceTabs, madridNow, verifiedWeeklyRows) : null;
-  const walkInDisabledReason = !weeklyPreview ? undefined
+  const walkInDisabledReason = weeklyModeUnknown ? 'No se pudo verificar el modo de horarios. Actualiza SETTINGS antes de crear un walk-in.'
+    : !weeklyPreview ? undefined
     : scheduledTabs.status === 'unavailable' ? 'Horario semanal no disponible; no se puede crear un walk-in desde Preview.'
       : madridNow.date !== dayStatus.date ? 'La fecha de HOY ha cambiado. Actualiza la página antes de crear un walk-in.'
         : !walkInService ? 'No hay ningún servicio de restaurante abierto ahora.' : undefined;
@@ -508,6 +511,11 @@ export function Today({
   async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (weeklyModeUnknown) {
+      setManualError('No se pudo verificar el modo de horarios. No se enviará la reserva.');
+      return;
+    }
+
     const pax = parseIntegerInput(manualDraft.pax);
 
     if (!manualDraft.date || !manualDraft.time) {
@@ -591,6 +599,7 @@ export function Today({
 
       <section className="today-main-grid" aria-label="Acciones operativas de hoy">
         <WalkInForm disabledReason={walkInDisabledReason} onAddWalkIn={async (nameOrRoom, pax) => {
+          if (weeklyModeUnknown) throw new Error('WEEKLY_MODE_NOT_VERIFIED');
           if (!weeklyPreview) return onAddWalkIn(nameOrRoom, pax);
           const clock = getMadridClock();
           const service = getOpenRestaurantServiceAt(serviceTabs, clock, verifiedWeeklyRows);
@@ -598,7 +607,7 @@ export function Today({
           return onAddWalkIn(nameOrRoom, pax, { service, date: clock.date, time: clock.time.slice(0, 5) });
         }} />
 
-        <button className="manual-reservation-card" type="button" onClick={() => setIsManualModalOpen(true)}>
+        <button className="manual-reservation-card" type="button" disabled={weeklyModeUnknown} onClick={() => setIsManualModalOpen(true)}>
           <span>Reserva manual</span>
           <strong>
             <Plus size={18} />

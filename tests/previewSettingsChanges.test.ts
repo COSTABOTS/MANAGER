@@ -1,4 +1,4 @@
-import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from '../src/utils/previewSettingsChanges.ts';
+import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from '../src/utils/previewSettingsChanges.ts';
 import { mockSettings } from '../src/data/mockData.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -21,6 +21,20 @@ Deno.test('general-only changes do not trigger capacity save', () => {
     'booking switch is a general setting, not a capacity edit');
   assert(capacitySettingsChanged(mockSettings, { ...mockSettings, totalCapacity: mockSettings.totalCapacity + 1 }),
     'capacity edits still require capacity save');
+});
+
+Deno.test('WEEKLY capacity never derives slots or defaults from legacy service hours', () => {
+  const next = { ...mockSettings, bookingInterval: 60 as const, totalCapacity: mockSettings.totalCapacity + 1 };
+  assert(!capacitySettingsChanged(mockSettings, next, true), 'interval and total capacity do not invent service slots');
+  assert(serviceCapacitySlotsForSave({}, { start: '18:00', end: '22:00' }, 30, true).length === 0,
+    'an open weekly service does not create capacity');
+  const slots = serviceCapacitySlotsForSave({ '18:00': 2, '18:30': 0 }, { start: '17:00', end: '22:00' }, 30, true);
+  assert(JSON.stringify(slots) === JSON.stringify([
+    { hora: '18:00', limite: 2, activo: true },
+    { hora: '18:30', limite: 0, activo: false },
+  ]), 'weekly mode saves only explicitly configured capacity, including zero');
+  assert(serviceCapacitySlotsForSave({}, { start: '18:00', end: '19:00' }, 30, false).length === 3,
+    'legacy slot generation remains unchanged');
 });
 
 Deno.test('general save detects a newer remote value only for fields being edited', () => {
