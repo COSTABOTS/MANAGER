@@ -289,7 +289,7 @@ export function Settings({
     setDraftSettings((current) => ({
       ...current,
       totalCapacity,
-      slotCapacity: rebuildSlotCapacity(
+      slotCapacity: weeklyMode === 'weekly' ? current.slotCapacity : rebuildSlotCapacity(
         current.openingTime,
         current.closingTime,
         current.bookingInterval,
@@ -310,7 +310,7 @@ export function Settings({
         openingTime,
         closingTime,
         bookingInterval,
-        slotCapacity: rebuildSlotCapacity(
+        slotCapacity: weeklyMode === 'weekly' ? current.slotCapacity : rebuildSlotCapacity(
           openingTime,
           closingTime,
           bookingInterval,
@@ -677,7 +677,7 @@ export function Settings({
           </div>
 
           <div className="settings-subsection">
-            <p className="eyebrow">Horario del restaurante</p>
+            <p className="eyebrow">Configuración de reservas</p>
             <div className="settings-grid inner">
               {!HIDE_LEGACY_SCHEDULE && <>
               <label>
@@ -776,7 +776,8 @@ export function Settings({
               {(!isDemoMode ? [['', draftSettings.slotCapacity] as const] : SERVICE_HOUR_FIELDS.filter(({ key }) => draftSettings.servicesEnabled.includes(key)).map(({ key }) => [key, draftSettings.serviceSlotCapacity?.[key] ?? {}] as const)).map(([service, capacities]) => (
                 <div key={service || 'legacy'} className="service-capacity-block">
                 {service && <p className="eyebrow">Capacidad · {service}</p>}
-                {Object.entries(service ? (Object.keys(capacities).length ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
+                {service && weeklyMode === 'weekly' && !Object.keys(capacities).length && <p className="muted-cell">Sin franjas de capacidad configuradas para este servicio.</p>}
+                {Object.entries(service ? (Object.keys(capacities).length || weeklyMode === 'weekly' ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
                 <label key={slot} className="slot-input">
                   <span>{slot}</span>
                   <select value={value} onChange={(event) => service ? setDraftSettings((current) => ({ ...current, serviceSlotCapacity: { DESAYUNO: current.serviceSlotCapacity?.DESAYUNO ?? {}, ALMUERZO: current.serviceSlotCapacity?.ALMUERZO ?? {}, CENA: current.serviceSlotCapacity?.CENA ?? {}, [service]: { ...(current.serviceSlotCapacity?.[service as ServiceWithHours] ?? {}), [slot]: Number(event.target.value) } } })) : updateSlotCapacity(slot, Number(event.target.value))}>

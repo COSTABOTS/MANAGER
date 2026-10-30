@@ -51,7 +51,7 @@ import { isActiveReservation } from './utils/reservationStatus';
 import { isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
 import { getTodayTabServices } from './utils/todayServices';
 import { resolveWeeklyModeFromSettings } from './utils/weeklyMode';
-import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict } from './utils/previewSettingsChanges';
+import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from './utils/previewSettingsChanges';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
@@ -2049,11 +2049,12 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
     }
 
     if (HOURS_SETTINGS_SURFACE && isSupabaseDemoRoute()) {
+      if (weeklyMode === 'unknown') return 'error';
       const clientId = String(clientConfig?.effectiveClientId ?? clientConfig?.selectedClientId ?? clientConfig?.client_id ?? '').trim();
       const currentValues = Object.fromEntries(buildOperationalSettingsPayload(settings).map(({ variable, value }) => [variable, value]));
       const nextValues = Object.fromEntries(buildOperationalSettingsPayload(nextSettings).map(({ variable, value }) => [variable, value]));
       const changedSettings = changedSettingValues(currentValues, nextValues);
-      const capacityChanged = capacitySettingsChanged(settings, nextSettings);
+      const capacityChanged = capacitySettingsChanged(settings, nextSettings, weeklyMode === 'weekly');
       try {
         if (capacityChanged && !nextSettings.serviceSlotCapacity) throw new Error('CAPACITY_NOT_LOADED');
         if (Object.keys(changedSettings).length) {
@@ -2075,8 +2076,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
           for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
             if (!nextSettings.servicesEnabled.includes(service)) continue;
             const configured = nextSettings.serviceSlotCapacity[service] ?? {};
-            const hours = generateTimeSlots(nextSettings.serviceHours[service].start, nextSettings.serviceHours[service].end, nextSettings.bookingInterval);
-            const slots = hours.map((hora) => ({ hora, limite: configured[hora] ?? 20, activo: (configured[hora] ?? 20) > 0 }));
+            const slots = serviceCapacitySlotsForSave(configured, nextSettings.serviceHours[service], nextSettings.bookingInterval, weeklyMode === 'weekly');
+            if (!slots.length) continue;
             await saveCapacityWithManagerApi(slots, service);
           }
         }
