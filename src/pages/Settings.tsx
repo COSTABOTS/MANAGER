@@ -662,7 +662,7 @@ export function Settings({
         <article className="settings-card">
           <div className="section-title compact">
             <div>
-              <p className="eyebrow">Settings restaurante</p>
+              <p className="eyebrow">Restaurante</p>
               <h2>{isDemoMode && activeSettingsTab === 'capacity' ? 'Capacidad' : 'General'}</h2>
             </div>
           </div>
@@ -702,11 +702,9 @@ export function Settings({
             </div>
           </div>
 
-          {weeklyPreview && <p className="weekly-hours-notice">{weeklyMode === 'weekly'
-            ? 'El calendario semanal está activo para este restaurante.'
-            : weeklyMode === 'unknown'
-              ? 'No se pudo confirmar el modo de horarios. No se permiten nuevas reservas hasta verificar SETTINGS.'
-              : 'El calendario semanal permanece inactivo para las reservas mientras WEEKLY_HOURS_ENABLED esté desactivado. Los horarios legacy siguen vigentes.'}</p>}
+          {weeklyPreview && weeklyMode === 'unknown' && <p className="weekly-hours-notice" role="status">
+            No se pudo comprobar el horario. Las nuevas reservas permanecen bloqueadas hasta recuperar la configuración.
+          </p>}
 
           {!HIDE_LEGACY_SCHEDULE && <div className="settings-subsection">
             <p className="eyebrow">Horarios de servicio</p>
@@ -818,7 +816,7 @@ export function Settings({
         <article className="settings-card">
           <div className="section-title compact">
             <div>
-              <p className="eyebrow">Settings restaurante</p>
+              <p className="eyebrow">Restaurante</p>
               <h2>Reservas</h2>
             </div>
           </div>
@@ -1004,7 +1002,7 @@ export function Settings({
                   </div>
                 </div>
                 <details className="settings-subsection legacy-webhooks-panel">
-                  <summary>Avanzado / Legacy Make</summary>
+                  <summary>Integraciones avanzadas</summary>
                   <p className="field-note">Fallback conservado para compatibilidad. En demo, las acciones principales usan manager-api.</p>
                   {webhookFields}
                 </details>

@@ -39,8 +39,8 @@ export function BalinesePoolPreview({ clientId }: { clientId: string }) {
 
   return (
     <article className="settings-card balinese-pool-preview" aria-label="Borrador de horario de piscina para Balinesa">
-      <div className="section-title compact"><div><p className="eyebrow">Vista de prueba · borrador local</p><h2>Balinesa · horario de piscina</h2></div></div>
-      <p className="weekly-hours-notice">Esta configuración se guarda solo en este navegador para este restaurante. No afecta a reservas, SERVICES_ENABLED ni Settings reales.</p>
+      <div className="section-title compact"><div><p className="eyebrow">Borrador local</p><h2>Balinesa · horario de piscina</h2></div></div>
+      <p className="weekly-hours-notice">Esta configuración se guarda solo en este navegador. No afecta a las reservas.</p>
       <label className="service-enabled-toggle service-enabled-toggle-inline">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => updateDraft({ enabled: event.target.checked })} />
         <strong>Balinesa activa en el borrador</strong>

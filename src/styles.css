@@ -2519,6 +2519,12 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   font-size: 0.85rem;
 }
 
+.today-other-reservations-heading {
+  padding: 14px 16px;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.25;
+}
+
 .weekly-inactive-balinese {
   display: flex;
   align-items: center;

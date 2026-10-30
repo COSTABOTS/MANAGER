@@ -271,7 +271,7 @@ export function Today({
   const walkInService = weeklyPreview ? getOpenRestaurantServiceAt(serviceTabs, madridNow, verifiedWeeklyRows) : null;
   const walkInDisabledReason = weeklyModeUnknown ? 'No se pudo verificar el modo de horarios. Actualiza SETTINGS antes de crear un walk-in.'
     : !weeklyPreview ? undefined
-    : scheduledTabs.status === 'unavailable' ? 'Horario semanal no disponible; no se puede crear un walk-in desde Preview.'
+    : scheduledTabs.status === 'unavailable' ? 'No se pudo comprobar el horario; no se puede crear un walk-in.'
       : madridNow.date !== dayStatus.date ? 'La fecha de HOY ha cambiado. Actualiza la página antes de crear un walk-in.'
         : !walkInService ? 'No hay ningún servicio de restaurante abierto ahora.' : undefined;
   const manualServices = weeklyPreview ? getManualRestaurantServices(serviceTabs, manualDraft.date, verifiedWeeklyRows) : [];
@@ -634,7 +634,7 @@ export function Today({
               </div>
             )}
             {weeklyPreview && scheduledTabs.status === 'unavailable' && (
-              <span className="today-hours-warning" role="status">Horario semanal sin configurar o no disponible: se mantienen las pestañas habituales.</span>
+              <span className="today-hours-warning" role="status">No se pudo cargar el horario. Se muestran las pestañas habituales.</span>
             )}
           </div>
           <div className="today-refresh-actions">
@@ -717,9 +717,8 @@ export function Today({
         )}
       </section>
 
-      {inactiveServiceReservations.length > 0 && <section className="table-section" aria-label="Reservas existentes de servicios cerrados o desactivados">
-        <h2>Reservas existentes de servicios cerrados o desactivados</h2>
-        <p className="weekly-hours-notice">Cerrar un día o desactivar un servicio no borra sus reservas actuales. Puedes seguir gestionándolas aquí.</p>
+      {inactiveServiceReservations.length > 0 && <section className="table-section" aria-label="Otras reservas de hoy">
+        <h2 className="today-other-reservations-heading">Otras reservas de hoy</h2>
         {inactiveRestaurantReservations.length > 0 && <ReservationsTable
           reservations={inactiveRestaurantReservations} tableOptions={tableOptions} hasLoadedTables={hasLoadedTables}
           isLoadingTables={isLoadingTables} onEnsureTables={onEnsureTables} onUpdate={onUpdateReservation} onCancel={onCancelReservation}

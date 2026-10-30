@@ -37,7 +37,7 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
       setState(loadedPoolHoursRemoteState(clientId, snapshot));
       setBaseline({ clientId, snapshot });
       setMessage(snapshot.configured
-        ? 'Horario de piscina cargado desde Supabase. Guardarlo no activa reservas ni modifica capacidades.'
+        ? 'Horario de piscina cargado.'
         : 'Este restaurante aún no tiene un horario de piscina configurado.');
     }).catch(() => {
       if (cancelled) return;
@@ -59,7 +59,7 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
   function changeHours(patch: { openingTime?: string; closingTime?: string }) {
     if (!editable) return;
     setState((previous) => previous.clientId === clientId ? { ...previous, ...patch } : previous);
-    setMessage('Cambios pendientes. No afectan a las reservas hasta que se guarden.');
+    setMessage('Cambios pendientes.');
   }
 
   async function saveDraft(): Promise<'saved' | 'error' | 'skipped'> {
@@ -73,7 +73,7 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
       if (activeClientId.current !== clientId) return 'error';
       setState((previous) => previous.clientId === clientId ? loadedPoolHoursRemoteState(clientId, saved) : previous);
       setBaseline({ clientId, snapshot: saved });
-      setMessage('Horario guardado. El corte de reservas sigue sin activar.');
+      setMessage('Horario de piscina guardado.');
       return 'saved';
     } catch (error) {
       if (activeClientId.current !== clientId) return 'error';
@@ -92,13 +92,13 @@ export const BalinesePoolRemote = forwardRef<BalinesePoolRemoteHandle, {
   return (
     <article className="settings-card balinese-pool-preview" aria-label="Horario de piscina de Balinesa">
       <div className="section-title compact">
-        <div><p className="eyebrow">Configuración remota</p><h2>Balinesa · horario de piscina</h2></div>
+        <div><p className="eyebrow">Balinesa</p><h2>Horario de piscina</h2></div>
         <label className="weekly-service-switch">
           <input type="checkbox" checked={enabled} disabled={!canActivateService} onChange={(event) => { void onServiceActivationChange('BALINESA', event.target.checked); }} />
           <span>{enabled ? 'Servicio activo' : 'Servicio inactivo'}</span>
         </label>
       </div>
-      <p className="weekly-hours-notice">El interruptor guarda el estado real de Balinesa en SERVICES_ENABLED. El horario de piscina se conserva al desactivar el servicio y sigue siendo informativo hasta activar la regla de corte. Balinesa se reserva por fecha, sin elegir hora.</p>
+      <p className="weekly-hours-notice">Balinesa se reserva por fecha, sin elegir hora. Su horario de piscina se conserva aunque desactives el servicio.</p>
       <p role="status">{message}</p>
       {activationMessage && <p className="weekly-hours-status" role="status">{activationMessage}</p>}
       {!enabled && <p className="weekly-service-hint">La configuración de piscina está oculta. El horario guardado se conserva.</p>}

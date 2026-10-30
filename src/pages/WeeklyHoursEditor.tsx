@@ -97,7 +97,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
       return () => { cancelled = true; };
     }
     if (!clientId || !settingsVerified) {
-      setMessage('Esperando la carga verificada de SETTINGS y del restaurante. No se puede guardar.');
+      setMessage('Esperando la configuración del restaurante. No se puede guardar todavía.');
       return () => { cancelled = true; };
     }
     setMessage('Cargando horarios guardados…');
@@ -110,7 +110,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
         setState({ clientId, draft: serverDraft });
         setMessage(localDraft && JSON.stringify(localDraft) !== JSON.stringify(serverDraft)
           ? 'Existe un borrador local distinto. Se muestra la versión del servidor; puedes cargar el borrador expresamente para revisarlo.'
-          : weeklyHoursEnabled ? 'Horarios cargados. El calendario semanal está activo.' : 'Horarios cargados. El calendario semanal sigue sin activar.');
+          : weeklyHoursEnabled ? 'Horarios cargados.' : 'Horarios cargados. Aún no se aplican a las reservas.');
       }).catch((error: unknown) => {
         if (!cancelled) setMessage(`No se pudieron leer los horarios: ${error instanceof Error ? error.message : String(error)}. No se puede guardar.`);
       });
@@ -145,8 +145,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
 
   function updateDraft(next: WeeklyHoursDraft) {
     setState({ clientId, draft: next });
-    setMessage(localOnly ? 'Borrador local actualizado. No afecta a las reservas.' : weeklyHoursEnabled
-      ? 'Cambios pendientes en el calendario semanal activo.' : 'Cambios pendientes. El calendario semanal sigue sin activar.');
+    setMessage(localOnly ? 'Borrador local actualizado. No afecta a las reservas.' : 'Cambios pendientes en los horarios.');
   }
 
   function updateLocalService(service: ServiceWithHours, enabled: boolean) {
@@ -158,7 +157,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
     } catch {
       setStorageError(true);
     }
-    setMessage('Borrador local actualizado. No afecta a SERVICES_ENABLED ni a las reservas.');
+    setMessage('Borrador local actualizado. No afecta a las reservas.');
   }
 
   async function saveDraft(): Promise<'saved' | 'error' | 'skipped'> {
@@ -178,7 +177,7 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
     if (!hasRemoteChanges) return 'skipped';
     if (!settingsVerified || !remote || remote.clientId !== clientId || isSaving || writeBlocked || !isCompleteWeeklyDraft(draft)) return 'error';
     setIsSaving(true);
-    setMessage('Guardando 21 reglas…');
+    setMessage('Guardando horarios…');
     try {
       const response = await saveWeeklyHours(clientId, toWeeklyHoursRows(draft), remote.revision);
       if (activeClientId.current !== clientId) return 'error';
@@ -186,8 +185,8 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
       if (!savedDraft) throw new Error('WEEKLY_HOURS_INVALID');
       setRemote({ clientId, revision: response.revision, draft: savedDraft, configured: true });
       setState({ clientId, draft: savedDraft });
-      setMessage(weeklyHoursEnabled ? '21 reglas guardadas. El calendario semanal está activo.'
-        : '21 reglas guardadas. El calendario semanal sigue sin activar.');
+      setMessage(weeklyHoursEnabled ? 'Horarios guardados.'
+        : 'Horarios guardados. Aún no se aplican a las reservas.');
       return 'saved';
     } catch (error) {
       if (activeClientId.current !== clientId) return 'error';
@@ -211,19 +210,13 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
     <article className="settings-card weekly-hours-editor" aria-label="Horarios semanales">
       <div className="section-title compact">
         <div>
-          <p className="eyebrow">{localOnly ? 'Vista de prueba' : 'Configuración semanal'}</p>
+          <p className="eyebrow">{localOnly ? 'Borrador local' : 'Horarios'}</p>
           <h2>Horarios semanales por servicio</h2>
         </div>
       </div>
-      <p className="weekly-hours-notice">
-        {localOnly
-          ? 'Vista de prueba: los horarios se guardan solo en este navegador. No afectan a las reservas.'
-          : weeklyHoursEnabled
-            ? 'Los interruptores controlan SERVICES_ENABLED. Las 21 reglas semanales determinan los días y horas de reserva de cada servicio.'
-            : 'Los interruptores guardan qué servicios ofrece el restaurante en SERVICES_ENABLED. Las 21 reglas semanales se guardan aparte y entrarán en vigor cuando se active el modo semanal.'}
-      </p>
+      {localOnly && <p className="weekly-hours-notice">El borrador se guarda solo en este navegador. No afecta a las reservas.</p>}
       <div className="weekly-summary" aria-label="Resumen semanal derivado">
-        <p className="eyebrow">Resumen automático · {localOnly || hasRemoteChanges ? 'borrador' : 'calendario guardado'}</p>
+        <p className="eyebrow">Resumen de horarios · {localOnly || hasRemoteChanges ? 'borrador' : 'guardado'}</p>
         {!summaryVerified ? <p>No se han verificado los horarios y Settings del restaurante. El resumen no se muestra hasta que carguen correctamente.</p>
           : !summaryConfigured ? <p>Este restaurante aún no tiene un calendario semanal guardado.</p>
           : summary === null ? <p>Completa las horas de los días abiertos para ver un resumen fiable.</p>
@@ -309,13 +302,13 @@ export const WeeklyHoursEditor = forwardRef<WeeklyHoursEditorHandle, WeeklyHours
         );
       })}
       <p className="weekly-hours-status" role="status">
-        {message || (isCompleteWeeklyDraft(draft) ? '21 reglas en el borrador local. Sin activar.' : 'Completa las horas de los días abiertos.')}
+        {message || (isCompleteWeeklyDraft(draft) ? 'Horarios completos.' : 'Completa las horas de los días abiertos.')}
       </p>
       {storageError && <p className="weekly-rule-error">No se pudo conservar el borrador en este navegador.</p>}
       {!localOnly && storedDraft && remote?.clientId === clientId && JSON.stringify(storedDraft) !== JSON.stringify(remote.draft) && (
         <button type="button" className="secondary-button" disabled={isSaving} onClick={() => {
           setState({ clientId, draft: storedDraft });
-          setMessage('Borrador local cargado para revisión. No se ha guardado en Supabase.');
+          setMessage('Borrador local cargado para revisión. Los cambios aún no se han guardado.');
         }}>Cargar borrador local para revisar</button>
       )}
       {!localOnly && remote?.clientId === clientId && JSON.stringify(draft) !== JSON.stringify(remote.draft) && (
