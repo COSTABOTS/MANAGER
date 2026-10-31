@@ -76,6 +76,13 @@ globalThis.fetch = async (input, init) => {
       assert(url.searchParams.get('client_id') === `eq.${state.tenant}`, 'rules must be scoped to authenticated tenant');
       return state.rulesFailure ? json({ code: 'TEST_READ_FAILURE', message: 'test read failure' }, 503) : json(state.rules);
     }
+    if (url.pathname.endsWith('/booking_capacity_slots') && request.method === 'GET') {
+      assert(url.searchParams.get('client_id') === `eq.${state.tenant}`, 'capacity must use authenticated tenant');
+      return json([
+        { service: null, slot_time: '18:00:00', capacity: 20, active: true },
+        { service: 'CENA', slot_time: '19:00:00', capacity: 25, active: true },
+      ]);
+    }
     if (url.pathname.endsWith('/reservations') && request.method === 'POST') {
       const payload = await request.json() as Record<string, unknown>;
       if (state.internalCapacityFailure && (payload.source_channel === 'walk_in' || payload.source_channel === 'manager_manual')) {
@@ -128,6 +135,17 @@ Deno.test('manager-api full HTTP creation with mocked Supabase and Sheets', asyn
     const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...bytes))}\n-----END PRIVATE KEY-----`;
     Deno.env.set('GOOGLE_SERVICE_ACCOUNT_JSON', JSON.stringify({ client_email: 'test@example.invalid', private_key: pem }));
     await import('./index.ts');
+
+    assert(handler, 'manager-api handler was not registered');
+    const capacityResponse = await handler(new Request('https://manager-api.invalid', {
+      method: 'POST', headers: { Authorization: 'Bearer TEST_TOKEN', Origin: 'https://manager.costabots.com' },
+      body: JSON.stringify({ action: 'capacity.list', client_id: 'TENANT_B' }),
+    }));
+    const capacityBody = await capacityResponse.json() as Record<string, unknown>;
+    assert(capacityResponse.status === 200 && capacityBody.client_id === 'TENANT_A'
+      && JSON.stringify(capacityBody.shared) === JSON.stringify([{ hora: '18:00', limite: 20, activo: true }])
+      && (capacityBody.services as Record<string, unknown[]>).CENA.length === 1 && state.writes.length === 0,
+      'capacity.list adds shared rows without writing or exposing a forged tenant');
 
     for (const store of ['supabase', 'sheets'] as const) {
       reset(store);

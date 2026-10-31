@@ -1838,11 +1838,14 @@ async function listCapacity(request: Request, clientId: string, sheetId: string,
       .order('service').order('slot_time');
     if (error) throw new Error(`SUPABASE_CAPACITY_READ_FAILED: ${error.message}`);
     const services: Record<string, Array<Record<string, unknown>>> = { DESAYUNO: [], ALMUERZO: [], CENA: [] };
+    const shared: Array<Record<string, unknown>> = [];
     for (const row of data ?? []) {
       const service = String(row.service ?? '').toUpperCase();
-      if (services[service]) services[service].push({ hora: String(row.slot_time).slice(0, 5), limite: Number(row.capacity), activo: Boolean(row.active) });
+      const slot = { hora: String(row.slot_time).slice(0, 5), limite: Number(row.capacity), activo: Boolean(row.active) };
+      if (services[service]) services[service].push(slot);
+      else if (row.service === null) shared.push(slot);
     }
-    return jsonResponse(request, { ok: true, action: 'capacity.list', client_id: clientId, services });
+    return jsonResponse(request, { ok: true, action: 'capacity.list', client_id: clientId, services, shared });
   }
 
   const accessToken = await createGoogleAccessToken();
