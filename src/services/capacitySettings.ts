@@ -1,4 +1,5 @@
 import { invokeManagerApi } from './managerApiClient';
+import { parseSharedCapacityResponse } from '../utils/sharedCapacity';
 
 type CapacityRow = Record<string, unknown>;
 type SlotCapacity = Record<string, number>;
@@ -12,6 +13,7 @@ export type ServiceCapacity = Record<'DESAYUNO' | 'ALMUERZO' | 'CENA', Record<st
 
 interface CapacityResponse {
   ok?: boolean;
+  client_id?: string;
   success?: boolean;
   capacity?: CapacityRow[] | CapacityRow;
   capacidad?: CapacityRow[] | CapacityRow;
@@ -20,6 +22,7 @@ interface CapacityResponse {
   rows?: CapacityRow[] | CapacityRow;
   tables?: CapacityRow[] | CapacityRow;
   services?: Record<string, CapacityRow[] | CapacityRow>;
+  shared?: CapacityRow[];
 }
 
 function unwrapValue(value: unknown) {
@@ -133,6 +136,10 @@ export async function loadCapacityFromManagerApi() {
   console.log('[DEMO][MANAGER_API] capacity received', Object.keys(normalized).length);
 
   return normalized;
+}
+
+export async function loadSharedCapacityFromManagerApi(expectedClientId: string): Promise<SlotCapacity> {
+  return parseSharedCapacityResponse(await invokeManagerApi<CapacityResponse>({ action: 'capacity.list' }), expectedClientId);
 }
 
 export async function saveCapacityWithManagerApi(capacity: CapacitySaveSlot[], service?: 'DESAYUNO' | 'ALMUERZO' | 'CENA') {

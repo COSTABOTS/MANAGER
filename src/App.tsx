@@ -51,7 +51,7 @@ import { isActiveReservation } from './utils/reservationStatus';
 import { isWeeklyHoursSettingsSurface } from './utils/weeklyHoursPreview';
 import { getTodayTabServices } from './utils/todayServices';
 import { resolveWeeklyModeFromSettings } from './utils/weeklyMode';
-import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from './utils/previewSettingsChanges';
+import { capacityReadbackMatches, capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from './utils/previewSettingsChanges';
 
 export type PageKey = 'today' | 'reservations' | 'control' | 'reports' | 'feedbacks' | 'shows' | 'settings';
 
@@ -2056,7 +2056,8 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
       const changedSettings = changedSettingValues(currentValues, nextValues);
       const capacityChanged = capacitySettingsChanged(settings, nextSettings, weeklyMode === 'weekly');
       try {
-        if (capacityChanged && !nextSettings.serviceSlotCapacity) throw new Error('CAPACITY_NOT_LOADED');
+        if (capacityChanged && (!nextSettings.serviceSlotCapacity
+          || (weeklyMode === 'weekly' && !settings.serviceSlotCapacity))) throw new Error('CAPACITY_NOT_LOADED');
         if (Object.keys(changedSettings).length) {
           const read = await invokeManagerApi<{ ok?: boolean; client_id?: string; settings?: Record<string, unknown> }>({ action: 'settings.get' });
           if (!read.ok || read.client_id !== clientId || !read.settings) throw new Error('SETTINGS_READ_FAILED');
@@ -2073,12 +2074,24 @@ function ManagerApp({ onLogoutComplete }: ManagerAppProps = {}) {
         }
         if (!(await syncClientBranding(nextSettings))) throw new Error('BRANDING_SAVE_FAILED');
         if (capacityChanged && nextSettings.serviceSlotCapacity) {
+          const changedSlots: Array<{ service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; hora: string; limite: number }> = [];
           for (const service of ['DESAYUNO', 'ALMUERZO', 'CENA'] as const) {
             if (!nextSettings.servicesEnabled.includes(service)) continue;
             const configured = nextSettings.serviceSlotCapacity[service] ?? {};
-            const slots = serviceCapacitySlotsForSave(configured, nextSettings.serviceHours[service], nextSettings.bookingInterval, weeklyMode === 'weekly');
+            const slots = serviceCapacitySlotsForSave(configured, nextSettings.serviceHours[service],
+              nextSettings.bookingInterval, weeklyMode === 'weekly', settings.serviceSlotCapacity?.[service]);
             if (!slots.length) continue;
             await saveCapacityWithManagerApi(slots, service);
+            changedSlots.push(...slots.map(({ hora, limite }) => ({ service, hora, limite })));
+          }
+          if (weeklyMode === 'weekly' && changedSlots.length) {
+            const readback = await invokeManagerApi<{ ok?: boolean; client_id?: string; services?: Record<
+              'DESAYUNO' | 'ALMUERZO' | 'CENA', Array<{ hora: string; limite: number; activo: boolean }>
+            > }>({ action: 'capacity.list' });
+            if (!readback.ok || readback.client_id !== clientId
+              || !capacityReadbackMatches(changedSlots, readback.services)) {
+              throw new Error('CAPACITY_SAVE_UNCONFIRMED');
+            }
           }
         }
         updateSettings({ ...nextSettings, primaryColor: normalizeHexColor(nextSettings.primaryColor) });

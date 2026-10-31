@@ -7,6 +7,9 @@ import { BalinesePoolRemote, type BalinesePoolRemoteHandle } from './BalinesePoo
 import { isWeeklyHoursSettingsSurface } from '../utils/weeklyHoursPreview';
 import { canUseRemoteHoursPreview } from '../utils/remoteHoursPreview';
 import { saveChangedSections } from '../utils/changedSettingsSave';
+import { getWeeklyHours } from '../services/weeklyHoursApi';
+import { weeklyCapacitySlotUnion } from '../utils/weeklyCapacitySlots';
+import { loadSharedCapacityFromManagerApi } from '../services/capacitySettings';
 
 interface SettingsProps {
   settings: ManagerSettings;
@@ -177,6 +180,11 @@ export function Settings({
   const [sectionResults, setSectionResults] = useState('');
   const [activationState, setActivationState] = useState<{ clientId: string; pending: BookingService | null; service: BookingService | null; message: string }>({ clientId, pending: null, service: null, message: '' });
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
+  const [weeklyCapacity, setWeeklyCapacity] = useState<{
+    clientId: string; slots: Record<ServiceWithHours, string[]> | null;
+    shared: Record<string, number>; error: string;
+  } | null>(null);
+  const [capacityHoursRefresh, setCapacityHoursRefresh] = useState(0);
   const configurationLocked = isDemoUser && clientId !== 'CB-DEMO-002';
   const weeklyPreview = WEEKLY_HOURS_UI_ENABLED && Boolean(clientId);
   const settingsVerified = !isLoadingSettings && (
@@ -184,6 +192,23 @@ export function Settings({
   );
   const remoteHoursPreview = canUseRemoteHoursPreview(HOURS_PREVIEW_CONTEXT, clientId, settingsVerified,
     isDemoUser || (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/demo')));
+
+  useEffect(() => {
+    let cancelled = false;
+    setWeeklyCapacity(null);
+    if (weeklyMode !== 'weekly' || !weeklyPreview || !settingsVerified
+      || (isDemoMode && activeSettingsTab !== 'capacity')) return;
+    void Promise.all([getWeeklyHours(clientId), loadSharedCapacityFromManagerApi(clientId)]).then(([{ rules }, shared]) => {
+      const slots = weeklyCapacitySlotUnion(rules, draftSettings.bookingInterval);
+      if (!slots) throw new Error('Las 21 reglas semanales no están completas o son inválidas.');
+      if (!cancelled) setWeeklyCapacity({ clientId, slots, shared, error: '' });
+    }).catch((error: unknown) => {
+      if (!cancelled) setWeeklyCapacity({ clientId, slots: null, shared: {},
+        error: error instanceof Error ? error.message : 'No se pudieron leer los horarios.' });
+    });
+    return () => { cancelled = true; };
+  }, [clientId, weeklyMode, weeklyPreview, settingsVerified, isDemoMode, activeSettingsTab,
+    draftSettings.bookingInterval, capacityHoursRefresh]);
 
   useEffect(() => {
     if (!isSuperAdmin && activeSettingsTab === 'advanced') {
@@ -547,7 +572,11 @@ export function Settings({
     try {
       const results = await saveChangedSections([
         { name: 'General', changed: hasUnsavedChanges, save: async () => await handleSaveSettings() === 'success' },
-        { name: 'Horarios semanales', changed: remotePending.weekly, save: async () => await weeklyEditorRef.current?.savePending() === 'saved' },
+        { name: 'Horarios semanales', changed: remotePending.weekly, save: async () => {
+          const saved = await weeklyEditorRef.current?.savePending() === 'saved';
+          if (saved) setCapacityHoursRefresh((current) => current + 1);
+          return saved;
+        } },
         { name: 'Horario de piscina', changed: remotePending.pool, save: async () => await poolEditorRef.current?.savePending() === 'saved' },
       ]);
       setSectionResults(results.map(({ name, saved }) => `${name}: ${saved ? 'guardado' : 'no guardado'}`).join(' · '));
@@ -771,24 +800,49 @@ export function Settings({
           <div className={isDemoMode ? 'slot-capacity-section is-first' : 'slot-capacity-section'}>
             <p className="eyebrow">Capacidad por tramo horario</p>
             <div className="slot-capacity-grid">
-              {(!isDemoMode ? [['', draftSettings.slotCapacity] as const] : SERVICE_HOUR_FIELDS.filter(({ key }) => draftSettings.servicesEnabled.includes(key)).map(({ key }) => [key, draftSettings.serviceSlotCapacity?.[key] ?? {}] as const)).map(([service, capacities]) => (
-                <div key={service || 'legacy'} className="service-capacity-block">
-                {service && <p className="eyebrow">Capacidad · {service}</p>}
-                {service && weeklyMode === 'weekly' && !Object.keys(capacities).length && <p className="muted-cell">Sin franjas de capacidad configuradas para este servicio.</p>}
-                {Object.entries(service ? (Object.keys(capacities).length || weeklyMode === 'weekly' ? capacities : generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start, draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval).reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})) : capacities).map(([slot, value]) => (
-                <label key={slot} className="slot-input">
-                  <span>{slot}</span>
-                  <select value={value} onChange={(event) => service ? setDraftSettings((current) => ({ ...current, serviceSlotCapacity: { DESAYUNO: current.serviceSlotCapacity?.DESAYUNO ?? {}, ALMUERZO: current.serviceSlotCapacity?.ALMUERZO ?? {}, CENA: current.serviceSlotCapacity?.CENA ?? {}, [service]: { ...(current.serviceSlotCapacity?.[service as ServiceWithHours] ?? {}), [slot]: Number(event.target.value) } } })) : updateSlotCapacity(slot, Number(event.target.value))}>
-                    {CAPACITY_OPTIONS.map((capacity) => (
-                      <option key={capacity} value={capacity}>
-                        {capacity === 0 ? '0 - cerrado' : capacity}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-              </div>
-              ))}
+              {(!isDemoMode ? [['', draftSettings.slotCapacity] as const] : SERVICE_HOUR_FIELDS.filter(({ key }) => draftSettings.servicesEnabled.includes(key)).map(({ key }) => [key, draftSettings.serviceSlotCapacity?.[key] ?? {}] as const)).map(([service, capacities]) => {
+                const weeklySlots = service && weeklyMode === 'weekly'
+                  ? weeklyCapacity?.clientId === clientId ? weeklyCapacity.slots?.[service as ServiceWithHours] : null
+                  : null;
+                const displayed = service && weeklyMode === 'weekly'
+                  ? (weeklySlots ?? []).map((slot) => [slot, capacities[slot]] as const)
+                  : Object.entries(service && !Object.keys(capacities).length
+                    ? generateTimeSlots(draftSettings.serviceHours[service as ServiceWithHours].start,
+                      draftSettings.serviceHours[service as ServiceWithHours].end, draftSettings.bookingInterval)
+                      .reduce<Record<string, number>>((acc, slot) => ({ ...acc, [slot]: 20 }), {})
+                    : capacities);
+                const shared = weeklyCapacity?.clientId === clientId ? weeklyCapacity.shared : {};
+                const missing = weeklySlots?.filter((slot) => !Object.prototype.hasOwnProperty.call(capacities, slot)
+                  && !(shared[slot] > 0)).length ?? 0;
+                return <div key={service || 'legacy'} className="service-capacity-block">
+                  {service && <p className="eyebrow">Capacidad · {service}</p>}
+                  {service && weeklyMode === 'weekly' && !weeklySlots && <p className="muted-cell">
+                    {(weeklyCapacity?.clientId === clientId && weeklyCapacity.error)
+                      || 'Cargando horarios semanales para calcular las franjas…'}
+                  </p>}
+                  {service && weeklyMode === 'weekly' && weeklySlots?.length === 0 && <p className="muted-cell">Sin horarios abiertos para este servicio.</p>}
+                  {missing > 0 && <p className="muted-cell">{missing} {missing === 1 ? 'franja sin capacidad' : 'franjas sin capacidad'}. Configura sus plazas para habilitarlas.</p>}
+                  {displayed.map(([slot, value]) => (
+                    <label key={slot} className="slot-input">
+                      <span>{slot}{shared[slot] > 0 && <small>Compartida: {shared[slot]}</small>}</span>
+                      <select value={value ?? ''} disabled={configurationLocked || shared[slot] > 0} onChange={(event) => service
+                        ? setDraftSettings((current) => ({ ...current, serviceSlotCapacity: {
+                          DESAYUNO: current.serviceSlotCapacity?.DESAYUNO ?? {},
+                          ALMUERZO: current.serviceSlotCapacity?.ALMUERZO ?? {},
+                          CENA: current.serviceSlotCapacity?.CENA ?? {},
+                          [service]: { ...(current.serviceSlotCapacity?.[service as ServiceWithHours] ?? {}), [slot]: Number(event.target.value) },
+                        } }))
+                        : updateSlotCapacity(slot, Number(event.target.value))}>
+                        {value === undefined && <option value="" disabled>{shared[slot] > 0 ? 'Capacidad compartida' : 'Sin configurar'}</option>}
+                        {value !== undefined && !CAPACITY_OPTIONS.includes(value) && <option value={value}>{value}</option>}
+                        {CAPACITY_OPTIONS.map((capacity) => (
+                          <option key={capacity} value={capacity}>{capacity === 0 ? '0 - cerrado' : capacity}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>;
+              })}
             </div>
           </div>
           )}

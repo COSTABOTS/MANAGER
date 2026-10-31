@@ -2817,6 +2817,13 @@ body:has(.today-brand-bar) .sidebar .brand-logo-frame.restaurant-avatar-sidebar 
   font-weight: 900;
 }
 
+.slot-input span small {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .slot-input input {
   min-height: 34px;
   padding: 6px 8px;

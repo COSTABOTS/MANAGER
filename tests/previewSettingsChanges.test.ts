@@ -1,4 +1,4 @@
-import { capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from '../src/utils/previewSettingsChanges.ts';
+import { capacityReadbackMatches, capacitySettingsChanged, changedSettingValues, changedSettingsConflict, serviceCapacitySlotsForSave } from '../src/utils/previewSettingsChanges.ts';
 import { mockSettings } from '../src/data/mockData.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -33,6 +33,12 @@ Deno.test('WEEKLY capacity never derives slots or defaults from legacy service h
     { hora: '18:00', limite: 2, activo: true },
     { hora: '18:30', limite: 0, activo: false },
   ]), 'weekly mode saves only explicitly configured capacity, including zero');
+  const changedOnly = serviceCapacitySlotsForSave(
+    { '11:00': 20, '11:30': 25, '15:30': 0 }, { start: '12:00', end: '16:00' }, 30, true,
+    { '11:30': 25, '15:30': 0, '17:00': 40 },
+  );
+  assert(JSON.stringify(changedOnly) === JSON.stringify([{ hora: '11:00', limite: 20, activo: true }]),
+    'new weekly capacity writes only the edited slot; unchanged and hidden records are preserved');
   assert(serviceCapacitySlotsForSave({}, { start: '18:00', end: '19:00' }, 30, false).length === 3,
     'legacy slot generation remains unchanged');
 });
@@ -42,4 +48,15 @@ Deno.test('general save detects a newer remote value only for fields being edite
   const changed = changedSettingValues(current, { A: 'FALSE', B: '2' });
   assert(!changedSettingsConflict(current, { A: 'TRUE', B: 'new' }, changed), 'unrelated remote edits remain untouched');
   assert(changedSettingsConflict(current, { A: 'FALSE', B: '2' }, changed), 'a concurrent edit to the same key blocks saving');
+});
+
+Deno.test('weekly capacity save requires confirmed rows for the same service and hour', () => {
+  const changed = [{ service: 'ALMUERZO' as const, hora: '11:00', limite: 20 }];
+  assert(capacityReadbackMatches(changed, { ALMUERZO: [{ hora: '11:00', limite: 20, activo: true }] }),
+    'an inserted weekly slot is confirmed by capacity.list');
+  assert(!capacityReadbackMatches(changed, { CENA: [{ hora: '11:00', limite: 20, activo: true }] }),
+    'another service cannot confirm the write');
+  assert(!capacityReadbackMatches(changed, { ALMUERZO: [] }), 'missing row cannot be reported saved');
+  assert(!capacityReadbackMatches(changed, { ALMUERZO: [{ hora: '11:00', limite: 20, activo: false }] }),
+    'an inactive row cannot confirm a positive capacity');
 });

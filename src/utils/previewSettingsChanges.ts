@@ -20,10 +20,24 @@ export function serviceCapacitySlotsForSave(
   legacyHours: { start: string; end: string },
   interval: 30 | 60,
   weekly: boolean,
+  previous?: Record<string, number>,
 ): Array<{ hora: string; limite: number; activo: boolean }> {
-  const hours = weekly ? Object.keys(configured) : generateTimeSlots(legacyHours.start, legacyHours.end, interval);
+  const hours = weekly
+    ? Object.keys(configured).filter((hora) => previous === undefined || configured[hora] !== previous[hora])
+    : generateTimeSlots(legacyHours.start, legacyHours.end, interval);
   return hours.map((hora) => {
     const limite = configured[hora] ?? 20;
     return { hora, limite, activo: limite > 0 };
+  });
+}
+
+export function capacityReadbackMatches(
+  changes: readonly { service: 'DESAYUNO' | 'ALMUERZO' | 'CENA'; hora: string; limite: number }[],
+  services: Partial<Record<'DESAYUNO' | 'ALMUERZO' | 'CENA',
+    Array<{ hora: string; limite: number; activo: boolean }>>> | undefined,
+): boolean {
+  return Boolean(services) && changes.every(({ service, hora, limite }) => {
+    const row = services?.[service]?.find((item) => item.hora === hora);
+    return Boolean(row && (row.activo ? row.limite : 0) === limite);
   });
 }
