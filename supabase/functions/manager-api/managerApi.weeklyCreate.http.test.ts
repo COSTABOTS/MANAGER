@@ -195,24 +195,39 @@ Deno.test('manager-api full HTTP creation with mocked Supabase and Sheets', asyn
       for (const store of ['supabase', 'sheets'] as const) {
         reset(store);
         state.rules = rules.map((rule) => rule.service === 'CENA' ? { ...rule, start_time: '18:00:00' } : rule);
-        walkInInstant = '2026-11-01T16:44:59Z'; // 17:44:59 CET, before dinner.
+        walkInInstant = '2026-10-29T16:29:59Z'; // 17:29:59 CET, before the margin.
         const early = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
         assert(early.status === 409 && Number(state.writes.length) === 0, `${store}: too-early walk-in never writes`);
-        walkInInstant = '2026-11-01T16:50:00Z'; // 17:50 CET for an 18:00 dinner.
+        walkInInstant = '2026-10-29T16:30:00Z';
+        const atEarlyBoundary = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
+        assert(atEarlyBoundary.status === 200 && state.writes.length === 1, `${store}: 17:30 admits dinner`);
+        walkInInstant = '2026-10-29T16:50:00Z'; // 17:50 CET for an 18:00 dinner.
         const beforeDinner = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
-        assert(beforeDinner.status === 409 && state.writes.length === 0,
-          `${store}: pre-service walk-in cannot be assigned to dinner`);
-        walkInInstant = '2026-11-01T17:00:00Z';
+        assert(beforeDinner.status === 200 && state.writes.length === 2 && state.writes[1].service === 'CENA'
+          && state.writes[1].time.startsWith('17:50'), `${store}: early dinner keeps actual arrival`);
+        walkInInstant = '2026-10-29T17:00:00Z';
         const duringDinner = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
-        assert(duringDinner.status === 200 && state.writes.length === 1
-          && state.writes[0].service === 'CENA' && state.writes[0].date === '2026-11-01'
-          && state.writes[0].time.startsWith('18:00'),
+        assert(duringDinner.status === 200 && state.writes.length === 3
+          && state.writes[2].service === 'CENA' && state.writes[2].date === '2026-10-29'
+          && state.writes[2].time.startsWith('18:00'),
           `${store}: service start is inclusive and keeps actual arrival time`);
+        walkInInstant = '2026-10-29T22:00:00Z';
+        const atClose = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
+        walkInInstant = '2026-10-29T22:29:59Z';
+        const beforeLateCutoff = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
+        walkInInstant = '2026-10-29T22:30:00Z';
+        const lateBoundary = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
+        walkInInstant = '2026-10-29T22:30:01Z';
+        const lateCutoff = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
+        assert(atClose.status === 200 && beforeLateCutoff.status === 200 && lateBoundary.status === 200
+          && lateCutoff.status === 409,
+          `${store}: post-close margin includes exactly 23:30`);
         if (store === 'supabase') {
           state.internalCapacityFailure = true;
+          walkInInstant = '2026-10-29T22:00:00Z';
           const full = await request('walkin.create', 'CENA', '2027-01-01', '20:00');
           assert(full.status === 409 && full.body.code === 'AVAILABILITY_EXHAUSTED'
-            && Number(state.writes.length) === 1, 'Supabase capacity rejection is safe and adds no reservation');
+            && Number(state.writes.length) === 6, 'Supabase capacity rejection is safe and adds no reservation');
         }
       }
     } finally {

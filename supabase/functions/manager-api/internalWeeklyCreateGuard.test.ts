@@ -67,33 +67,49 @@ Deno.test('direct-request walk-in payload ignores forged browser date/time and u
   assert(closed.status === 409 && closed.writes === 0, 'Thursday closed despite forged Sunday');
   const afterClose = await directRequest('walkin.create', 'ALMUERZO', '2026-11-01', '11:30', reader('true').access,
     'supabase', new Date('2026-11-01T17:00:00Z'));
-  assert(afterClose.status === 409 && afterClose.writes === 0, 'exact close rejected');
+  assert(afterClose.status === 200 && afterClose.effective?.service === 'ALMUERZO', 'exact close enters walk-in late margin');
+  const lateCutoff = await directRequest('walkin.create', 'ALMUERZO', '2026-11-01', '11:30', reader('true').access,
+    'supabase', new Date('2026-11-01T17:30:01Z'));
+  assert(lateCutoff.status === 409 && lateCutoff.writes === 0, 'after late boundary excluded');
   const beforeClose = await directRequest('walkin.create', 'ALMUERZO', '2026-11-01', '11:30', reader('true').access,
     'sheets', new Date('2026-11-01T16:59:59Z'));
   assert(beforeClose.status === 200 && beforeClose.writes === 1, 'one second before close allowed');
 });
 
-Deno.test('weekly walk-in rejects early arrival and keeps the server arrival time when open', async () => {
+Deno.test('weekly walk-in accepts exact early and late margins with the Madrid server clock', async () => {
   const dinnerAtSix = rules.map((rule) => rule.service === 'CENA' ? { ...rule, start_time: '18:00:00' } : rule);
   for (const store of ['supabase', 'sheets'] as const) {
     const requestAt = (instant: string, service = 'CENA', services = 'ALMUERZO,CENA,BALINESA') =>
       directRequest('walkin.create', service, '2027-01-01', '20:00', reader('true', services, { rows: dinnerAtSix }).access,
         store, new Date(instant));
-    const tooEarly = await requestAt('2026-11-01T16:44:59Z'); // 17:44:59 CET; dinner opens at 18:00.
-    const boundary = await requestAt('2026-11-01T16:45:00Z');
-    const arrival = await requestAt('2026-11-01T16:50:00Z');
-    const closedService = await requestAt('2026-11-01T16:50:00Z', 'CENA', 'ALMUERZO,BALINESA');
+    const tooEarly = await requestAt('2026-10-29T16:29:59Z'); // 17:29:59 CET; dinner opens at 18:00.
+    const boundary = await requestAt('2026-10-29T16:30:00Z');
+    const arrival = await requestAt('2026-10-29T16:50:00Z');
+    const closedService = await requestAt('2026-10-29T16:50:00Z', 'CENA', 'ALMUERZO,BALINESA');
     const otherDay = await requestAt('2026-10-29T16:50:00Z', 'ALMUERZO');
-    assert(tooEarly.status === 409 && tooEarly.writes === 0, `${store}: early boundary rejects before 17:45`);
-    assert(boundary.status === 409 && boundary.writes === 0, `${store}: early admission remains disabled`);
-    assert(arrival.status === 409 && arrival.writes === 0, `${store}: 17:50 cannot become dinner`);
-    const open = await requestAt('2026-11-01T17:00:00Z');
-    assert(open.status === 200 && open.effective?.date === '2026-11-01'
-      && open.effective.time === '18:00' && open.effective.service === 'CENA',
-      `${store}: service start is inclusive and uses the server clock`);
+    assert(tooEarly.status === 409 && tooEarly.writes === 0, `${store}: before 17:30 rejected`);
+    assert(boundary.status === 200 && boundary.effective?.service === 'CENA', `${store}: 17:30 inclusive`);
+    assert(arrival.status === 200 && arrival.effective?.date === '2026-10-29'
+      && arrival.effective.time === '17:50' && arrival.effective.service === 'CENA',
+      `${store}: actual arrival and dinner assignment retained`);
+    const late = await requestAt('2026-10-29T22:00:00Z'); // 23:00 CET, at service close.
+    const lastSecond = await requestAt('2026-10-29T22:29:59Z');
+    const boundaryLate = await requestAt('2026-10-29T22:30:00Z');
+    const tooLate = await requestAt('2026-10-29T22:30:01Z');
+    assert(late.status === 200 && lastSecond.status === 200 && boundaryLate.status === 200
+      && tooLate.status === 409 && tooLate.writes === 0,
+      `${store}: 30-minute post-close boundary is inclusive at 23:30`);
     assert(closedService.status === 409 && closedService.writes === 0, `${store}: globally disabled dinner rejects`);
     assert(otherDay.status === 409 && otherDay.writes === 0, `${store}: closed lunch rejects`);
   }
+});
+
+Deno.test('an actually open service wins over another service admission margin', async () => {
+  const overlap = rules.map((rule) => rule.service === 'CENA' ? { ...rule, start_time: '17:45:00' } : rule);
+  const result = await directRequest('walkin.create', 'CENA', '2027-01-01', '20:00',
+    reader('true', 'ALMUERZO,CENA', { rows: overlap }).access, 'supabase', new Date('2026-11-01T16:30:00Z'));
+  assert(result.status === 200 && result.effective?.service === 'ALMUERZO',
+    'lunch open at 17:30 wins over early dinner');
 });
 
 Deno.test('legacy tenants keep the old path and do not read weekly rules', async () => {

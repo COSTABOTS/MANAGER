@@ -243,3 +243,16 @@ jobs:
         env:
           PGPASSWORD: weekly-test-password
         run: ./supabase/tests/weekly_internal_capacity_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test
+      - name: Apply internal walk-in margin update in disposable PostgreSQL
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261031120000_weekly_walkin_thirty_minute_margin.sql
+      - name: Test 30-minute walk-in margins, capacity and legacy isolation
+        env:
+          PGPASSWORD: weekly-test-password
+        run: psql -h 127.0.0.1 -U postgres -d weekly_rpc_test -v ON_ERROR_STOP=1 -f supabase/tests/weekly_walkin_thirty_minute_margin_isolated.sql
+      - name: Test concurrent internal and public last-slot creation after margin update
+        shell: pwsh
+        env:
+          PGPASSWORD: weekly-test-password
+        run: ./supabase/tests/weekly_internal_capacity_concurrency.ps1 -PsqlPath (Get-Command psql).Source -Port 5432 -Database weekly_rpc_test

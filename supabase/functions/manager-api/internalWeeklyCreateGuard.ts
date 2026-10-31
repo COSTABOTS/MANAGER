@@ -1,21 +1,22 @@
 import { getWeekday, isServiceOpenAt, isWeeklyService, type WeeklyHoursConfig, type WeeklyService } from '../_shared/booking-hours/weeklyHours.ts';
 import { loadWeeklyHours, type WeeklyHoursReader } from '../_shared/booking-hours/weeklyHoursAdapter.ts';
 
-// Keep the experimental early-admission window disabled for the first weekly activation.
-const WALK_IN_EARLY_MINUTES = 0;
+const WALK_IN_EARLY_MINUTES = 30;
+const WALK_IN_LATE_MINUTES = 30;
 
 function isWalkInWithinService(config: WeeklyHoursConfig,
   date: string, service: WeeklyService, time: string): boolean {
   if (isServiceOpenAt(config, date, service, time.slice(0, 5))) return true;
   const weekday = getWeekday(date);
   const rule = weekday === null ? null : config[weekday]?.[service];
-  if (!rule?.enabled || !rule.start) return false;
+  if (!rule?.enabled || !rule.start || !rule.end) return false;
   const [hour, minute] = rule.start.split(':').map(Number);
+  const [endHour, endMinute] = rule.end.split(':').map(Number);
   const [arrivalHour, arrivalMinute, arrivalSecond = 0] = time.split(':').map(Number);
   const startMinutes = hour * 60 + minute;
   const arrivalSeconds = arrivalHour * 3600 + arrivalMinute * 60 + arrivalSecond;
   return arrivalSeconds >= Math.max(0, startMinutes - WALK_IN_EARLY_MINUTES) * 60
-    && arrivalSeconds < startMinutes * 60;
+    && arrivalSeconds <= Math.min(1440, endHour * 60 + endMinute + WALK_IN_LATE_MINUTES) * 60;
 }
 
 export type InternalCreateGuardResult =
@@ -65,6 +66,12 @@ export async function guardInternalWeeklyCreate(
     : isServiceOpenAt(weekly.config, clock.date, service, normalizedTime))) {
     return { mode: 'error', code: action === 'walkin.create' ? 'WALKIN_OUTSIDE_WEEKLY_HOURS' : 'RESERVATION_OUTSIDE_WEEKLY_HOURS', status: 409 };
   }
+  // A service actually open now wins if the requested one is only in its admission margin.
+  const effectiveService = action === 'walkin.create' && !isServiceOpenAt(weekly.config, clock.date, service, normalizedTime)
+    ? (['DESAYUNO', 'ALMUERZO', 'CENA'] as const).find((candidate) =>
+      weekly.servicesEnabled?.has(candidate) && isServiceOpenAt(weekly.config, clock.date, candidate, normalizedTime)) ?? service
+    : service;
   // Walk-ins use the server clock, never the date or time sent by the browser.
-  return { mode: 'weekly', service, date: clock.date, time: action === 'walkin.create' ? normalizedTime : input.time };
+  return { mode: 'weekly', service: effectiveService, date: clock.date,
+    time: action === 'walkin.create' ? normalizedTime : input.time };
 }
